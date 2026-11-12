@@ -1,0 +1,11 @@
+{
+  "name": "globedart",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Side-by-side globe and flat-earth models, scored against what observers actually see.",
+  "scripts": {
+    "start": "node tools/serve.mjs",
+    "test": "node tools/check-maths.mjs"
+  }
+}

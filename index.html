@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GlobeDart: which model matches the sky?</title>
+    <meta
+      name="description"
+      content="See the same moment and the same observer on a globe and on the flat-earth map, and check each against what people really measure: the sun, the stars and flight times."
+    />
+    <meta property="og:title" content="GlobeDart: which model matches the sky?" />
+    <meta
+      property="og:description"
+      content="Same sun, same stars, same observer, two models. Check each against what people actually measure."
+    />
+    <meta name="theme-color" content="#121a24" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='%231b3f5e' stroke='%237fb4ff' stroke-width='2'/%3E%3Cpath d='M3 16h26M16 3c-6 4-6 22 0 26M16 3c6 4 6 22 0 26' fill='none' stroke='%237fb4ff' stroke-width='1.5'/%3E%3Ccircle cx='22' cy='10' r='3' fill='%23ffb224'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="css/style.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "./vendor/three/three.module.js",
+          "three/addons/": "./vendor/three/addons/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <h1>GlobeDart</h1>
+        <p>Same sun, same observer, two models. Which one matches what people actually see?</p>
+      </div>
+      <nav id="demos" aria-label="Demonstrations">
+        <span class="nav-label">Demonstrations</span>
+        <button data-demo="sunset">Sunset</button>
+        <button data-demo="angles">Sun angles from many cities</button>
+        <button data-demo="sunrise">Sunrise direction</button>
+        <button data-demo="december">December daylight</button>
+        <button data-demo="polaris">Pole star</button>
+        <button data-demo="southern">Southern stars</button>
+        <button data-demo="flights">Southern flights</button>
+      </nav>
+    </header>
+
+    <main>
+      <aside id="controls">
+        <section>
+          <h2>When</h2>
+          <label class="row">
+            <span>Date (UTC)</span>
+            <input type="date" id="date" />
+          </label>
+          <label class="stack">
+            <span class="row"><span>Time (UTC)</span><output id="time-label"></output></span>
+            <input type="range" id="time" min="0" max="1439" step="1" />
+          </label>
+          <p class="hint" id="solar-time"></p>
+          <div class="buttons">
+            <button id="btn-sunrise" title="Jump to sunrise at the observer">Sunrise</button>
+            <button id="btn-noon" title="Jump to solar noon at the observer">Noon</button>
+            <button id="btn-sunset" title="Jump to sunset at the observer">Sunset</button>
+            <button id="btn-now" title="Jump to the present moment">Now</button>
+          </div>
+          <div class="row">
+            <button id="btn-play" class="primary">Play</button>
+            <select id="speed" aria-label="Playback speed">
+              <option value="1">1 min per second</option>
+              <option value="10" selected>10 min per second</option>
+              <option value="60">1 hour per second</option>
+              <option value="360">6 hours per second</option>
+            </select>
+          </div>
+        </section>
+
+        <section>
+          <h2>Observer</h2>
+          <label class="row">
+            <span>Place</span>
+            <select id="city"></select>
+          </label>
+          <div class="row">
+            <label class="mini"><span>Lat</span><input type="number" id="lat" min="-89.9" max="89.9" step="0.01" /></label>
+            <label class="mini"><span>Lon</span><input type="number" id="lon" min="-180" max="180" step="0.01" /></label>
+          </div>
+          <p class="hint">Or click or tap anywhere on the globe or the flat map.</p>
+        </section>
+
+        <section>
+          <h2>Flat-model settings</h2>
+          <p class="hint">
+            The flat model gets every adjustment its supporters propose. Tune them and watch whether any setting
+            matches the measurements.
+          </p>
+          <label class="stack">
+            <span class="row"><span>Sun height</span><output id="sun-height-label"></output></span>
+            <input type="range" id="sun-height" min="0" max="1000" step="1" />
+          </label>
+          <label class="stack">
+            <span class="row"><span>How far its light reaches</span><output id="light-range-label"></output></span>
+            <input type="range" id="light-range" min="1000" max="20000" step="100" />
+          </label>
+          <button id="btn-bestfit">Use the best-fitting sun height</button>
+          <label class="row">
+            <span>Flat map shading</span>
+            <select id="flat-lighting">
+              <option value="model">Model's spotlight</option>
+              <option value="observed">Where it really is day</option>
+            </select>
+          </label>
+        </section>
+
+        <section>
+          <h2>Stars</h2>
+          <label class="check"><input type="checkbox" id="stars" /> Show the stars</label>
+          <label class="row">
+            <span>Follow</span>
+            <select id="star"></select>
+          </label>
+          <label class="stack">
+            <span class="row"><span>Flat model: height of the stars</span><output id="star-height-label"></output></span>
+            <input type="range" id="star-height" min="0" max="1000" step="1" />
+          </label>
+          <button id="btn-star-bestfit">Use the best-fitting star height</button>
+          <label class="check"><input type="checkbox" id="trails" /> Star trails (the last 6 hours)</label>
+        </section>
+
+        <section>
+          <h2>Display</h2>
+          <label class="check"><input type="checkbox" id="sight-lines" /> Sight lines from <span class="ref-count"></span> cities</label>
+          <label class="check"><input type="checkbox" id="follow" /> Keep the sun in view</label>
+          <label class="check"><input type="checkbox" id="refraction" /> Atmospheric refraction</label>
+          <button id="btn-share">Copy link to this view</button>
+        </section>
+      </aside>
+
+      <section id="views" data-pair="outside">
+        <div id="view-tabs" role="group" aria-label="Which views to show">
+          <button data-pair="outside" class="active" aria-pressed="true">From outside</button>
+          <button data-pair="sky" aria-pressed="false">Observer's sky</button>
+        </div>
+        <div class="view" id="globe-view">
+          <div class="view-title globe">Globe model <small>sphere, sun 150 million km away</small></div>
+          <div class="legend">
+            <span><i class="sw measured"></i>measured direction to <span class="sight-name">the sun</span></span>
+            <span class="own-only"><i class="sw own"></i>your measurement</span>
+            <span class="route-only"><i class="sw route"></i>shortest route</span>
+          </div>
+        </div>
+        <div class="view" id="flat-view">
+          <div class="view-title flat">Flat model <small>disc, small sun circling overhead</small></div>
+          <div class="legend">
+            <span><i class="sw measured"></i>measured direction to <span class="sight-name">the sun</span></span>
+            <span class="own-only"><i class="sw own"></i>your measurement</span>
+            <span><i class="sw flat"></i>where the model puts it</span>
+            <span><i class="sw terminator"></i>real day/night boundary</span>
+            <span class="route-only"><i class="sw route"></i>route really travelled</span>
+            <span class="route-only"><i class="sw flat"></i>this map's straight line</span>
+          </div>
+        </div>
+        <div class="view sky" id="globe-sky">
+          <div class="view-title globe">Observer's sky, globe model</div>
+        </div>
+        <div class="view sky" id="flat-sky">
+          <div class="view-title flat">Observer's sky, flat model</div>
+        </div>
+      </section>
+
+      <aside id="results">
+        <section id="demo-card">
+          <h2 id="demo-title"></h2>
+          <div id="demo-body"></div>
+        </section>
+
+        <section>
+          <h2>At the observer</h2>
+          <table id="compare" class="data">
+            <thead>
+              <tr><th></th><th class="measured">Measured</th><th class="globe">Globe</th><th class="flat">Flat</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <p class="hint">
+            "Measured" is the published ephemeris, which you can check yourself with a stick's shadow, a compass and a
+            clock.
+          </p>
+        </section>
+
+        <section id="stars-panel" hidden>
+          <h2>The star: <span id="star-name"></span></h2>
+          <table id="star-compare" class="data">
+            <thead>
+              <tr><th></th><th class="measured">Measured</th><th class="globe">Globe</th><th class="flat">Flat</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <div id="star-fit-bars"></div>
+          <p class="hint" id="star-fit-note"></p>
+          <p class="hint">
+            If the stars sat at one height above a flat earth, every observer's measured angle would give that same
+            height.
+          </p>
+          <table id="star-cities" class="data">
+            <thead>
+              <tr><th>City</th><th>Measured</th><th>Flat says</th><th>Height implied</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </section>
+
+        <section id="own">
+          <h2>Your own measurements</h2>
+          <p class="hint">
+            Do not take the published numbers on trust. Measure the sun yourself, enter it here, and both models are
+            scored against <b class="o">your</b> number instead.
+          </p>
+          <details id="own-form">
+            <summary>Add a measurement</summary>
+            <div class="form-body">
+            <label class="stack">
+              <span>When you measured</span>
+              <span class="row">
+                <input type="datetime-local" id="m-time" />
+                <select id="m-zone" aria-label="Time zone of that time">
+                  <option value="local">this device's clock</option>
+                  <option value="utc">UTC</option>
+                </select>
+              </span>
+            </label>
+            <p class="hint" id="m-where"></p>
+            <label class="row">
+              <span>How</span>
+              <select id="m-method">
+                <option value="angle">I measured the angle</option>
+                <option value="shadow">A stick and its shadow</option>
+              </select>
+            </label>
+            <div id="m-angle-fields" class="fields">
+              <label class="row">
+                <span>Sun's height above the horizon (°)</span>
+                <input type="number" id="m-el" min="0" max="90" step="0.1" />
+              </label>
+            </div>
+            <div id="m-shadow-fields" class="fields" hidden>
+              <label class="row">
+                <span>Height of the upright stick</span>
+                <input type="number" id="m-stick" min="0" step="any" />
+              </label>
+              <label class="row">
+                <span>Length of its shadow (same units)</span>
+                <input type="number" id="m-shadow" min="0" step="any" />
+              </label>
+              <p class="hint" id="m-shadow-result"></p>
+            </div>
+            <label class="row">
+              <span id="m-az-label">Compass bearing to the sun (°, optional)</span>
+              <input type="number" id="m-az" min="0" max="360" step="0.5" />
+            </label>
+            <p class="hint">
+              Bearings run clockwise from true north (east is 90). A magnetic compass can be several degrees out, so
+              leave this blank if you are unsure.
+            </p>
+            <label class="row">
+              <span>Name (optional)</span>
+              <input type="text" id="m-label" maxlength="30" placeholder="e.g. back garden" />
+            </label>
+            <button id="m-add" class="primary">Add this measurement</button>
+            </div>
+          </details>
+          <div id="own-list"></div>
+          <div id="own-summary"></div>
+        </section>
+
+        <section>
+          <h2>How far off is each model?</h2>
+          <p class="hint" id="fit-scope"></p>
+          <div id="fit-bars"></div>
+          <canvas id="fit-chart" height="150"></canvas>
+          <p class="hint" id="fit-note"></p>
+        </section>
+
+        <section>
+          <h2><span class="ref-count"></span> observers, right now</h2>
+          <p class="hint">
+            If the earth were flat, every observer's measured sun angle would point to the same sun height.
+          </p>
+          <table id="city-table" class="data">
+            <thead>
+              <tr><th>City</th><th>Measured</th><th>Flat says</th><th>Sun height implied</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </section>
+
+        <section id="distances">
+          <h2>Distances and flight times</h2>
+          <p class="hint">
+            The two maps disagree about how far apart places are, most of all in the south. A timetable settles it:
+            a flight's distance divided by its time has to be a speed an airliner can fly.
+          </p>
+          <div class="row route-pick">
+            <select id="route-from" aria-label="From"></select>
+            <span>to</span>
+            <select id="route-to" aria-label="To"></select>
+            <button id="route-clear" title="Stop showing a route" aria-label="Stop showing a route">×</button>
+          </div>
+          <div id="route-detail"></div>
+          <table id="route-table" class="data">
+            <thead>
+              <tr><th>Non-stop flight</th><th>Time</th><th class="globe">Globe</th><th class="flat">Flat</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <p class="hint">
+            The last two columns are the average speed in km/h the flight would need on each map. Times are the
+            average of the two directions, as scheduled in November 2026. Look any of them up in an airline
+            timetable.
+          </p>
+        </section>
+
+        <section>
+          <details>
+            <summary>Show the maths</summary>
+            <p>
+              Both models are given the same starting fact: the place on Earth where the sun is directly overhead at
+              this moment (the subsolar point). Neither is given the answer.
+            </p>
+            <p>
+              <b>Globe.</b> The sun is so distant that its rays arrive parallel, so its elevation is 90° minus the
+              angle along the surface between you and the subsolar point:
+              <code>sin(el) = sin φ sin δ + cos φ cos δ cos(Δλ)</code>.
+            </p>
+            <p>
+              <b>Flat.</b> Places sit on the north-pole-centred map at distance
+              <code>r = (90° − φ) × 111.2 km</code> from the pole. The sun sits at height <code>H</code> above the
+              subsolar point, and the elevation is <code>atan(H / d)</code>, where <code>d</code> is the map distance to
+              that point. Its width shrinks in proportion to its distance from you.
+            </p>
+            <p>
+              <b>Miss</b> is the angle on the sky between a model's sun and the measured sun. The score is the
+              root-mean-square miss over daytime moments only, which is the kindest test for the flat model.
+            </p>
+            <p>
+              <b>Your own measurements.</b> A stick of height <code>h</code> casting a shadow of length
+              <code>s</code> on level ground puts the sun at <code>atan(h / s)</code> above the horizon, in the
+              direction opposite the shadow. If you did not measure a bearing, only the elevations are compared.
+            </p>
+            <p>
+              <b>Stars.</b> Each star is handled exactly like the sun: both models are told the place it is directly
+              overhead. The globe model puts it immeasurably far away. The flat model puts every star at one
+              adjustable height, turning about the point above the north pole once a day.
+            </p>
+            <p>
+              <b>Distances.</b> On the globe the shortest path is a great circle. On the flat map it is a straight
+              line between the two places as drawn. Along a line of longitude the two agree; east to west in the
+              south, the flat map stretches distances to several times their real length.
+            </p>
+          </details>
+        </section>
+      </aside>
+    </main>
+
+    <script type="module" src="js/main.js"></script>
+  </body>
+</html>
