@@ -56,7 +56,11 @@ export function frameDirection(frame, azDeg, elDeg) {
   return [0, 1, 2].map((i) => frame.east[i] * ce + frame.north[i] * cn + frame.up[i] * cu);
 }
 
-/** Angle in degrees between two sky directions given as azimuth/elevation. */
+/**
+ * The angle in degrees between two directions in the sky, each a bearing and a height e:
+ *   acos(sin e₁ sin e₂ + cos e₁ cos e₂ cos(bearing₁ − bearing₂))
+ * This is the "miss" between where a model puts something and where it is measured.
+ */
 export function skySeparation(a, b) {
   const e1 = a.el * DEG;
   const e2 = b.el * DEG;
@@ -65,41 +69,100 @@ export function skySeparation(a, b) {
   return Math.acos(Math.min(1, Math.max(-1, c))) / DEG;
 }
 
+// The symbols used below, and in the explanations the app shows (js/explain.js):
+//   φ   the observer's latitude
+//   δ   the latitude of the place the sun (or a star) is directly overhead
+//   Δλ  how far east of the observer that place is, in longitude
+//   H   the height the flat model gives the sun
+//   d   distance on the flat map from the observer to the place under the sun
+
 /**
- * Globe model: a sphere with the sun so far away its rays arrive parallel.
- * The sun's elevation is 90 degrees minus the angle between you and the subsolar point.
+ * The angle, in degrees, between two places as seen from the centre of the globe:
+ *   acos(sin φ₁ sin φ₂ + cos φ₁ cos φ₂ cos Δλ)
+ * Multiplied by the Earth's radius it is the shortest distance between them.
+ */
+export function globeAngleDeg(lat1, lon1, lat2, lon2) {
+  const phi1 = lat1 * DEG;
+  const phi2 = lat2 * DEG;
+  const cosAngle = Math.sin(phi1) * Math.sin(phi2) + Math.cos(phi1) * Math.cos(phi2) * Math.cos((lon2 - lon1) * DEG);
+  return Math.acos(Math.min(1, Math.max(-1, cosAngle))) / DEG;
+}
+
+/**
+ * How far a place is from the north pole on the flat map, in km. The map
+ * keeps every place at its true distance from the pole, so the equator is a
+ * circle 10,008 km out and the south pole is the rim.
+ */
+export function flatPoleDistanceKm(lat) {
+  return (90 - lat) * DEG * EARTH_RADIUS_KM;
+}
+
+/**
+ * Straight-line distance between two places on the flat map, in km. With a
+ * and b their distances from the pole, and Δλ the angle between them there:
+ *   √(a² + b² − 2ab cos Δλ)
+ */
+export function flatMapDistanceKm(lat1, lon1, lat2, lon2) {
+  const a = flatPoleDistanceKm(lat1);
+  const b = flatPoleDistanceKm(lat2);
+  return Math.sqrt(Math.max(0, a * a + b * b - 2 * a * b * Math.cos((lon2 - lon1) * DEG)));
+}
+
+/**
+ * Globe model: a sphere, with the sun so far away that its rays arrive parallel.
+ *
+ *   height   = asin(sin φ sin δ + cos φ cos δ cos Δλ)
+ *   bearing  = atan2(cos δ sin Δλ, cos φ sin δ − sin φ cos δ cos Δλ)
+ *
+ * The height is 90° less the angle round the Earth between the observer and
+ * the place under the sun. The bearing is the direction, at the observer, of
+ * the shortest path over the surface to that place.
+ *
+ * Returns the bearing `az`, the height by geometry alone `trueEl`, and the
+ * height with the lift from the air added, `el`.
  */
 export function globePredict(sub, lat, lon, air = STANDARD_AIR) {
-  const p = lat * DEG;
-  const d = sub.lat * DEG;
-  const h = (sub.lon - lon) * DEG; // positive when the sun is east of the observer
-  const sinEl = Math.sin(p) * Math.sin(d) + Math.cos(p) * Math.cos(d) * Math.cos(h);
-  const trueEl = Math.asin(Math.min(1, Math.max(-1, sinEl))) / DEG;
-  const east = Math.cos(d) * Math.sin(h);
-  const north = Math.cos(p) * Math.sin(d) - Math.sin(p) * Math.cos(d) * Math.cos(h);
+  const phi = lat * DEG;
+  const delta = sub.lat * DEG;
+  const dLambda = (sub.lon - lon) * DEG;
+  const sinHeight = Math.sin(phi) * Math.sin(delta) + Math.cos(phi) * Math.cos(delta) * Math.cos(dLambda);
+  const trueEl = Math.asin(Math.min(1, Math.max(-1, sinHeight))) / DEG;
+  const east = Math.cos(delta) * Math.sin(dLambda);
+  const north = Math.cos(phi) * Math.sin(delta) - Math.sin(phi) * Math.cos(delta) * Math.cos(dLambda);
   const az = wrap360(Math.atan2(east, north) / DEG);
   return { az, el: trueEl + lift(trueEl, air), trueEl, sizeDeg: sub.sizeDeg };
 }
 
 /**
- * Flat model: a small sun circling at a fixed height above the flat map,
- * directly over the subsolar point. Plain straight-line geometry.
+ * Flat model: a small sun at a fixed height H above the flat map, directly
+ * over the place it is overhead. Plain straight-line geometry.
  *
- * The sun's physical width is chosen so it looks the correct size when it is
- * directly overhead, which is the most generous choice available.
+ * With a and b the distances from the pole, on the map, of the observer and
+ * of the place under the sun, and Δλ the angle between the two at the pole:
+ *
+ *   north    = a − b cos Δλ        how far toward the pole that place is from the observer
+ *   east     = b sin Δλ            and how far to the right of that line
+ *   d        = √(north² + east²)   its distance from the observer on the map
+ *   bearing  = atan2(east, north)
+ *   height   = atan(H ÷ d)
+ *
+ * The sun's real width is chosen so that it looks the right size from
+ * directly underneath, the most generous choice there is:
+ *
+ *   w        = 2 × H × tan(width ÷ 2)
+ *   s        = √(d² + H²)          straight-line distance from the observer to the sun
+ *   width    = 2 × atan(w ÷ 2s)    what it should then show from the observer
  */
 export function flatPredict(sub, lat, lon, params, air = STANDARD_AIR) {
   const heightKm = params.sunHeightKm;
-  const o = flatVec(lat, lon);
-  const s = flatVec(sub.lat, sub.lon);
-  const dx = s[0] - o[0];
-  const dz = s[2] - o[2];
-  const f = flatFrame(lat, lon);
-  const de = dx * f.east[0] + dz * f.east[2];
-  const dn = dx * f.north[0] + dz * f.north[2];
-  const groundKm = Math.hypot(de, dn) * EARTH_RADIUS_KM;
+  const a = flatPoleDistanceKm(lat);
+  const b = flatPoleDistanceKm(sub.lat);
+  const dLambda = (sub.lon - lon) * DEG;
+  const north = a - b * Math.cos(dLambda);
+  const east = b * Math.sin(dLambda);
+  const groundKm = Math.hypot(north, east);
   const trueEl = Math.atan2(heightKm, groundKm) / DEG;
-  const az = wrap360(Math.atan2(de, dn) / DEG);
+  const az = wrap360(Math.atan2(east, north) / DEG);
   const slantKm = Math.hypot(groundKm, heightKm);
   const sunWidthKm = 2 * heightKm * Math.tan((sub.sizeDeg / 2) * DEG);
   const sizeDeg = (2 * Math.atan(sunWidthKm / 2 / slantKm)) / DEG;
@@ -116,21 +179,21 @@ export function flatPredict(sub, lat, lon, params, air = STANDARD_AIR) {
 }
 
 /**
- * Height the sun "must" have on a flat earth to explain one observer's
- * measured elevation: ground distance to the subsolar point times tan(elevation).
+ * The height the sun would have to be at, on a flat earth, to explain one
+ * observer's measured height e, a distance d on the map from the place under it:
+ *   H = d × tan(e)
  * If the earth were flat, every observer would get the same answer.
  */
 export function impliedSunHeightKm(sub, lat, lon, observedElDeg) {
   if (observedElDeg <= 0) return null;
-  const o = flatVec(lat, lon);
-  const s = flatVec(sub.lat, sub.lon);
-  const groundKm = Math.hypot(s[0] - o[0], s[2] - o[2]) * EARTH_RADIUS_KM;
-  return groundKm * Math.tan(observedElDeg * DEG);
+  return flatMapDistanceKm(lat, lon, sub.lat, sub.lon) * Math.tan(observedElDeg * DEG);
 }
 
 /**
- * RMS miss (degrees on the sky) of a model against a list of observations,
- * counting only moments when the sun is actually up for that observer.
+ * A model's score against a list of observations: the root-mean-square miss,
+ *   √(average of miss²)
+ * in degrees on the sky, counting only moments when the sun (or star) is
+ * really above the horizon for that observer.
  */
 export function rmsMiss(samples, predict) {
   let sum = 0;

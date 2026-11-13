@@ -43,6 +43,8 @@ The empty `.nojekyll` file tells GitHub Pages to serve the files exactly as they
 | `js/flight.js` | Level flight: how fast the nose comes down to follow a globe, and what flying dead straight would do |
 | `js/earth.js` | A link that opens Google Earth at a place, and a KML file of the view |
 | `js/arguments/` | The demonstrations, one file per flat-earth argument, and the list of them |
+| `js/explain.js` | What every number means and how it is worked out, written to be shown with the live numbers |
+| `js/info.js` | The small "i" buttons and the box each one opens |
 | `js/observations.js` | Horizon observations the user enters themselves: what bending each one implies, how each model fares, and the text form used in links |
 | `js/measurements.js` | Measurements the user enters themselves: stick-and-shadow conversion, scoring against both models, and the text form used in links |
 | `js/views/globeView.js`, `flatView.js` | Outside views of each model |
@@ -52,9 +54,32 @@ The empty `.nojekyll` file tells GitHub Pages to serve the files exactly as they
 | `js/main.js` | State, controls, result panels, shareable URL, and the helpers handed to each argument |
 | `js/cities.js` | Preset places and the reference observers used for scoring |
 | `data/land-110m.json` | Natural Earth 1:110m land outlines (public domain) |
+| `data/star-catalogue.json` | What the SIMBAD database gives for each of the 96 stars, kept so the star table can be checked offline |
+| `tools/check-stars.mjs` | Compares the star table with SIMBAD online |
 | `vendor/` | three.js 0.187 and astronomy-engine 2.1.19, copied in unmodified (both MIT) |
 | `docs/refraction-plan.md` | Plan for modelling refraction properly. All four stages are built |
+| `docs/maths.md` | Every formula in one place: in words, in symbols, where it is in the code, and what checks it |
+| `docs/flight-times.md` | The timetable behind the flight times, with the source for each flight |
 | `docs/future.md` | Ideas for later |
+
+## Seeing the maths
+
+Nothing in the app is meant to be taken on trust, including its own arithmetic.
+
+- The small **i** beside a number or a heading opens a box that says how it is worked out, in words and in
+  symbols, with the numbers on show put in. It follows the numbers as they change. On a phone it is a sheet along
+  the bottom, so the views stay in sight.
+- "All the maths for this tool", at the foot of the results, lists every working together.
+- Each box ends by naming the file and function that does the calculation.
+- `docs/maths.md` has all of it on one page, with the checks that test each formula.
+
+Three things keep the explanations and the code from drifting apart. The numbers in a box are the ones the model
+produced, not worked out again for display. The model functions are written with the same symbols and steps the
+boxes use. And `tools/check-maths.mjs` fails if a box names a function that does not exist, if a button has no
+explanation, or if any explanation comes out with a number missing.
+
+Most of the explanatory text that used to sit permanently on the page now lives in these boxes. What is left on
+the page is what changes with the numbers, and the short instructions needed to use a control.
 
 ## Ground rules the code follows
 
@@ -96,8 +121,11 @@ your own temperature and pressure.
 measured to be. One star is followed at a time, with its own table, sight lines from the reference cities, and a
 score across every star.
 
-- Star positions were typed in by hand from standard J2000 coordinates. The maths check confirms each one lies in
-  its constellation and that several well-known angles between stars come out right, but it is not a full catalogue.
+- Star positions were typed in by hand, to the nearest second. All 96 have been checked against the SIMBAD
+  astronomical database and are within 8 arcseconds (0.002°) of it, which is the rounding. `node
+  tools/check-stars.mjs` repeats the comparison online; the maths check repeats it against a saved copy.
+- The stars' own slow drift since 2000 is not allowed for. The largest is Alpha Centauri's, about 0.03°.
+- It is a list of bright and well-known stars, not a full catalogue.
 - The flat model puts every star at one height, turning about the point above the north pole once a day. That
   height has its own slider and its own best-fit button.
 - Stars fade in daylight but never vanish, so a demonstration works at any hour.
@@ -108,8 +136,11 @@ Pick two places, or one of the listed non-stop flights, to draw the route on bot
 distance under each. For a listed flight the app divides each distance by the scheduled time to get the speed the
 aircraft would need.
 
-- Flight times are the scheduled times for November 2026, read from public schedule listing sites rather than
-  from the airlines directly. They move by a quarter of an hour or so with the season.
+- Flight times are the scheduled gate-to-gate times for the week of 10 to 16 November 2026. Each is worked out
+  in the code from the timetable's local departure and arrival times, which are listed with their sources in
+  `docs/flight-times.md`. Fourteen of the eighteen were read from the airline's own site; the four LATAM flights
+  came from airport boards and a tracking site, because LATAM's site refused the lookup.
+- They move by a quarter of an hour or so with the season.
 - The flat distances are for the standard north-pole-centred map only.
 
 ## Over the horizon
@@ -206,8 +237,9 @@ two-finger pinch to zoom; the outside views use the usual one-finger orbit and t
 Use it freely, for anything, with no credit needed. The one thing not allowed is redistributing the whole of
 GlobeDart unchanged or nearly unchanged. The full terms are in `LICENSE`.
 
-three.js and Astronomy Engine in `vendor/` are other people's work under the MIT licence, and the map data in
-`data/` is Natural Earth's, in the public domain. Those keep their own terms.
+three.js and Astronomy Engine in `vendor/` are other people's work under the MIT licence. In `data/`, the map is
+Natural Earth's, in the public domain, and the star figures come from the SIMBAD database, operated at CDS,
+Strasbourg, France. Those keep their own terms.
 
 ## Not built yet
 

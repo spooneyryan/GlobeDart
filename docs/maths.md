@@ -1,0 +1,277 @@
+# The maths, in one place
+
+Every number GlobeDart shows comes from one of the formulas below. Each is given in words, then in symbols, then
+with the file and function that works it out and the checks that test it.
+
+The same explanations appear in the app, worked through with the numbers on show: the small **i** buttons open
+them one at a time, and "All the maths for this tool" lists them together. They are written in `js/explain.js`.
+
+To run the checks:
+
+```bash
+node tools/check-maths.mjs
+```
+
+## How to read this
+
+Two rules hold throughout.
+
+- **Each model is told one fact and nothing else:** the place on Earth where the sun, or a star, is directly
+  overhead at this moment. Neither is given the answer.
+- **"Measured" is not worked out by either model.** It comes from astronomers' published tables (the Astronomy
+  Engine library), which stand in for what anyone can measure with a stick, a compass and a clock.
+
+Symbols:
+
+| Symbol | Meaning |
+|---|---|
+| φ | the observer's latitude |
+| δ | the latitude of the place the sun or star is overhead |
+| Δλ | how far east of the observer that place is, in longitude |
+| R | the Earth's radius, 6,371 km |
+| H | the height the flat model gives the sun |
+| d | a distance along the ground, or on the flat map |
+| h | a height: of the eye, or of the sun above the horizon |
+| k | how strongly air bends light near the ground (see below) |
+
+Angles are in degrees unless a line says otherwise.
+
+## 1. Where the sun is overhead
+
+The starting fact for both models. From the sun's position among the stars and the turning of the Earth, the
+library gives the latitude δ and longitude where the sun is at the zenith.
+
+- Code: `js/astro.js`, `subsolarPoint`. For stars: `starPoints`, from the table in `js/stars.js`.
+- Checks: section 1 (on the equator at an equinox, at 23.44° S at the December solstice), section 2 (the sun
+  really is overhead there), section 10 (every star in the table is within 8 arcseconds of the SIMBAD catalogue).
+
+## 2. The globe model
+
+A sphere, with the sun so far away that its rays arrive parallel.
+
+**Height above the horizon.** 90° less the angle round the Earth between the observer and the place under the
+sun.
+
+```
+height = asin(sin φ sin δ + cos φ cos δ cos Δλ)
+```
+
+**Bearing.** The direction, at the observer, of the shortest path over the surface to that place.
+
+```
+bearing = atan2(cos δ sin Δλ, cos φ sin δ − sin φ cos δ cos Δλ)
+```
+
+**Width of the sun.** The same from everywhere, because the sun is so far off: with r its radius and D its
+distance, `2 × atan(r ÷ D)`.
+
+There is nothing to adjust.
+
+- Code: `js/models.js`, `globePredict`, `globeAngleDeg`.
+- Checks: section 3 (agrees with the published position within 0.02° for 17 cities and 24 hours), section 10
+  (the same for 96 stars), section 17.
+
+## 3. The flat model
+
+The usual flat map: the north pole in the middle, every place at its true distance from the pole, and a small sun
+at a height H above the place it is overhead.
+
+**Positions on the map.** A place at latitude φ is `(90° − φ) × 111.2 km` from the pole. Call the observer's
+distance a, and the distance of the place under the sun b. The angle between them at the pole is Δλ.
+
+```
+north    = a − b cos Δλ          how far toward the pole that place is from the observer
+east     = b sin Δλ              and how far to the right of that line
+d        = √(north² + east²)     its distance from the observer on the map
+```
+
+**Height and bearing.** A right-angled triangle, and the direction of a straight line on the map.
+
+```
+height   = atan(H ÷ d)
+bearing  = atan2(east, north)
+```
+
+**Width of the sun.** A sun that close must look smaller the further away it is. It is given the width that looks
+right from directly underneath, which is the most generous choice there is.
+
+```
+w      = 2 × H × tan(width ÷ 2)     the width it must really have
+s      = √(d² + H²)                 straight-line distance from the observer to it
+width  = 2 × atan(w ÷ 2s)           the width it should then show
+```
+
+The flat model's stars are handled the same way, all at one height of their own.
+
+- Code: `js/models.js`, `flatPredict`, `flatPoleDistanceKm`, `flatMapDistanceKm`.
+- Checks: section 4 (overhead under the sun; a known triangle at the pole; equinox sunrise bears 45°, not 90°),
+  section 17 (the formulas agree with measuring straight across the map).
+
+## 4. Scoring the models
+
+**Miss.** The angle on the sky between where a model puts the sun and where it is measured. With each position a
+height e and a bearing b:
+
+```
+miss = acos(sin e₁ sin e₂ + cos e₁ cos e₂ cos(b₁ − b₂))
+```
+
+**Score.** The root-mean-square miss over 17 cities and every hour of a day, counting only moments when the sun
+is really up: `√(average of miss²)`. Night is left out because the flat model never lets the sun set, and would
+score far worse with it in.
+
+**Best fit.** The lowest score any sun height from 100 km to 1,000,000 km reaches.
+
+**Implied height.** Turning the flat model's triangle round, one observer's measured height e gives the height
+the sun would have to be at: `H = d × tan(e)`. On a flat earth every observer would get the same answer.
+
+- Code: `js/models.js`, `skySeparation`, `rmsMiss`, `flatFitCurve`, `impliedSunHeightKm`.
+- Checks: section 5 (implied heights differ by thousands of km), section 6 (the best fit is still off by more
+  than 5°).
+
+## 5. Lift from the air
+
+Air bends light downward, so things in the sky appear slightly higher than they geometrically are. For a
+geometric height of h degrees, in air at 10 °C and 1010 hPa, the lift in sixtieths of a degree is:
+
+```
+lift = 1.02 ÷ tan(h + 10.3 ÷ (h + 5.11))
+```
+
+That is 29 sixtieths (about half a degree) on the horizon, 5 at 10° up and 1 at 45°. For other weather it is
+multiplied by `(P ÷ 1010 hPa) × (283 K ÷ T)`.
+
+The same lift is added to the measured position and to both models, so it favours neither. The app also shows
+the lift each model would *need* for its geometry to land on the measurement: the measured height less the
+model's height by geometry.
+
+- Code: `js/refraction.js`, `standardLift`, `airFactor`, `lift`, `trueElevation`.
+- Checks: section 11, and section 16 (following light through the whole atmosphere gives the same lift within
+  0.2 sixtieths of a degree from 2° up).
+
+## 6. Your own measurements of the sun
+
+An upright stick of height s and its shadow of length l on level ground put the sun at `atan(s ÷ l)`, in the
+direction opposite the shadow. Each measurement is then scored against both models exactly as in section 4. With
+no bearing, only the heights are compared.
+
+- Code: `js/measurements.js`, `shadowToElevation`, `shadowToAzimuth`, `scoreMeasurement`, `summariseMeasurements`.
+- Checks: section 8.
+
+## 7. Distances
+
+**Globe.** The Earth's radius times the angle between the two places as seen from its centre:
+
+```
+distance = R × acos(sin φ₁ sin φ₂ + cos φ₁ cos φ₂ cos Δλ)
+```
+
+**Flat.** A straight line on the map, with a and b the two places' distances from the pole:
+
+```
+distance = √(a² + b² − 2ab cos Δλ)
+```
+
+**Speed a flight needs.** Its distance divided by its scheduled time, averaged over the two directions because of
+the wind.
+
+- Code: `js/distances.js`, `globeDistanceKm`, `flatDistanceKm`, `routeStats`.
+- Checks: section 9 (every listed flight needs an ordinary airliner's speed on the globe).
+
+## 8. Over the horizon
+
+**Bending near the ground.** Given the way surveyors give it, as k: the Earth's radius divided by the radius of
+the light's curve. At 0 light is straight; at 1 it follows the surface. From the weather, with pressure P in hPa,
+temperature T in kelvin and its change with height in kelvin per metre:
+
+```
+k = 503 × P ÷ T² × (0.0343 + dT/dh)
+```
+
+Light that curves the same way as the surface makes the Earth behave as if it were larger:
+
+```
+R′ = R ÷ (1 − k)
+```
+
+**The globe.** With h the height of the eye, H the height of the target and d its distance:
+
+```
+horizon          = √(2 × R′ × h)
+hidden           = (d − horizon)² ÷ (2 × R′)      beyond the horizon; nothing before it
+drop of horizon  = √(2 × h ÷ R′)                  as an angle below eye level, in radians
+gone altogether  = √(2 × R′ × h) + √(2 × R′ × H)
+```
+
+**The flat model.** A straight line over a flat surface clears it at every distance, so nothing is hidden and
+the horizon is at eye level.
+
+**What the flat model would need.** To hide the same amount, light would have to curve upward and supply all of
+the curvature the globe's surface has relative to its light: a bending of `k − 1`. Put back through the weather
+formula, that is the change of temperature with height it would take.
+
+- Code: `js/horizon.js`, `coefficientFromWeather`, `lapseForCoefficient`, `effectiveRadiusKm`,
+  `horizonDistanceKm`, `hiddenHeightM`, `dipDeg`, `flatNeeds`.
+- Checks: section 12.
+
+## 9. Your own horizon observations
+
+Turning the hidden-height formula round gives the bending that would make the globe hide exactly what was seen.
+With the hidden height, eye height and distance all in metres:
+
+```
+k = 1 − 2 × R × (√hidden + √eye)² ÷ d²
+```
+
+That bending is then described by the air it takes: cooling with height, warming with height, or bent upward.
+
+- Code: `js/observations.js`, `impliedCoefficient`, `scoreObservation`.
+- Checks: section 13.
+
+## 10. Layers of air
+
+With one k the air is the same all the way up. Here it is described by its temperature at each height, and each
+ray is followed step by step. With T the air temperature, g its change per metre, T_w the water's temperature and
+L the depth of the layer the water affects:
+
+```
+temperature at height h   = T + g × h + (T_w − T) × e^(−h ÷ L)
+refractive index          = 1 + 0.000079 × P ÷ T
+change of direction       = 1 ÷ (R + h) + dn/dh      per metre travelled, on the globe
+                          = dn/dh                    on flat ground
+```
+
+The one term `1 ÷ (R + h)` is the whole difference between the two models. Rays are sent out in a fan of
+directions; the lowest point of the target that any of them reaches is the lowest part that can be seen.
+
+- Code: `js/raytrace.js`, `makeAir`, `traceRay`, `traceView`.
+- Checks: section 16 (even air matches the single k within a tenth of a metre; warm water hides the foot on both
+  models; on flat ground that hiding grows in step with distance).
+
+## 11. Level flight
+
+An aircraft holding its height above a globe flies round a circle of radius R + h. Its nose turns as fast as it
+goes round:
+
+```
+turning         = v ÷ (R + h)                      as an angle per unit of time, in radians
+once round      = 2π × (R + h) ÷ v
+dead straight   = √((R + h)² + s²) − (R + h)       height gained over a distance s = v × t
+```
+
+An inertial navigation unit has to allow for that turning, and is tuned to the period of a pendulum as long as
+the Earth's radius: `2π × √(R ÷ g)`, which is 84.4 minutes.
+
+On a flat earth the path is a straight line and all four are zero or meaningless.
+
+- Code: `js/flight.js`, `pitchRateDegPerMin`, `hoursRound`, `climbIfStraightM`, `schulerMinutes`.
+- Checks: section 14 (run from `js/arguments/pilots.js`).
+
+## What keeps this honest
+
+- The numbers in the app's explanations are the ones the models produced. Nothing is worked out a second time
+  for display.
+- A check fails if an explanation names a function that does not exist, if an info button has no explanation, or
+  if any explanation comes out with a missing number (section 17).
+- The flat model's formulas are checked against plain measurement across the map, so the notation here and the
+  drawings cannot disagree.

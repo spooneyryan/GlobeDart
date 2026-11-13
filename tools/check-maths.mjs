@@ -1,4 +1,7 @@
 // Sanity checks for the sun and model maths: `node tools/check-maths.mjs`.
+import { readFileSync } from 'node:fs';
+import { EXPLAIN } from '../js/explain.js';
+import { flightScene } from '../js/flight.js';
 import * as Astronomy from '../vendor/astronomy.js';
 import { STANDARD_AIR, standardLift, lift, airFactor, apparentElevation, trueElevation } from '../js/refraction.js';
 import {
@@ -37,7 +40,7 @@ import {
   EARTH_RADIUS_KM,
 } from '../js/astro.js';
 import { STARS, STAR_LINES, starIndex } from '../js/stars.js';
-import { ROUTES, routeStats, greatCirclePath } from '../js/distances.js';
+import { ROUTES, routeStats, greatCirclePath, blockHours } from '../js/distances.js';
 import {
   globePredict,
   flatPredict,
@@ -45,6 +48,9 @@ import {
   skySeparation,
   rmsMiss,
   flatFitCurve,
+  globeAngleDeg,
+  flatMapDistanceKm,
+  flatVec,
 } from '../js/models.js';
 import { CITIES, REF_CITIES } from '../js/cities.js';
 import {
@@ -64,6 +70,7 @@ function check(name, ok, detail) {
   console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${detail ? '  ' + detail : ''}`);
 }
 const f = (n, d = 3) => n.toFixed(d);
+const near = (value, expected, tolerance) => Math.abs(value - expected) <= tolerance;
 
 const s = seasons(2026);
 console.log('2026 seasons:', s.marEquinox.toISOString(), s.decSolstice.toISOString());
@@ -178,6 +185,15 @@ for (const r of ROUTES) {
   console.log(`  ${r.from} - ${r.to}: globe ${Math.round(st.globeKm)} km at ${Math.round(st.globeKmh)} km/h, ` +
     `flat ${Math.round(st.flatKm)} km at ${Math.round(st.flatKmh)} km/h`);
 }
+// Scheduled times are worked out from the timetable's local times, so the arithmetic is checked here.
+check('Sydney 10:35 to Santiago 09:05 the same day is 12 h 30 min in the air', near(blockHours('10:35', 11, '09:05', -3), 12.5, 1e-9));
+check('and Santiago 13:00 to Sydney 17:10 the next day is 14 h 10 min', near(blockHours('13:00', -3, '17:10', 11, 1), 14 + 10 / 60, 1e-9));
+const expected = { QF27: [12, 30], QF28: [14, 10], QF63: [14, 30], QF64: [11, 55], LA801: [12, 20], LA800: [11, 5], QF65: [11, 10], QF66: [9, 40],
+  LA8058: [8, 55], LA8059: [9, 50], QF643: [5, 0], QF648: [4, 10], BA59: [11, 50], BA58: [12, 0], BA117: [8, 0], BA112: [7, 5], JL15: [12, 5], JL16: [9, 55] };
+const legs = ROUTES.flatMap((r) => [r.out, r.home]);
+const offSchedule = legs.filter((l) => !expected[l.flight] || !near(l.hours, expected[l.flight][0] + expected[l.flight][1] / 60, 1e-9));
+check(`all ${legs.length} timetabled flights work out to their published durations`, legs.length === 18 && offSchedule.length === 0, offSchedule.map((l) => l.flight).join(', '));
+check('every scheduled flight is between 3 and 18 hours', legs.every((l) => l.hours > 3 && l.hours < 18));
 check('every listed flight needs an ordinary airliner speed on the globe',
   ROUTES.every((r) => {
     const v = routeStats(place(r.from), place(r.to), (r.there + r.back) / 2).globeKmh;
@@ -187,6 +203,18 @@ check('every listed flight needs an ordinary airliner speed on the globe',
 // 10. The stars.
 const wrong = STARS.filter((st) => constellationAt(st.ra, st.dec) !== st.con);
 check(`all ${STARS.length} stars lie in their stated constellations`, wrong.length === 0, wrong.map((st) => st.name).join(', '));
+// The saved copy of what the SIMBAD database gives for each star. `node tools/check-stars.mjs --save` renews it.
+const catalogue = JSON.parse(readFileSync(new URL('../data/star-catalogue.json', import.meta.url), 'utf8'));
+const inCatalogue = new Map(catalogue.stars.map((c) => [c.name, c]));
+let worstCatalogue = 0;
+let worstName = '';
+for (const st of STARS) {
+  const c = inCatalogue.get(st.name);
+  const off = c ? skySeparation({ az: st.ra * 15, el: st.dec }, { az: c.ra, el: c.dec }) * 3600 : Infinity;
+  if (off > worstCatalogue) [worstCatalogue, worstName] = [off, st.name];
+}
+check(`all ${STARS.length} stars are within 8 arcseconds of the SIMBAD catalogue (copy of ${catalogue.fetched})`,
+  worstCatalogue <= 8, `worst ${f(worstCatalogue, 1)} arcseconds, ${worstName}`);
 check('no star is listed twice and every figure line joins two known stars',
   new Set(STARS.map((st) => st.name)).size === STARS.length && STAR_LINES.every(([a, b]) => a >= 0 && b >= 0));
 const star = (name) => STARS[starIndex(name)];
@@ -296,7 +324,6 @@ check('of two copies of a measurement, the one with a temperature is kept',
   mergeMeasurements([{ ...frosty, tempC: null }], [frosty]).length === 1 && mergeMeasurements([{ ...frosty, tempC: null }], [frosty])[0].tempC === -20);
 
 // 12. Over the horizon.
-const near = (value, expected, tolerance) => Math.abs(value - expected) <= tolerance;
 check('eye at 1.7 m: horizon 4.65 km with no bending', near(horizonDistanceKm(1.7, 0), 4.65, 0.01), f(horizonDistanceKm(1.7, 0)));
 check("and 4.99 km with the surveyors' k = 0.13", near(horizonDistanceKm(1.7, K_SURVEY), 4.99, 0.01), f(horizonDistanceKm(1.7, K_SURVEY)));
 check('30 km away, eye at 1.7 m: 50.4 m hidden with no bending', near(hiddenHeightM(1.7, 30, 0), 50.4, 0.1), f(hiddenHeightM(1.7, 30, 0), 2));
@@ -453,6 +480,92 @@ check('over warm water the flat model hides the foot too, but less than the glob
 check('and the flat model hides nothing over cold water', traceView(coldAir, { ...sizes, curved: false }).hiddenM === 0);
 const nearer = traceView(warmAir, { ...sizes, distanceKm: 10, curved: false }).hiddenM;
 check('on flat ground the warm-water hiding grows in step with distance', near(warmFlat.hiddenM / nearer, 2, 0.35), `${f(nearer, 1)} m at 10 km, ${f(warmFlat.hiddenM, 1)} m at 20 km`);
+
+// 17. The explanations the app shows, and the code they describe.
+// The flat model's formulas, as the info boxes give them, against plain vectors on the map.
+let worstMap = 0;
+for (const a of REF_CITIES) {
+  for (const b of REF_CITIES) {
+    const p = flatVec(a.lat, a.lon);
+    const q = flatVec(b.lat, b.lon);
+    worstMap = Math.max(worstMap, Math.abs(flatMapDistanceKm(a.lat, a.lon, b.lat, b.lon) - Math.hypot(p[0] - q[0], p[2] - q[2]) * EARTH_RADIUS_KM));
+  }
+}
+check('the flat-map distance formula agrees with measuring straight across the map', worstMap < 1e-6, `worst ${worstMap.toExponential(1)} km`);
+check('the angle between two places on the globe is 90 degrees from pole to equator, 180 pole to pole',
+  near(globeAngleDeg(90, 0, 0, 50), 90, 1e-9) && near(globeAngleDeg(90, 0, -90, 0), 180, 1e-9));
+const hereNow = { lat: 51.51, lon: -0.13 };
+const g = globePredict(sub, hereNow.lat, hereNow.lon, null);
+check("the globe's height is 90 degrees less the angle to the place under the sun",
+  near(g.trueEl, 90 - globeAngleDeg(hereNow.lat, hereNow.lon, sub.lat, sub.lon), 1e-9));
+const fl0 = flatPredict(sub, hereNow.lat, hereNow.lon, params, null);
+check("the flat model's distance to the place under the sun is the flat-map distance",
+  near(fl0.groundKm, flatMapDistanceKm(hereNow.lat, hereNow.lon, sub.lat, sub.lon), 1e-6));
+
+// Every function an explanation points at must exist, and every explanation must be reachable.
+const modules = {};
+const missing = [];
+for (const [key, entry] of Object.entries(EXPLAIN)) {
+  for (const [file, ...names] of entry.code ?? []) {
+    modules[file] ??= await import(`../js/${file}`);
+    for (const name of names) if (typeof modules[file][name] !== 'function') missing.push(`${key}: ${file} ${name}`);
+  }
+}
+check('every function an explanation names exists in the code', missing.length === 0, missing.join('; '));
+const pageText = readFileSync(new URL('../index.html', import.meta.url), 'utf8') + readFileSync(new URL('../js/main.js', import.meta.url), 'utf8');
+const used = new Set([...pageText.matchAll(/data-info="([a-z.]+)"|infoButton\('([a-z.]+)'/g)].map((m) => m[1] ?? m[2]));
+const unknown = [...used].filter((key) => !EXPLAIN[key]);
+const unused = Object.keys(EXPLAIN).filter((key) => !used.has(key));
+check('every info button opens an explanation that exists', unknown.length === 0, unknown.join(', '));
+check('every explanation has a button that opens it', unused.length === 0, unused.join(', '));
+
+// Each explanation is worked through with real numbers and must come out whole.
+const plain = (n, d = 1) => n.toFixed(d);
+const stubApp = {
+  state: { lat: hereNow.lat, lon: hereNow.lon, sunHeightKm: 5000, refraction: 'custom', tempC: -5, pressureHpa: 1000, mode: 'sky' },
+  deg: (n, d = 1) => `${plain(n, d)}°`,
+  km: (n) => `${Math.round(n)} km`,
+  kmh: (n) => `${Math.round(n)} km/h`,
+  bearing: (n) => `${plain(n)}°`,
+  hoursMinutes: (h) => `${plain(h)} h`,
+  fmtH: (m) => `${plain(m)} m`,
+  fmtD: (k) => `${plain(k)} km`,
+  fmtSpeed: (v) => `${Math.round(v)} km/h`,
+  fmtAngle: (a) => `${plain(a, 3)}°`,
+  fmtTime: (m) => `${Math.round(m)} min`,
+  REF_CITIES,
+};
+const air = { tempC: -5, pressureHpa: 1000 };
+const routeEnds = [place('Sydney'), place('Santiago')];
+const sample = {
+  sky: {
+    sub,
+    obs: observedSun(now, hereNow.lat, hereNow.lon, air),
+    globe: globePredict(sub, hereNow.lat, hereNow.lon, air),
+    flat: flatPredict(sub, hereNow.lat, hereNow.lon, params, air),
+    cities: REF_CITIES.map((c) => {
+      const o = observedSun(now, c.lat, c.lon, air);
+      return { ...c, obs: o, flat: flatPredict(sub, c.lat, c.lon, params, air), implied: impliedSunHeightKm(sub, c.lat, c.lon, o.el) };
+    }),
+    route: { a: routeEnds[0], b: routeEnds[1], ...routeStats(routeEnds[0], routeEnds[1], 13.3) },
+  },
+  horizon: { ...horizonScene({ eyeM: 1.7, targetM: 50, distanceKm: 20, k: K_STANDARD }), flatHiddenM: 0, traced: null },
+  flight: flightScene({ speedKmh: 900, altitudeM: 11000, minutes: 10 }),
+};
+const broken = [];
+for (const [key, entry] of Object.entries(EXPLAIN)) {
+  let html = '';
+  try {
+    html = entry.body(sample[entry.tool], stubApp);
+  } catch (err) {
+    html = `threw ${err.message}`;
+  }
+  if (typeof html !== 'string' || html.length < 40 || /NaN|undefined|threw|Infinity/.test(html)) broken.push(key);
+}
+check(`all ${Object.keys(EXPLAIN).length} explanations work through with real numbers`, broken.length === 0, broken.join(', '));
+const flatWorking = EXPLAIN['sky.elevation'].body(sample.sky, stubApp);
+check('the working shown for the flat sun carries the numbers the model produced',
+  flatWorking.includes(stubApp.km(sample.sky.flat.groundKm)) && flatWorking.includes(stubApp.deg(sample.sky.flat.trueEl, 2)));
 
 console.log(failures ? `\n${failures} check(s) failed` : '\nAll checks passed');
 process.exit(failures ? 1 : 0);

@@ -1,7 +1,7 @@
 // Distances between places under each model, and the real non-stop flights
 // that let anyone test them with a timetable.
 import { DEG, EARTH_RADIUS_KM } from './astro.js';
-import { globeVec, flatVec } from './models.js';
+import { globeVec, globeAngleDeg, flatMapDistanceKm } from './models.js';
 
 /** Airliners cruise at roughly this ground speed in still air. */
 export const CRUISE_KMH = 900;
@@ -10,17 +10,22 @@ export const SOUND_KMH = 1060;
 
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 
-/** Shortest distance over the surface of the globe (a great circle). */
+/**
+ * Shortest distance over the surface of the globe, in km: the Earth's radius
+ * times the angle between the two places as seen from its centre.
+ *   R × acos(sin φ₁ sin φ₂ + cos φ₁ cos φ₂ cos Δλ)
+ */
 export function globeDistanceKm(a, b) {
-  const c = dot(globeVec(a.lat, a.lon), globeVec(b.lat, b.lon));
-  return Math.acos(Math.min(1, Math.max(-1, c))) * EARTH_RADIUS_KM;
+  return globeAngleDeg(a.lat, a.lon, b.lat, b.lon) * DEG * EARTH_RADIUS_KM;
 }
 
-/** Shortest distance on the flat map: a straight line. */
+/**
+ * Shortest distance on the flat map, in km: a straight line. With a and b the
+ * two places' distances from the pole, and Δλ the angle between them there:
+ *   √(a² + b² − 2ab cos Δλ)
+ */
 export function flatDistanceKm(a, b) {
-  const p = flatVec(a.lat, a.lon);
-  const q = flatVec(b.lat, b.lon);
-  return Math.hypot(p[0] - q[0], p[2] - q[2]) * EARTH_RADIUS_KM;
+  return flatMapDistanceKm(a.lat, a.lon, b.lat, b.lon);
 }
 
 /** Points along the great circle from a to b, as { lat, lon }. */
@@ -41,28 +46,75 @@ export function greatCirclePath(a, b, steps = 64) {
   return out;
 }
 
-const hm = (h, m) => h + m / 60;
+/**
+ * Scheduled time in the air and on the ground between the gates, in hours,
+ * from a timetable's local times.
+ *
+ * @param dep        local departure time, "hh:mm"
+ * @param depZone    the departure airport's clock, in hours ahead of UTC
+ * @param arr        local arrival time, "hh:mm"
+ * @param arrZone    the arrival airport's clock, in hours ahead of UTC
+ * @param nextDay    how many calendar days after leaving it arrives, by the local dates
+ */
+export function blockHours(dep, depZone, arr, arrZone, nextDay = 0) {
+  const clock = (text) => {
+    const [h, m] = text.split(':').map(Number);
+    return h + m / 60;
+  };
+  return clock(arr) - arrZone + 24 * nextDay - (clock(dep) - depZone);
+}
+
+// One timetabled flight: its number, local departure and arrival, each airport's clock
+// against UTC on that date, and whether it lands on a later local date.
+const leg = (flight, dep, depZone, arr, arrZone, nextDay = 0) => ({
+  flight,
+  dep,
+  depZone,
+  arr,
+  arrZone,
+  nextDay,
+  hours: blockHours(dep, depZone, arr, arrZone, nextDay),
+});
 
 /**
- * Non-stop passenger routes and their scheduled times in each direction, in
- * hours, as listed for November 2026 on public schedule sites. Times differ by
- * direction because of the wind, and shift by a quarter of an hour or so with
- * the season, so the average of the two directions is used to work out a speed.
+ * Non-stop passenger routes with one timetabled flight in each direction, as
+ * scheduled for the week of 10 to 16 November 2026. Times differ by direction
+ * because of the wind, and shift by a quarter of an hour or so with the
+ * season, so the average of the two directions is used to work out a speed.
  *
- * `there` is from -> to, `back` is to -> from. `flights` names one service in
- * each direction so anyone can look the times up for themselves.
+ * The times were read on 13 November 2026: Qantas, British Airways and Japan
+ * Airlines from each airline's own site, LATAM from airport boards and
+ * FlightAware because LATAM's site refused the lookup. docs/flight-times.md
+ * has the sources. Clocks are those in force that week: Sydney +11, Perth +8,
+ * Auckland +13, Santiago and São Paulo −3, Johannesburg and Cape Town +2,
+ * London 0, New York −5, Los Angeles −8, Tokyo +9.
  */
-export const ROUTES = [
-  { from: 'Sydney', to: 'Santiago', there: hm(12, 30), back: hm(14, 10), flights: 'Qantas QF27 and QF28' },
-  { from: 'Sydney', to: 'Johannesburg', there: hm(14, 30), back: hm(11, 55), flights: 'Qantas QF63 and QF64' },
-  { from: 'Santiago', to: 'Auckland', there: hm(12, 20), back: hm(11, 5), flights: 'LATAM LA801 and LA800' },
-  { from: 'Perth', to: 'Johannesburg', there: hm(11, 10), back: hm(9, 40), flights: 'Qantas QF65 and QF66' },
-  { from: 'São Paulo', to: 'Johannesburg', there: hm(8, 55), back: hm(9, 50), flights: 'LATAM LA8058 and LA8059' },
-  { from: 'Sydney', to: 'Perth', there: hm(5, 0), back: hm(4, 10), flights: 'Qantas QF643 and QF648' },
-  { from: 'London', to: 'Cape Town', there: hm(11, 50), back: hm(12, 0), flights: 'British Airways BA59 and BA58' },
-  { from: 'London', to: 'New York', there: hm(8, 0), back: hm(7, 5), flights: 'British Airways BA117 and BA112' },
-  { from: 'Los Angeles', to: 'Tokyo', there: hm(12, 5), back: hm(9, 55), flights: 'Japan Airlines JL15 and JL16' },
+const TIMETABLE = [
+  ['Sydney', 'Santiago', 'Qantas', leg('QF27', '10:35', 11, '09:05', -3), leg('QF28', '13:00', -3, '17:10', 11, 1)],
+  ['Sydney', 'Johannesburg', 'Qantas', leg('QF63', '09:30', 11, '15:00', 2), leg('QF64', '17:35', 2, '14:30', 11, 1)],
+  ['Santiago', 'Auckland', 'LATAM', leg('LA801', '12:55', -3, '17:15', 13, 1), leg('LA800', '19:45', 13, '14:50', -3)],
+  ['Perth', 'Johannesburg', 'Qantas', leg('QF65', '13:15', 8, '18:25', 2), leg('QF66', '21:35', 2, '13:15', 8, 1)],
+  ['São Paulo', 'Johannesburg', 'LATAM', leg('LA8058', '22:50', -3, '12:45', 2, 1), leg('LA8059', '15:35', 2, '20:25', -3)],
+  ['Sydney', 'Perth', 'Qantas', leg('QF643', '08:10', 11, '10:10', 8), leg('QF648', '11:20', 8, '18:30', 11)],
+  ['London', 'Cape Town', 'British Airways', leg('BA59', '22:20', 0, '12:10', 2, 1), leg('BA58', '18:55', 2, '04:55', 0, 1)],
+  ['London', 'New York', 'British Airways', leg('BA117', '08:20', 0, '11:20', -5), leg('BA112', '18:10', -5, '06:15', 0, 1)],
+  ['Los Angeles', 'Tokyo', 'Japan Airlines', leg('JL15', '12:30', -8, '17:35', 9, 1), leg('JL16', '17:05', 9, '10:00', -8)],
 ];
+
+/**
+ * The routes as the rest of the app uses them. `there` is the scheduled time
+ * from -> to in hours and `back` is to -> from, both worked out from the
+ * timetable above. `flights` names the two services so anyone can look them up.
+ */
+export const ROUTES = TIMETABLE.map(([from, to, airline, out, home]) => ({
+  from,
+  to,
+  there: out.hours,
+  back: home.hours,
+  flights: `${airline} ${out.flight} and ${home.flight}`,
+  out,
+  home,
+}));
 
 /** Distances for a pair of places, and the speeds a known flight time would need. */
 export function routeStats(a, b, hours = null) {

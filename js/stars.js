@@ -3,9 +3,15 @@
 // epoch J2000 (right ascension h m s, declination d m s) and are turned into
 // positions for the date on show in astro.js.
 //
-// The table was entered by hand. tools/check-maths.mjs checks each star lies
-// inside its stated constellation and that several well-known angles between
-// stars come out right.
+// The table was entered by hand, to the nearest second. Every position has
+// been checked against the SIMBAD astronomical database: all are within 8
+// arcseconds (0.002°), which is the rounding. tools/check-stars.mjs repeats
+// that comparison online, and tools/check-maths.mjs repeats it against the
+// copy of SIMBAD's figures kept in data/star-catalogue.json.
+//
+// Stars drift slowly against each other. The app does not allow for that, so
+// by now the fastest of these, Alpha Centauri, is about 0.03° from where the
+// table puts it. Nothing shown is finer than 0.1°.
 
 const TABLE = `
 Sirius|CMa|06 45 09|-16 42 58|-1.46

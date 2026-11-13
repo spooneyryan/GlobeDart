@@ -45,6 +45,8 @@ import { GlobeView } from './views/globeView.js';
 import { FlatView } from './views/flatView.js';
 import { SkyView } from './views/skyView.js';
 import { ARGUMENTS, ARGUMENT_BY_ID, TOOLS, TOUR } from './arguments/index.js';
+import { EXPLAIN } from './explain.js';
+import { initInfo, refreshInfo, infoButton, explainHtml } from './info.js';
 import { HorizonView } from './views/horizonView.js';
 import { FlightView } from './views/flightView.js';
 import { FLIGHT_LIMITS, flightScene, schulerMinutes } from './flight.js';
@@ -461,16 +463,16 @@ function renderHorizon(hz) {
   const flatHorizon = layered && hz.traced.flat.horizonKm !== null ? fmtD(hz.traced.flat.horizonKm) : 'no limit';
   const flatDip = layered ? ((hz.traced.flat.dipRad ?? 0) * 180) / Math.PI : 0;
   $('hz-table').tBodies[0].innerHTML = `
-    <tr><td>Hidden from the bottom up</td><td class="${some ? 'bad' : ''}">${amount(hz.hiddenM)}</td>
+    <tr><td>Hidden from the bottom up${infoButton('hz.hidden', 'how much is hidden')}</td><td class="${some ? 'bad' : ''}">${amount(hz.hiddenM)}</td>
       <td class="${flatSome ? 'bad' : ''}">${amount(hz.flatHiddenM)}</td></tr>
     <tr><td>In view</td><td>${all ? 'none' : fmtH(hz.visibleM)}</td><td>${amount(hz.targetM - hz.flatHiddenM)}</td></tr>
-    <tr><td>Distance to the horizon</td><td>${far ? fmtD(hz.horizonKm) : layered ? 'beyond it' : 'no limit'}</td><td>${flatHorizon}</td></tr>
-    <tr><td>Horizon below eye level</td><td>${layered && !far ? '<span class="dim">n/a</span>' : deg(hz.dipDeg, 2)}</td>
+    <tr><td>Distance to the horizon${infoButton('hz.horizon', 'distance to the horizon')}</td><td>${far ? fmtD(hz.horizonKm) : layered ? 'beyond it' : 'no limit'}</td><td>${flatHorizon}</td></tr>
+    <tr><td>Horizon below eye level${infoButton('hz.dip', 'horizon below eye level')}</td><td>${layered && !far ? '<span class="dim">n/a</span>' : deg(hz.dipDeg, 2)}</td>
       <td>${deg(flatDip, 2)}</td></tr>
     ${
       layered
         ? ''
-        : `<tr><td>All of it is hidden beyond</td><td>${Number.isFinite(hz.goneKm) ? fmtD(hz.goneKm) : 'never'}</td><td>never</td></tr>`
+        : `<tr><td>All of it is hidden beyond${infoButton('hz.gone', 'where it goes out of sight')}</td><td>${Number.isFinite(hz.goneKm) ? fmtD(hz.goneKm) : 'never'}</td><td>never</td></tr>`
     }`;
   $('hz-verdict').textContent = flatSome
     ? `In this air the flat model hides ${fmtH(hz.flatHiddenM)} too, and the globe ${amount(hz.hiddenM)}. See below for how to tell the two apart.`
@@ -543,14 +545,12 @@ function computeFlight() {
 
 function renderFlight(fl) {
   $('fl-table').tBodies[0].innerHTML = `
-    <tr><td>Nose comes down each minute</td><td>${fmtAngle(fl.rateDegPerMin)}</td><td>0°</td></tr>
+    <tr><td>Nose comes down each minute${infoButton('fl.rate', 'how fast the nose comes down')}</td><td>${fmtAngle(fl.rateDegPerMin)}</td><td>0°</td></tr>
     <tr><td>Each hour</td><td>${fmtAngle(fl.rateDegPerMin * 60)}</td><td>0°</td></tr>
     <tr><td>Over ${fmtTime(fl.minutes)}</td><td>${fmtAngle(fl.turnDeg)}</td><td>0°</td></tr>
-    <tr><td>Once right round takes</td><td>${fmtTime(fl.hoursRound * 60)}</td><td class="dim">no way round</td></tr>
-    <tr><td>Flying dead straight for ${fmtTime(fl.minutes)} gains</td><td>${fmtH(fl.climbM)}</td><td>nothing</td></tr>`;
-  $('fl-verdict').textContent =
-    'Either way the pilot pushes nothing and feels nothing: an aircraft trimmed to hold its height follows the ' +
-    'ground beneath it. So what pilots do, or do not do, with the nose cannot tell the two models apart.';
+    <tr><td>Once right round takes${infoButton('fl.round', 'once round')}</td><td>${fmtTime(fl.hoursRound * 60)}</td><td class="dim">no way round</td></tr>
+    <tr><td>Flying dead straight for ${fmtTime(fl.minutes)} gains${infoButton('fl.climb', 'flying dead straight')}</td><td>${fmtH(fl.climbM)}</td><td>nothing</td></tr>`;
+  $('fl-verdict').textContent = 'Either way the pilot pushes nothing and feels nothing, so this cannot tell the two models apart.';
   $('fl-notice').innerHTML = `
     <p>An airliner's inertial navigation unit senses turning against the stars, not against the ground. Carried
     round a globe at ${fmtSpeed(fl.speedKmh)} it has to allow for <b class="g">${fmtAngle(fl.rateDegPerMin * 60)} an
@@ -662,7 +662,6 @@ function renderObservations() {
   const kind = $('ob-kind').value;
   $('ob-amount-row').hidden = kind === 'all' || kind === 'none';
   $('ob-amount-label').textContent = kind === 'visible' ? 'How much of the top showed' : 'How much was hidden';
-  $('ob-note').hidden = !observations.length;
 
   const html = observations
     .map((o, i) => {
@@ -899,6 +898,24 @@ const FLIGHT_INTRO = {
     <p class="try">Press "Fly the lap", then change the speed and the length of the stretch.</p>`,
 };
 
+// ---------- showing the working ----------
+
+// What the tool on show last worked out. The info boxes read their numbers from it.
+let workings = null;
+
+function showWorkings(data) {
+  workings = data;
+  refreshInfo();
+  const list = $('all-maths');
+  if (!list.open) return;
+  const html = Object.entries(EXPLAIN)
+    .filter(([, entry]) => entry.maths && entry.tool === state.mode)
+    .map(([key, entry]) => `<h3>${esc(entry.title)}</h3>${explainHtml(key, data, app)}`)
+    .join('');
+  const body = $('all-maths-body');
+  if (body.innerHTML !== html) body.innerHTML = html;
+}
+
 // ---------- the guided tour ----------
 
 const TOUR_END = {
@@ -992,6 +1009,7 @@ function update() {
     for (const v of flViews) v.update(fl);
     renderFlight(fl);
     renderDemo(fl);
+    showWorkings(fl);
     syncInputs();
     clearTimeout(hashTimer);
     hashTimer = setTimeout(writeHash, 300);
@@ -1003,6 +1021,7 @@ function update() {
     renderHorizon(hz);
     renderObservations();
     renderDemo(hz);
+    showWorkings(hz);
     syncInputs();
     clearTimeout(hashTimer);
     hashTimer = setTimeout(writeHash, 300);
@@ -1055,6 +1074,7 @@ function update() {
   renderStars(c);
   renderRoutes(c);
   renderDemo(c);
+  showWorkings(c);
   syncInputs();
   clearTimeout(hashTimer);
   hashTimer = setTimeout(writeHash, 300);
@@ -1064,7 +1084,7 @@ function update() {
 
 // The lift the air really gives at this height, and the lift each model would
 // need for its plain geometry to land on the measurement.
-function bendingRow(obs, globe, flat) {
+function bendingRow(obs, globe, flat, extra = '') {
   const show = (x, d) => (Math.abs(x) < 0.005 ? 'none' : `${deg(Math.abs(x), d)}${x < 0 ? ' down' : ''}`);
   const fits = (x) => (Math.abs(x - obs.lift) <= 0.1 ? 'good' : 'bad');
   // A model that needs more lift than the air gives has the direction spelled out.
@@ -1074,7 +1094,7 @@ function bendingRow(obs, globe, flat) {
   const real = hidden ? '<td class="dim">n/a</td>' : `<td>${show(obs.lift, 2)}</td>`;
   const globeNeed = obs.el - globe.trueEl;
   const flatNeed = obs.el - flat.trueEl;
-  return `<tr><td>Lift from the air</td>${real}
+  return `<tr><td>Lift from the air${extra}</td>${real}
     ${hidden ? '<td class="dim">n/a</td>' : `<td class="${fits(globeNeed)}">${need(globeNeed, 2)}</td>`}
     <td class="${fits(flatNeed)}">${need(flatNeed, 1)}</td></tr>`;
 }
@@ -1084,17 +1104,17 @@ function renderCompare(c, flatMiss) {
   const cls = (miss) => (miss > 1 ? 'bad' : 'good');
   const up = c.obs.el > -0.833;
   $('compare').tBodies[0].innerHTML = `
-    <tr><td>Elevation</td><td>${deg(c.obs.el)}</td><td>${deg(c.globe.el)}</td>
+    <tr><td>Elevation${infoButton('sky.elevation', 'elevation')}</td><td>${deg(c.obs.el)}</td><td>${deg(c.globe.el)}</td>
       <td class="${Math.abs(c.flat.el - c.obs.el) > 1 ? 'bad' : ''}">${deg(c.flat.el)}</td></tr>
-    <tr><td>Bearing</td><td>${bearing(c.obs.az)}</td><td>${bearing(c.globe.az)}</td>
+    <tr><td>Bearing${infoButton('sky.bearing', 'bearing')}</td><td>${bearing(c.obs.az)}</td><td>${bearing(c.globe.az)}</td>
       <td class="${Math.abs(wrap180(c.flat.az - c.obs.az)) > 1 ? 'bad' : ''}">${bearing(c.flat.az)}</td></tr>
-    <tr><td>Sun's width</td><td>${deg(c.obs.sizeDeg, 2)}</td><td>${deg(c.globe.sizeDeg, 2)}</td>
+    <tr><td>Sun's width${infoButton('sky.width', 'width of the sun')}</td><td>${deg(c.obs.sizeDeg, 2)}</td><td>${deg(c.globe.sizeDeg, 2)}</td>
       <td class="${Math.abs(c.flat.sizeDeg - c.obs.sizeDeg) > 0.03 ? 'bad' : ''}">${deg(c.flat.sizeDeg, 2)}</td></tr>
     <tr><td>Sun visible?</td><td>${up ? 'yes' : 'no, set'}</td><td>${c.globe.el > -0.833 ? 'yes' : 'no, set'}</td>
       <td class="${up ? '' : 'bad'}">yes</td></tr>
-    <tr><td>Miss</td><td class="dim">n/a</td><td class="${cls(globeMiss)}">${deg(globeMiss, 2)}</td>
+    <tr><td>Miss${infoButton('sky.miss', 'miss')}</td><td class="dim">n/a</td><td class="${cls(globeMiss)}">${deg(globeMiss, 2)}</td>
       <td class="${cls(flatMiss)}">${deg(flatMiss, 1)}</td></tr>
-    ${bendingRow(c.obs, c.globe, c.flat)}`;
+    ${bendingRow(c.obs, c.globe, c.flat, infoButton('sky.lift', 'lift from the air'))}`;
 }
 
 // Rebuilt only when its content changes, so the buttons in it stay clickable during playback.
@@ -1186,9 +1206,7 @@ function renderFit() {
   const fit = getFit();
   const air = currentAir();
   const current = rmsMiss(fit.samples, (s, lat, lon) => flatPredict(s, lat, lon, flatParams(), air));
-  $('fit-scope').textContent =
-    `Typical miss across ${REF_CITIES.length} cities, every hour of ${isoDay(state.date)} (UTC), ` +
-    `counting daytime only.`;
+  $('fit-scope').textContent = `Typical miss: ${REF_CITIES.length} cities, every hour of ${isoDay(state.date)}, daytime only.`;
   $('fit-bars').innerHTML =
     bar('Globe', fit.globeRms, 'var(--globe)') +
     bar('Flat, as set', current, 'var(--flat)') +
@@ -1318,8 +1336,8 @@ function renderStars(c) {
     bar('Flat, as set', current, 'var(--flat)', 90) +
     bar('Flat, best', fit.best?.rms ?? null, 'var(--flat)', 90);
   $('star-fit-note').textContent =
-    `Typical miss across ${STARS.length} stars seen from ${REF_CITIES.length} cities, counting only stars that are ` +
-    `really above the horizon. ${fit.best ? `No height for the stars does better than ${deg(fit.best.rms)}.` : ''}`;
+    `Typical miss: ${STARS.length} stars from ${REF_CITIES.length} cities. ` +
+    `${fit.best ? `No height for the stars does better than ${deg(fit.best.rms)}.` : ''}`;
 
   $('star-cities').tBodies[0].innerHTML = s.cities
     .map((x) => {
@@ -1534,12 +1552,7 @@ function syncInputs() {
   setIfIdle($('air-pressure'), state.pressureHpa);
   const change = Math.round((airFactor(currentAir()) - 1) * 100);
   $('air-note').textContent =
-    state.refraction === 'off'
-      ? 'No bending: every position is plain geometry.'
-      : custom
-        ? `This air bends light ${change ? `${Math.abs(change)}% ${change > 0 ? 'more' : 'less'} than` : 'the same as'} standard air. ` +
-          'Use the pressure where you stand: weather reports adjust it to sea level.'
-        : 'Standard air, 10 °C and 1010 hPa. The same lift is applied to the measurement and to both models.';
+    custom ? `This air bends light ${change ? `${Math.abs(change)}% ${change > 0 ? 'more' : 'less'} than` : 'the same as'} standard air.` : '';
   $('btn-play').textContent = state.playing ? 'Pause' : 'Play';
   // Over the horizon
   $('hz-shape').value = state.shape;
@@ -1721,6 +1734,8 @@ function bindControls() {
       requestUpdate();
     });
   }
+  initInfo(() => ({ data: workings, app }));
+  $('all-maths').addEventListener('toggle', requestUpdate);
   bindHorizonControls();
   bindFlightControls();
   bindEarthControls();

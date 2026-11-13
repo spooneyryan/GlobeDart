@@ -1067,6 +1067,169 @@ code {
   text-align: left;
 }
 
+/* ---------- info boxes ---------- */
+
+/* A label that carries an info button keeps its control at a usable width. */
+#refraction {
+  min-width: 128px;
+  flex: none;
+}
+
+.info {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  margin-left: 3px;
+  border-radius: 50%;
+  border: 1px solid #4a607a;
+  background: transparent;
+  color: var(--muted);
+  font: italic 600 11px/1 Georgia, 'Times New Roman', serif;
+  text-transform: none;
+  letter-spacing: 0;
+  vertical-align: 1px;
+  cursor: pointer;
+  flex: none;
+}
+
+.info:hover,
+.info[aria-expanded='true'] {
+  background: #1d4d8f;
+  border-color: #2f6fc4;
+  color: var(--text);
+}
+
+.info.as-text {
+  cursor: default;
+  vertical-align: 0;
+  margin: 0 1px;
+}
+
+#info-box {
+  position: fixed;
+  z-index: 20;
+  width: 360px;
+  max-width: calc(100vw - 16px);
+  max-height: min(78vh, 640px);
+  overflow-y: auto;
+  background: var(--panel-2);
+  border: 1px solid #3b516b;
+  border-radius: var(--radius);
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.6);
+  padding: 12px 14px 14px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.info-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.info-title {
+  font-size: 14px;
+}
+
+.info-close {
+  flex: none;
+  padding: 0 8px;
+  font-size: 16px;
+  line-height: 24px;
+}
+
+.info-body p,
+#all-maths-body p {
+  margin: 0 0 8px;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.info-body h4,
+#all-maths-body h4 {
+  margin: 10px 0 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+h4.globe {
+  color: var(--globe);
+}
+
+h4.flat {
+  color: var(--flat);
+}
+
+.steps {
+  margin: 0 0 10px;
+  border-top: 1px solid var(--line);
+}
+
+/* One line of working: what it is, then how it is found, with the value on the right. */
+.step {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1px 12px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.step span {
+  color: var(--muted);
+}
+
+.step code {
+  grid-column: 1;
+  justify-self: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.step b {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.info-code {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+#all-maths-body h3 {
+  margin: 16px 0 6px;
+  font-size: 13.5px;
+  color: var(--text);
+}
+
+.hint:empty {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  /* A sheet along the bottom, so the views stay in sight above it. */
+  #info-box {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    top: auto;
+    width: auto;
+    max-width: none;
+    max-height: 46vh;
+    border-radius: var(--radius) var(--radius) 0 0;
+    border-width: 1px 0 0;
+  }
+}
+
 /* ---------- touch screens ---------- */
 
 @media (pointer: coarse) {
@@ -1096,6 +1259,16 @@ code {
   .check input {
     width: 20px;
     height: 20px;
+  }
+  .info {
+    width: 22px;
+    height: 22px;
+    min-height: 0;
+    font-size: 14px;
+    margin-left: 5px;
+  }
+  .info-close {
+    min-height: 32px;
   }
   .own-actions button,
   #route-table button,
