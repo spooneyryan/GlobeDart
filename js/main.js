@@ -1,4 +1,18 @@
-import { subsolarPoint, observedSun, sunEvents, seasons, starPoints, observedStar, wrap180 } from './astro.js';
+import {
+  subsolarPoint,
+  observedSun,
+  sunEvents,
+  seasons,
+  starPoints,
+  observedStar,
+  wrap180,
+  moonPoint,
+  observedMoon,
+  moonPhase,
+  nextFullMoon,
+  nextLunarEclipse,
+  publishedEclipse,
+} from './astro.js';
 import {
   globePredict,
   flatPredict,
@@ -6,6 +20,13 @@ import {
   skySeparation,
   rmsMiss,
   flatFitCurve,
+  globePredictNear,
+  globePlace,
+  flatPlace,
+  litFraction,
+  viewsApartDeg,
+  brightSideDeg,
+  earthShadow,
 } from './models.js';
 import { CITIES, REF_CITIES } from './cities.js';
 import {
@@ -78,6 +99,8 @@ const state = {
   stars: false,
   star: 'Polaris',
   starHeightKm: 5000, // flat model only: how high its layer of stars sits
+  moon: false,
+  moonHeightKm: 5000, // flat model only: how high its moon sits
   trails: false,
   route: null, // { from, to } as place names, or null
   // Over the horizon
@@ -223,6 +246,7 @@ function compute() {
   });
   const stars = state.stars ? computeStars() : null;
   const chosen = stars?.points[stars.selected];
+  const moon = state.moon ? computeMoon(sub, obs, globe, flat) : null;
   return {
     sub,
     obs,
@@ -230,8 +254,16 @@ function compute() {
     flat,
     cities,
     stars,
-    // What the sight lines in the outside views point at: the sun, or the chosen star.
-    sight: stars
+    moon,
+    // What the sight lines in the outside views point at: the moon, the chosen star, or the sun.
+    sight: moon
+      ? {
+          name: 'the moon',
+          obs: moon.obs,
+          cities: moon.cities,
+          flat: { lat: moon.point.lat, lon: moon.point.lon, heightKm: state.moonHeightKm },
+        }
+      : stars
       ? {
           name: stars.name,
           obs: stars.measured[stars.selected],
@@ -245,6 +277,123 @@ function compute() {
     own: measurements.find(isShown) ?? null,
     ownLines: measurements.filter((m) => m.az !== null && sameMoment(m, 300000)),
   };
+}
+
+// ---------- the moon ----------
+
+// The published answer to "is there an eclipse now?" takes a search, so it is kept for the minute it was asked about.
+const eclipseCache = { key: null, kind: 'none' };
+function eclipseNow() {
+  const key = Math.floor(state.date.getTime() / 60000);
+  if (eclipseCache.key !== key) Object.assign(eclipseCache, { key, kind: publishedEclipse(state.date) });
+  return eclipseCache.kind;
+}
+
+// The moon is treated like the sun and the stars: both models are told the place it is overhead.
+// The globe is also told its distance, which is close enough to matter.
+function computeMoon(sub, sunObs, sunGlobe, sunFlat) {
+  const { date, lat, lon } = state;
+  const air = currentAir();
+  const point = moonPoint(date);
+  const dome = { sunHeightKm: state.moonHeightKm, lightRangeKm: Infinity };
+  const obs = observedMoon(date, lat, lon, air);
+  const globe = globePredictNear(point, lat, lon, air);
+  const flat = flatPredict(point, lat, lon, dome, air);
+  // Where everything is in space, under each model, for working out what is lit and who sees which face.
+  const g = { sun: globePlace(sub.lat, sub.lon, sub.distKm), moon: globePlace(point.lat, point.lon, point.distKm) };
+  const f = { sun: flatPlace(sub.lat, sub.lon, state.sunHeightKm), moon: flatPlace(point.lat, point.lon, state.moonHeightKm) };
+  const phase = moonPhase(date);
+  const here = { globe: globePlace(lat, lon), flat: flatPlace(lat, lon) };
+  return {
+    point,
+    obs,
+    globe,
+    flat,
+    phase,
+    lit: {
+      measured: phase.fraction,
+      globe: litFraction(g.sun, g.moon, here.globe),
+      flat: litFraction(f.sun, f.moon, here.flat),
+    },
+    // Which way the lit side faces in the sky: toward the sun, wherever each puts the sun.
+    side: {
+      measured: brightSideDeg(obs, sunObs),
+      globe: brightSideDeg(globe, sunGlobe),
+      flat: brightSideDeg(flat, sunFlat),
+    },
+    shadow: earthShadow(sub, point),
+    published: eclipseNow(),
+    cities: REF_CITIES.map((place) => {
+      const o = observedMoon(date, place.lat, place.lon, air);
+      const fl = flatPredict(point, place.lat, place.lon, dome, air);
+      return {
+        ...place,
+        obs: o,
+        flat: fl,
+        miss: skySeparation(o, fl),
+        implied: impliedSunHeightKm(point, place.lat, place.lon, o.el),
+        litGlobe: litFraction(g.sun, g.moon, globePlace(place.lat, place.lon)),
+        litFlat: litFraction(f.sun, f.moon, flatPlace(place.lat, place.lon)),
+        // How far round the moon this city's view is from the observer's.
+        turnGlobe: viewsApartDeg(g.moon, here.globe, globePlace(place.lat, place.lon)),
+        turnFlat: viewsApartDeg(f.moon, here.flat, flatPlace(place.lat, place.lon)),
+      };
+    }),
+  };
+}
+
+/** The reference city with the moon highest in its sky at a moment. */
+function cityUnderMoon(date) {
+  return REF_CITIES.reduce((best, place) =>
+    observedMoon(date, place.lat, place.lon).el > observedMoon(date, best.lat, best.lon).el ? place : best,
+  );
+}
+
+const percent = (fraction) => `${Math.round(fraction * 100)}%`;
+
+function renderMoon(c) {
+  const m = c.moon;
+  $('moon-panel').hidden = !m;
+  if (!m) return;
+  const up = m.obs.el > 0;
+  const height = (el) => (el > 0 ? deg(el) : `${deg(-el)} below`);
+  const flatMiss = skySeparation(m.obs, m.flat);
+  const globeMiss = skySeparation(m.obs, m.globe);
+  const off = (a, b) => (Math.abs(a - b) > 0.05 ? 'bad' : '');
+  const shadow = (kind) => (kind === 'none' ? 'no' : `yes, ${kind}`);
+  $('moon-compare').tBodies[0].innerHTML = `
+    <tr><td>Elevation${infoButton('moon.position', 'where the moon is')}</td><td>${height(m.obs.el)}</td><td>${height(m.globe.el)}</td>
+      <td class="${Math.abs(m.flat.el - m.obs.el) > 1 ? 'bad' : ''}">${deg(m.flat.el)}</td></tr>
+    <tr><td>Bearing</td><td>${bearing(m.obs.az)}</td><td>${bearing(m.globe.az)}</td>
+      <td class="${Math.abs(wrap180(m.flat.az - m.obs.az)) > 1 ? 'bad' : ''}">${bearing(m.flat.az)}</td></tr>
+    <tr><td>Width</td><td>${deg(m.obs.sizeDeg, 2)}</td><td>${deg(m.globe.sizeDeg, 2)}</td>
+      <td class="${Math.abs(m.flat.sizeDeg - m.obs.sizeDeg) > 0.03 ? 'bad' : ''}">${deg(m.flat.sizeDeg, 2)}</td></tr>
+    <tr><td>Face lit${infoButton('moon.phase', 'how much of the moon is lit')}</td><td>${percent(m.lit.measured)}</td>
+      <td class="${off(m.lit.globe, m.lit.measured)}">${percent(m.lit.globe)}</td>
+      <td class="${off(m.lit.flat, m.lit.measured)}">${percent(m.lit.flat)}</td></tr>
+    <tr><td>In the Earth's shadow?${infoButton('moon.eclipse', 'eclipses of the moon')}</td><td>${shadow(m.published)}</td>
+      <td class="${m.shadow.kind === m.published ? '' : 'bad'}">${shadow(m.shadow.kind)}</td>
+      <td class="${m.published === 'none' ? '' : 'bad'}">cannot be</td></tr>
+    <tr><td>Miss</td><td class="dim">n/a</td><td class="${globeMiss > 1 ? 'bad' : 'good'}">${deg(globeMiss, 2)}</td>
+      <td class="${flatMiss > 1 ? 'bad' : 'good'}">${deg(flatMiss, 1)}</td></tr>`;
+  const seen = m.cities.filter((x) => x.obs.el > 0);
+  const lits = seen.map((x) => x.litFlat);
+  $('moon-note').textContent =
+    seen.length > 1
+      ? `Everyone who can see the moon sees ${percent(m.lit.measured)} of its face lit. A ball lit by the flat model's sun ` +
+        `would show anything from ${percent(Math.min(...lits))} to ${percent(Math.max(...lits))}, depending on where you stand.`
+      : up
+        ? 'The moon is up here, but in too few of the other cities to compare.'
+        : 'The moon is below the horizon here.';
+  $('moon-cities').tBodies[0].innerHTML = m.cities
+    .map((x) => {
+      const visible = x.obs.el > 0;
+      return `<tr><td>${x.name}</td>
+        <td class="${visible ? '' : 'dim'}">${visible ? percent(x.litGlobe) : 'not up'}</td>
+        <td class="${visible && Math.abs(x.litFlat - m.lit.measured) > 0.05 ? 'bad' : visible ? '' : 'dim'}">${visible ? percent(x.litFlat) : 'n/a'}</td>
+        <td class="${visible && x.turnFlat > 5 ? 'bad' : visible ? '' : 'dim'}">${visible ? deg(x.turnFlat, 0) : 'n/a'}</td></tr>`;
+    })
+    .join('');
 }
 
 // ---------- stars ----------
@@ -825,8 +974,9 @@ function bindObservationForm() {
 const city = (name) => CITIES.find((c) => c.name === name);
 
 // What every demonstration starts from. `pair` is which pair of views a phone shows.
-const SUN_DEMO = { follow: true, sightLines: false, flatLighting: 'model', stars: false, trails: false };
-const STAR_DEMO = { follow: true, sightLines: true, flatLighting: 'model', stars: true, trails: true };
+const SUN_DEMO = { follow: true, sightLines: false, flatLighting: 'model', stars: false, trails: false, moon: false };
+const STAR_DEMO = { follow: true, sightLines: true, flatLighting: 'model', stars: true, trails: true, moon: false };
+const MOON_DEMO = { follow: true, sightLines: false, flatLighting: 'model', stars: false, trails: false, moon: true };
 
 /** The middle of the night at the observer, so the real sky is dark. */
 function goToMidnight() {
@@ -834,6 +984,7 @@ function goToMidnight() {
   state.date = new Date(noon.getTime() + 12 * 3600000);
 }
 
+const MOON_OFF = '<p>Turn on "Show the moon" in the panel on the left to carry on with this demonstration.</p>';
 const STARS_OFF = '<p>Turn on "Show the stars" in the panel on the left to carry on with this demonstration.</p>';
 
 // The arguments themselves live in js/arguments/, one file each. This is what they are handed.
@@ -863,7 +1014,13 @@ const app = {
   SOUND_KMH,
   SUN_DEMO,
   STAR_DEMO,
+  MOON_DEMO,
   STARS_OFF,
+  MOON_OFF,
+  percent,
+  nextFullMoon,
+  nextLunarEclipse,
+  cityUnderMoon,
 };
 
 const INTRO = {
@@ -987,10 +1144,10 @@ function setLook(look) {
 }
 
 function followLook(c) {
-  // Keep the sun in view, or the chosen star when the stars are on.
+  // Keep the sun in view, or the chosen star when the stars are on, or the moon when it is.
   const s = c.stars;
-  const obs = s ? s.measured[s.selected] : c.obs;
-  const flat = s ? s.flat[s.selected] : c.flat;
+  const obs = c.moon ? c.moon.obs : s ? s.measured[s.selected] : c.obs;
+  const flat = c.moon ? c.moon.flat : s ? s.flat[s.selected] : c.flat;
   const diff = wrap180(flat.az - obs.az);
   const together = Math.abs(diff) < 115;
   const az = together ? obs.az + diff / 2 : obs.az;
@@ -1053,14 +1210,27 @@ function update() {
       `${s.name}: ${deg(f.el)} above the horizon, bearing ${bearing(f.az)}\n` +
       `${deg(skySeparation(s.measured[s.selected], f))} from where it is measured`;
   }
+  const m = c.moon;
+  if (m) {
+    globeText =
+      m.globe.el > 0
+        ? `Moon: ${deg(m.globe.el)} above the horizon, bearing ${bearing(m.globe.az)}\n${percent(m.lit.globe)} of its face lit`
+        : `Moon is ${deg(-m.globe.el)} below the horizon\nThe ground is in the way`;
+    flatText =
+      `Moon: ${deg(m.flat.el)} above the horizon, bearing ${bearing(m.flat.az)}\n` +
+      `${percent(m.lit.flat)} lit, and ${deg(skySeparation(m.obs, m.flat))} from where it is measured`;
+  }
+  const skyMoon = (key) =>
+    m && { model: m[key], measured: m.obs, lit: m.lit[key], side: m.side[key], shadow: key === 'globe' ? m.shadow : null };
   const skyStars = (model, trails) =>
     s && { model, measured: s.measured, mags: s.mags, lines: s.lines, trails, selected: s.selected, name: s.name };
-  globeSky.update(c.globe, c.obs, true, globeText, c.own, skyStars(s?.globe, s?.globeTrails));
-  flatSky.update(c.flat, c.obs, c.flat.lit, flatText, c.own, skyStars(s?.flat, s?.flatTrails));
+  globeSky.update(c.globe, c.obs, true, globeText, c.own, skyStars(s?.globe, s?.globeTrails), skyMoon('globe'));
+  flatSky.update(c.flat, c.obs, c.flat.lit, flatText, c.own, skyStars(s?.flat, s?.flatTrails), skyMoon('flat'));
   const views = $('views');
   views.classList.toggle('has-own', c.ownLines.length > 0);
   views.classList.toggle('has-route', !!c.route);
   views.classList.toggle('has-stars', !!s);
+  views.classList.toggle('has-moon', !!m);
   for (const el of document.querySelectorAll('.sight-name')) el.textContent = c.sight.name;
 
   renderCompare(c, flatMiss);
@@ -1072,6 +1242,7 @@ function update() {
   renderFit();
   renderCities(c);
   renderStars(c);
+  renderMoon(c);
   renderRoutes(c);
   renderDemo(c);
   showWorkings(c);
@@ -1541,6 +1712,9 @@ function syncInputs() {
   $('star-height').value = heightToSlider(state.starHeightKm);
   $('star-height-label').textContent = niceHeight(state.starHeightKm);
   $('trails').checked = state.trails;
+  $('moon').checked = state.moon;
+  $('moon-height').value = heightToSlider(state.moonHeightKm);
+  $('moon-height-label').textContent = niceHeight(state.moonHeightKm);
   $('route-from').value = state.route?.from ?? '';
   $('route-to').value = state.route?.to ?? '';
   $('sight-lines').checked = state.sightLines;
@@ -1692,6 +1866,21 @@ function bindControls() {
     requestUpdate();
   });
 
+  // Moon
+  $('moon-height').addEventListener('input', (e) => {
+    state.moonHeightKm = sliderToHeight(Number(e.target.value));
+    state.moon = true;
+    requestUpdate();
+  });
+  const moonJump = (when) => () => {
+    state.date = when();
+    Object.assign(state, { moon: true, follow: true, playing: false });
+    // Go to where the moon is high in the sky at that moment.
+    setObserver(cityUnderMoon(state.date), true);
+  };
+  $('btn-fullmoon').addEventListener('click', moonJump(() => nextFullMoon(new Date(state.date.getTime() + 3600000))));
+  $('btn-eclipse').addEventListener('click', moonJump(() => nextLunarEclipse(new Date(state.date.getTime() + 3600000)).peak));
+
   // Distances
   const places = [...CITIES].sort((a, b) => a.name.localeCompare(b.name)).map((c) => `<option>${c.name}</option>`);
   for (const id of ['route-from', 'route-to']) {
@@ -1712,6 +1901,7 @@ function bindControls() {
     ['sight-lines', 'sightLines'],
     ['follow', 'follow'],
     ['stars', 'stars'],
+    ['moon', 'moon'],
     ['trails', 'trails'],
   ]) {
     $(id).addEventListener('change', (e) => {
@@ -2002,6 +2192,10 @@ function writeHash() {
     p.set('sh', Math.round(state.starHeightKm));
     if (state.trails) p.set('tr', 1);
   }
+  if (state.moon) {
+    p.set('mo', 1);
+    p.set('mh', Math.round(state.moonHeightKm));
+  }
   if (state.route) p.set('rt', `${state.route.from}~${state.route.to}`);
   if (state.mode === 'flight') {
     p.set('v', 'f');
@@ -2053,6 +2247,8 @@ function readHash() {
   state.tour = tourStep === null ? null : { step: Math.round(tourStep) - 1, shown: p.get('tv') === '1' };
   if (state.tour && !state.tour.shown) state.demo = null;
   state.stars = p.get('st') === '1';
+  state.moon = p.get('mo') === '1';
+  state.moonHeightKm = num('mh', MIN_HEIGHT_KM, MAX_HEIGHT_KM) ?? state.moonHeightKm;
   state.trails = p.get('tr') === '1';
   if (starIndex(p.get('star')) >= 0) state.star = p.get('star');
   state.starHeightKm = num('sh', MIN_HEIGHT_KM, MAX_HEIGHT_KM) ?? state.starHeightKm;

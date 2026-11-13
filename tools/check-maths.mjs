@@ -51,7 +51,15 @@ import {
   globeAngleDeg,
   flatMapDistanceKm,
   flatVec,
+  globePredictNear,
+  globePlace,
+  flatPlace,
+  litFraction,
+  viewsApartDeg,
+  brightSideDeg,
+  earthShadow,
 } from '../js/models.js';
+import { moonPoint, observedMoon, moonPhase, nextFullMoon, nextLunarEclipse, lunarEclipses, publishedEclipse } from '../js/astro.js';
 import { CITIES, REF_CITIES } from '../js/cities.js';
 import {
   shadowToElevation,
@@ -481,6 +489,83 @@ check('and the flat model hides nothing over cold water', traceView(coldAir, { .
 const nearer = traceView(warmAir, { ...sizes, distanceKm: 10, curved: false }).hiddenM;
 check('on flat ground the warm-water hiding grows in step with distance', near(warmFlat.hiddenM / nearer, 2, 0.35), `${f(nearer, 1)} m at 10 km, ${f(warmFlat.hiddenM, 1)} m at 20 km`);
 
+// 18. The moon.
+let worstMoon = 0;
+let worstMoonFar = 0;
+for (let day = 0; day < 30; day += 3) {
+  for (let hour = 0; hour < 24; hour += 3) {
+    const t = new Date(Date.UTC(2026, 10, 1 + day, hour));
+    const mp = moonPoint(t);
+    for (const c of REF_CITIES) {
+      const o = observedMoon(t, c.lat, c.lon, null);
+      worstMoon = Math.max(worstMoon, skySeparation(o, globePredictNear(mp, c.lat, c.lon, null)));
+      worstMoonFar = Math.max(worstMoonFar, skySeparation(o, globePredict(mp, c.lat, c.lon, null)));
+    }
+  }
+}
+check('globe model, given the moon\'s distance, matches the published moon within 0.01 deg', worstMoon < 0.01, `worst ${f(worstMoon, 4)}`);
+check('without the distance it is up to a degree out, so the distance matters', worstMoonFar > 0.9 && worstMoonFar < 1.1, f(worstMoonFar));
+// What is lit.
+const origin = [0, 0, 0];
+check('a ball is fully lit with the light behind the viewer, dark with it behind the ball, half lit from the side',
+  near(litFraction([10, 0, 0], origin, [5, 0, 0]), 1, 1e-12) && near(litFraction([10, 0, 0], origin, [-5, 0, 0]), 0, 1e-12) && near(litFraction([10, 0, 0], origin, [0, 5, 0]), 0.5, 1e-12));
+const fullMoon = nextFullMoon(new Date(Date.UTC(2026, 10, 13)));
+const moonPlaces = (t, sunHeight = 5000, moonHeight = 5000) => {
+  const sp = subsolarPoint(t);
+  const mp = moonPoint(t);
+  return {
+    sp, mp,
+    globe: { sun: globePlace(sp.lat, sp.lon, sp.distKm), moon: globePlace(mp.lat, mp.lon, mp.distKm) },
+    flat: { sun: flatPlace(sp.lat, sp.lon, sunHeight), moon: flatPlace(mp.lat, mp.lon, moonHeight) },
+  };
+};
+let worstPhase = 0;
+for (const t of [fullMoon, new Date(fullMoon.getTime() + 7.4 * 86400000), new Date(fullMoon.getTime() - 11 * 86400000)]) {
+  const p = moonPlaces(t);
+  for (const c of REF_CITIES) worstPhase = Math.max(worstPhase, Math.abs(litFraction(p.globe.sun, p.globe.moon, globePlace(c.lat, c.lon)) - moonPhase(t).fraction));
+}
+check('on the globe every city sees the published phase, within one part in a hundred', worstPhase < 0.01, f(worstPhase, 4));
+const atFull = moonPlaces(fullMoon);
+const moonUp = REF_CITIES.filter((c) => observedMoon(fullMoon, c.lat, c.lon).el > 0);
+const flatLits = moonUp.map((c) => litFraction(atFull.flat.sun, atFull.flat.moon, flatPlace(c.lat, c.lon)));
+check('at full moon the flat model shows different cities phases more than 40 points apart',
+  moonUp.length >= 4 && Math.max(...flatLits) - Math.min(...flatLits) > 0.4, `${f(Math.min(...flatLits) * 100, 0)}% to ${f(Math.max(...flatLits) * 100, 0)}% in ${moonUp.length} cities`);
+check('directly under the flat model\'s moon, with the sun at the same height, exactly half is lit',
+  near(litFraction(atFull.flat.sun, atFull.flat.moon, flatPlace(atFull.mp.lat, atFull.mp.lon)), 0.5, 1e-9));
+// Which face.
+let turnGlobe = 0;
+let turnFlat = 0;
+for (const a of moonUp) {
+  for (const b of moonUp) {
+    turnGlobe = Math.max(turnGlobe, viewsApartDeg(atFull.globe.moon, globePlace(a.lat, a.lon), globePlace(b.lat, b.lon)));
+    turnFlat = Math.max(turnFlat, viewsApartDeg(atFull.flat.moon, flatPlace(a.lat, a.lon), flatPlace(b.lat, b.lon)));
+  }
+}
+check('on the globe no two cities see the moon from directions more than 2 deg apart', turnGlobe < 2, f(turnGlobe, 2));
+check('on the flat model some see it from directions more than 60 deg apart', turnFlat > 60, f(turnFlat, 0));
+check('the lit side points straight up when the sun is directly above the moon, and to the right when the sun is to the right',
+  near(brightSideDeg({ az: 100, el: 10 }, { az: 100, el: 40 }), 0, 1e-9) && near(brightSideDeg({ az: 100, el: 0 }, { az: 130, el: 0 }), 90, 1e-9));
+// Eclipses: the Earth's shadow, from plain geometry, against every published eclipse.
+const published = lunarEclipses(2020, 2035);
+const wrongEclipses = published.filter((e) => earthShadow(subsolarPoint(e.peak), moonPoint(e.peak)).kind !== (e.kind === 'penumbral' ? 'none' : e.kind));
+const dark = published.filter((e) => e.kind !== 'penumbral').length;
+check(`the globe's shadow puts the moon in or out of it correctly for all ${published.length} eclipses of 2020 to 2035 (${dark} partial or total)`,
+  published.length > 30 && wrongEclipses.length === 0, wrongEclipses.map((e) => e.peak.toISOString().slice(0, 10)).join(', '));
+let falseAlarms = 0;
+let fullMoons = 0;
+for (let t = nextFullMoon(new Date(Date.UTC(2020, 0, 1))); t.getUTCFullYear() < 2036; t = nextFullMoon(new Date(t.getTime() + 5 * 86400000))) {
+  fullMoons++;
+  const real = published.some((e) => Math.abs(e.peak - t) < 86400000 && e.kind !== 'penumbral');
+  if ((earthShadow(subsolarPoint(t), moonPoint(t)).kind !== 'none') !== real) falseAlarms++;
+}
+check(`and gives no eclipse at any other of the ${fullMoons} full moons of 2020 to 2035`, falseAlarms === 0, `${falseAlarms} wrong`);
+const total = nextLunarEclipse(new Date(Date.UTC(2026, 10, 13)), true);
+const totalShadow = earthShadow(subsolarPoint(total.peak), moonPoint(total.peak));
+check('the next total eclipse is found, and the moon is wholly inside the shadow at its peak',
+  total.kind === 'total' && totalShadow.kind === 'total' && publishedEclipse(total.peak) === 'total', `${total.peak.toISOString().slice(0, 10)}, ${f(totalShadow.offDeg, 2)} deg from the middle`);
+check("the Earth's shadow at the moon is between 2.5 and 3 times the moon's width", totalShadow.shadowDeg / totalShadow.moonDeg > 2.5 && totalShadow.shadowDeg / totalShadow.moonDeg < 3,
+  f(totalShadow.shadowDeg / totalShadow.moonDeg, 2));
+
 // 17. The explanations the app shows, and the code they describe.
 // The flat model's formulas, as the info boxes give them, against plain vectors on the map.
 let worstMap = 0;
@@ -522,7 +607,8 @@ check('every explanation has a button that opens it', unused.length === 0, unuse
 // Each explanation is worked through with real numbers and must come out whole.
 const plain = (n, d = 1) => n.toFixed(d);
 const stubApp = {
-  state: { lat: hereNow.lat, lon: hereNow.lon, sunHeightKm: 5000, refraction: 'custom', tempC: -5, pressureHpa: 1000, mode: 'sky' },
+  state: { lat: hereNow.lat, lon: hereNow.lon, sunHeightKm: 5000, moonHeightKm: 5000, refraction: 'custom', tempC: -5, pressureHpa: 1000, mode: 'sky' },
+  percent: (x) => `${Math.round(x * 100)}%`,
   deg: (n, d = 1) => `${plain(n, d)}°`,
   km: (n) => `${Math.round(n)} km`,
   kmh: (n) => `${Math.round(n)} km/h`,
@@ -548,6 +634,28 @@ const sample = {
       return { ...c, obs: o, flat: flatPredict(sub, c.lat, c.lon, params, air), implied: impliedSunHeightKm(sub, c.lat, c.lon, o.el) };
     }),
     route: { a: routeEnds[0], b: routeEnds[1], ...routeStats(routeEnds[0], routeEnds[1], 13.3) },
+    moon: (() => {
+      const mp = moonPoint(now);
+      const p = moonPlaces(now);
+      const dome = { sunHeightKm: 5000, lightRangeKm: Infinity };
+      const eye = { globe: globePlace(hereNow.lat, hereNow.lon), flat: flatPlace(hereNow.lat, hereNow.lon) };
+      return {
+        point: mp,
+        obs: observedMoon(now, hereNow.lat, hereNow.lon, air),
+        globe: globePredictNear(mp, hereNow.lat, hereNow.lon, air),
+        flat: flatPredict(mp, hereNow.lat, hereNow.lon, dome, air),
+        lit: { measured: moonPhase(now).fraction, globe: litFraction(p.globe.sun, p.globe.moon, eye.globe), flat: litFraction(p.flat.sun, p.flat.moon, eye.flat) },
+        shadow: earthShadow(sub, mp),
+        published: publishedEclipse(now),
+        cities: REF_CITIES.map((c) => ({
+          ...c,
+          obs: observedMoon(now, c.lat, c.lon, air),
+          litFlat: litFraction(p.flat.sun, p.flat.moon, flatPlace(c.lat, c.lon)),
+          turnGlobe: viewsApartDeg(p.globe.moon, eye.globe, globePlace(c.lat, c.lon)),
+          turnFlat: viewsApartDeg(p.flat.moon, eye.flat, flatPlace(c.lat, c.lon)),
+        })),
+      };
+    })(),
   },
   horizon: { ...horizonScene({ eyeM: 1.7, targetM: 50, distanceKm: 20, k: K_STANDARD }), flatHiddenM: 0, traced: null },
   flight: flightScene({ speedKmh: 900, altitudeM: 11000, minutes: 10 }),

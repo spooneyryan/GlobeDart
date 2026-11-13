@@ -249,6 +249,19 @@
         </section>
 
         <section class="sky-only">
+          <h2>Moon <button type="button" class="info" data-info="moon.about" aria-label="How this is worked out: the moon">i</button></h2>
+          <label class="check"><input type="checkbox" id="moon" /> Show the moon</label>
+          <label class="stack">
+            <span class="row"><span>Flat model: height of the moon</span><output id="moon-height-label"></output></span>
+            <input type="range" id="moon-height" min="0" max="1000" step="1" />
+          </label>
+          <div class="buttons two">
+            <button id="btn-fullmoon" title="Jump to the next full moon">Next full moon</button>
+            <button id="btn-eclipse" title="Jump to the next eclipse of the moon">Next eclipse</button>
+          </div>
+        </section>
+
+        <section class="sky-only">
           <h2>Display</h2>
           <label class="check"><input type="checkbox" id="sight-lines" /> Sight lines from <span class="ref-count"></span> cities</label>
           <label class="check"><input type="checkbox" id="follow" /> Keep the sun in view</label>
@@ -472,7 +485,24 @@
           </table>
         </section>
 
-        <section id="stars-panel" hidden>
+        <section id="moon-panel" class="sky-only" hidden>
+          <h2>The moon</h2>
+          <table id="moon-compare" class="data">
+            <thead>
+              <tr><th></th><th class="measured">Measured</th><th class="globe">Globe</th><th class="flat">Flat</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <p class="hint" id="moon-note"></p>
+          <table id="moon-cities" class="data">
+            <thead>
+              <tr><th>Seen from <button type="button" class="info" data-info="moon.face" aria-label="How this is worked out: the same face">i</button></th><th>Lit, measured</th><th class="flat">Lit, flat</th><th class="flat">Face turned</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </section>
+
+        <section id="stars-panel" class="sky-only" hidden>
           <h2>The star: <span id="star-name"></span> <button type="button" class="info" data-info="sky.stars" aria-label="How this is worked out: the stars">i</button></h2>
           <table id="star-compare" class="data">
             <thead>

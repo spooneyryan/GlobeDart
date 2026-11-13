@@ -3,6 +3,12 @@
 Ideas for GlobeDart, and what has become of each. The first four are built in a first version; what is left of
 each is listed under it.
 
+## Also built: the moon
+
+"Show the moon" puts the moon in both skies, with its phase as each model lights it, and three arguments use it:
+phases, the same face, and eclipses. Still to do: the moon's own tilt and wobble (so the insets could show its
+markings the right way up), eclipses of the sun, and the tides.
+
 ## Also built: a guided tour
 
 "Take the tour" walks through six arguments in order, each opening with a question to ask before the answer is

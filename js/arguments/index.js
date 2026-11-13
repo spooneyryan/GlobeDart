@@ -22,12 +22,15 @@ import december from './december.js';
 import polaris from './polaris.js';
 import southern from './southern.js';
 import flights from './flights.js';
+import phases from './phases.js';
+import sameface from './sameface.js';
+import eclipse from './eclipse.js';
 import ship from './ship.js';
 import eyelevel from './eyelevel.js';
 import looming from './looming.js';
 import pilots from './pilots.js';
 
-export const ARGUMENTS = [sunset, angles, sunrise, december, polaris, southern, flights, ship, eyelevel, looming, pilots];
+export const ARGUMENTS = [sunset, angles, sunrise, december, polaris, southern, phases, sameface, eclipse, flights, ship, eyelevel, looming, pilots];
 
 export const ARGUMENT_BY_ID = Object.fromEntries(ARGUMENTS.map((a) => [a.id, a]));
 

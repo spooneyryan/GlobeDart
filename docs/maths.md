@@ -107,6 +107,51 @@ The flat model's stars are handled the same way, all at one height of their own.
 - Checks: section 4 (overhead under the sun; a known triangle at the pole; equinox sunrise bears 45°, not 90°),
   section 17 (the formulas agree with measuring straight across the map).
 
+## 3a. The moon
+
+The moon is handled like the sun and the stars, with one addition for the globe: it is close enough that its
+distance D has to be allowed for.
+
+**Globe, where it is.** With γ the angle round the Earth between the observer and the place the moon is overhead:
+
+```
+height = atan((cos γ − R ÷ D) ÷ sin γ)
+```
+
+For something far away R ÷ D is nothing, and this becomes 90° − γ, the formula in section 2. The bearing is the
+same as in section 2. The flat model uses section 3 unchanged, with a height of its own for the moon.
+
+**What is lit.** The moon is a ball with one half in sunlight. The part of its face you see lit depends only on
+the angle at the moon between the sun and you:
+
+```
+lit = (1 + cos(angle)) ÷ 2
+```
+
+The same rule is used for both models; only where they put the sun, the moon and the observer differs. On the
+globe the sun is about 400 times further off than the moon, so everyone on Earth sees nearly the same angle. On
+the flat model the sun and moon are both a few thousand kilometres above the observer, and the angle changes
+with where you stand.
+
+**Which face.** The angle at the moon between two observers' lines of sight is how far round the moon one is from
+the other. On the globe it can be at most `atan(Earth's width ÷ D)`, under 2°.
+
+**Eclipses.** On the globe the Earth casts a shadow away from the sun. With r and d the sun's radius and distance,
+the fully dark part has this radius at the moon's distance, with a fiftieth added for the Earth's air:
+
+```
+shadow = 1.02 × (R − D × (r − R) ÷ d)
+```
+
+The moon is eclipsed when its distance from the point opposite the sun, as an angle, is less than the shadow's
+radius plus its own, and totally when it is less than the shadow's radius minus its own. On the flat model the
+Earth is never between the sun and the moon.
+
+- Code: `js/models.js`, `globePredictNear`, `litFraction`, `viewsApartDeg`, `brightSideDeg`, `earthShadow`.
+  Published values: `js/astro.js`, `moonPoint`, `observedMoon`, `moonPhase`, `publishedEclipse`.
+- Checks: section 18 (position within 0.01°; phase within one part in a hundred; all 37 eclipses of 2020 to 2035
+  placed correctly, and no eclipse at any other of the 198 full moons in those years).
+
 ## 4. Scoring the models
 
 **Miss.** The angle on the sky between where a model puts the sun and where it is measured. With each position a

@@ -2,7 +2,8 @@
 
 A static, no-backend web app that shows the same moment and the same observer under two models,
 a globe and the usual flat-earth map, and scores each against what people actually measure:
-the sun, the stars, how long real flights take, what disappears over the horizon, and what level flight takes.
+the sun, the moon, the stars, how long real flights take, what disappears over the horizon, and what level flight
+takes.
 
 ## Run it
 
@@ -130,6 +131,25 @@ score across every star.
   height has its own slider and its own best-fit button.
 - Stars fade in daylight but never vanish, so a demonstration works at any hour.
 
+## The moon
+
+"Show the moon" adds the moon to both skies, with a panel of its own. Like the sun and the stars, both models are
+told the place on Earth it is directly overhead. The globe is also told how far away it is, because the moon is
+close enough for that to shift it by up to a degree depending on where you stand.
+
+- **Where it is.** With its distance, the globe model matches the published position within 0.01°. Without it,
+  the model would be up to a degree out.
+- **Its phase.** The round insets show the moon as each model lights it. On the globe everyone sees the same
+  phase. A ball lit by the flat model's sun would show a different phase from every city at once.
+- **Which face.** The table lists how far each city's view of the moon would be turned from the observer's. On
+  the globe it is under 2° for everyone. On the flat model it can be more than 90°.
+- **Eclipses.** The Earth's shadow at the moon is worked out from the sizes and distances of the sun, Earth and
+  moon. That one sum gives every partial and total eclipse published for 2020 to 2035 and no others. On the flat
+  model the Earth is never between the sun and the moon.
+- "Next full moon" and "Next eclipse" jump to those moments and move the observer to where the moon is high.
+- The flat model's moon is treated as a ball lit by its sun. A moon that gives its own light would say nothing
+  about phases, so there is nothing in that version to test.
+
 ## Distances and flight times
 
 Pick two places, or one of the listed non-stop flights, to draw the route on both maps and compare the shortest
@@ -243,5 +263,5 @@ Strasbourg, France. Those keep their own terms.
 
 ## Not built yet
 
-The moon, a full star catalogue, entering your own star measurements, and flat-model variants
+A full star catalogue, entering your own star measurements, and flat-model variants
 beyond the standard map with adjustable heights and light range. More ideas are in `docs/future.md`.

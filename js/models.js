@@ -5,7 +5,7 @@
 //
 // Each prediction is worked out as plain geometry (`trueEl`) and then lifted by
 // the same air as the measurement (`el`).
-import { DEG, EARTH_RADIUS_KM, wrap360 } from './astro.js';
+import { DEG, EARTH_RADIUS_KM, SUN_RADIUS_KM, MOON_RADIUS_KM, wrap360 } from './astro.js';
 import { STANDARD_AIR, lift } from './refraction.js';
 
 /** Unit vector for a latitude/longitude on the globe (y = north pole). */
@@ -187,6 +187,112 @@ export function flatPredict(sub, lat, lon, params, air = STANDARD_AIR) {
 export function impliedSunHeightKm(sub, lat, lon, observedElDeg) {
   if (observedElDeg <= 0) return null;
   return flatMapDistanceKm(lat, lon, sub.lat, sub.lon) * Math.tan(observedElDeg * DEG);
+}
+
+// ---------- the moon ----------
+//
+// The moon is close enough that where you stand on the Earth changes where you
+// see it, by up to a degree. So the globe model needs one more published fact
+// for the moon than for the sun: its distance.
+
+/**
+ * Globe model for something near, at a distance D from the centre of the
+ * Earth. With γ the angle round the Earth between the observer and the place
+ * it is overhead, and R the Earth's radius:
+ *
+ *   height   = atan((cos γ − R ÷ D) ÷ sin γ)
+ *   bearing  = the same as for something far away
+ *
+ * For something far away R ÷ D is nothing and this becomes 90° − γ, the
+ * formula in globePredict. For the moon R ÷ D is about 1/60.
+ */
+export function globePredictNear(sub, lat, lon, air = STANDARD_AIR) {
+  const far = globePredict(sub, lat, lon, null);
+  const gamma = globeAngleDeg(lat, lon, sub.lat, sub.lon) * DEG;
+  const ratio = EARTH_RADIUS_KM / sub.distKm;
+  const trueEl = Math.atan2(Math.cos(gamma) - ratio, Math.sin(gamma)) / DEG;
+  // It looks a little larger to someone it is overhead for, who is one Earth radius nearer.
+  const nearness = 1 / Math.sqrt(1 + ratio * ratio - 2 * ratio * Math.cos(gamma));
+  const sizeDeg = (2 * Math.atan(Math.tan((sub.sizeDeg / 2) * DEG) * nearness)) / DEG;
+  return { az: far.az, el: trueEl + lift(trueEl, air), trueEl, sizeDeg };
+}
+
+const minus = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const times = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
+
+/** The angle in degrees between two directions given as vectors. */
+export function angleBetweenDeg(a, b) {
+  const dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  return Math.acos(Math.min(1, Math.max(-1, dot / (Math.hypot(...a) * Math.hypot(...b))))) / DEG;
+}
+
+/** A position in space on the globe model, in km from the Earth's centre. */
+export function globePlace(lat, lon, distKm = EARTH_RADIUS_KM) {
+  return times(globeVec(lat, lon), distKm);
+}
+
+/** A position in space on the flat model, in km: a place on the map, and a height above it. */
+export function flatPlace(lat, lon, heightKm = 0) {
+  const v = flatVec(lat, lon);
+  return [v[0] * EARTH_RADIUS_KM, heightKm, v[2] * EARTH_RADIUS_KM];
+}
+
+/**
+ * How much of a ball's face is lit, as a fraction, for someone looking at it.
+ * It depends only on the angle at the ball between the light and the viewer:
+ *   lit = (1 + cos(angle)) ÷ 2
+ * Light behind the viewer gives a full face; light behind the ball gives none.
+ * The same rule serves both models. Only the positions differ.
+ */
+export function litFraction(sunPlace, moonPlace, eyePlace) {
+  const angle = angleBetweenDeg(minus(sunPlace, moonPlace), minus(eyePlace, moonPlace));
+  return (1 + Math.cos(angle * DEG)) / 2;
+}
+
+/**
+ * How far apart two viewers' lines of sight to the moon are, in degrees. It is
+ * how much of a different face of the moon one sees from the other.
+ */
+export function viewsApartDeg(moonPlace, eyeOne, eyeTwo) {
+  return angleBetweenDeg(minus(eyeOne, moonPlace), minus(eyeTwo, moonPlace));
+}
+
+/**
+ * Which way the lit side of the moon faces in the sky: the direction from the
+ * moon toward the sun, in degrees clockwise from straight up. Each of `moon`
+ * and `sun` is a bearing `az` and a height `el`.
+ */
+export function brightSideDeg(moon, sun) {
+  const dAz = (sun.az - moon.az) * DEG;
+  const eS = sun.el * DEG;
+  const eM = moon.el * DEG;
+  return Math.atan2(Math.cos(eS) * Math.sin(dAz), Math.sin(eS) * Math.cos(eM) - Math.cos(eS) * Math.sin(eM) * Math.cos(dAz)) / DEG;
+}
+
+/**
+ * The Earth's shadow at the moon, on the globe model. The sun is larger than
+ * the Earth, so the fully dark part of the shadow narrows to a point; at the
+ * moon's distance D it is still wider than the moon. With R the Earth's
+ * radius, and r and d the sun's radius and distance:
+ *
+ *   dark shadow's radius at the moon  = R − D × (r − R) ÷ d
+ *
+ * The Earth's air blocks light as well, which makes the shadow about a
+ * fiftieth larger than the solid Earth's alone. Astronomers have allowed for
+ * that since the 1700s, and so does this.
+ *
+ * `offDeg` is how far the moon is from the middle of the shadow, the point
+ * exactly opposite the sun. The moon is eclipsed when that is less than the
+ * shadow's radius plus the moon's own.
+ */
+export const SHADOW_GROWTH = 1.02;
+export function earthShadow(sub, moon) {
+  const offDeg = 180 - globeAngleDeg(sub.lat, sub.lon, moon.lat, moon.lon);
+  const shadowKm = SHADOW_GROWTH * (EARTH_RADIUS_KM - (moon.distKm * (SUN_RADIUS_KM - EARTH_RADIUS_KM)) / sub.distKm);
+  const shadowDeg = Math.atan(shadowKm / moon.distKm) / DEG;
+  const moonDeg = Math.atan(MOON_RADIUS_KM / moon.distKm) / DEG;
+  const kind = offDeg < shadowDeg - moonDeg ? 'total' : offDeg < shadowDeg + moonDeg ? 'partial' : 'none';
+  return { offDeg, shadowKm, shadowDeg, moonDeg, kind };
 }
 
 /**

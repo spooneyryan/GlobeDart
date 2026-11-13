@@ -989,8 +989,16 @@ code {
   margin-bottom: 0;
 }
 
-/* The magnified sun has nothing to say while a star is being followed. */
-.has-stars .scope {
+/* The magnified sun has nothing to say while a star is being followed. The moon's inset stays. */
+.has-stars:not(.has-moon) .scope {
+  display: none;
+}
+
+.scope-moon {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   display: none;
 }
 

@@ -13,8 +13,8 @@
 // The numbers shown here are the ones the models produced: nothing is worked
 // out a second time, so the explanation cannot drift from the calculation.
 // tools/check-maths.mjs checks that every function named in `code` exists.
-import { DEG, EARTH_RADIUS_KM, SUN_RADIUS_KM, wrap180 } from './astro.js';
-import { skySeparation } from './models.js';
+import { DEG, EARTH_RADIUS_KM, SUN_RADIUS_KM, MOON_RADIUS_KM, wrap180 } from './astro.js';
+import { skySeparation, globeAngleDeg } from './models.js';
 import { STANDARD_AIR, airFactor, standardLift } from './refraction.js';
 import { K_STANDARD, STANDARD_GROUND_AIR, OVERTURNING_LAPSE } from './horizon.js';
 import { schulerMinutes } from './flight.js';
@@ -364,6 +364,156 @@ export const EXPLAIN = {
       it in Google Earth to see the real ground under them.</p>
       <p>Google Earth is itself drawn as a globe, so it is somewhere to look, not a proof of anything. Nothing is
       sent to Google until you follow the link.</p>`,
+  },
+
+  // ---------- the moon ----------
+
+  'moon.about': {
+    tool: 'sky',
+    title: 'How the moon is handled',
+    code: [['astro.js', 'moonPoint', 'observedMoon', 'moonPhase'], ['models.js', 'globePredictNear', 'flatPredict']],
+    body: (c, { state, km }) => `
+      <p>The moon is treated like the sun and the stars. Both models are told the place on Earth it is directly
+      overhead, and each works out where you should see it.</p>
+      <p>The globe is told one thing more: how far away the moon is${c.moon ? `, ${km(c.moon.point.distKm)} at this moment` : ''}.
+      It is close enough that where you stand on the Earth shifts it in your sky by up to a degree, twice its own
+      width.</p>
+      <p>The flat model puts the moon at a height of its own, ${km(state.moonHeightKm)} as set, and treats it as a
+      ball lit by the flat model's sun. Some hold instead that the moon gives its own light. That version says
+      nothing about why the moon has phases, or why its lit side always faces the sun, so there is nothing in it
+      to work out.</p>`,
+  },
+
+  'moon.position': {
+    tool: 'sky',
+    title: 'Where each model puts the moon',
+    maths: true,
+    code: [['models.js', 'globePredictNear', 'globeAngleDeg', 'flatPredict']],
+    body(c, { state, deg, km }) {
+      const m = c.moon;
+      if (!m) return '<p>Turn on "Show the moon" to see the working.</p>';
+      const gamma = globeAngleDeg(state.lat, state.lon, m.point.lat, m.point.lon);
+      return `
+      <p>For the sun, the globe model treats the light as arriving in parallel rays. The moon is too close for
+      that: someone standing under it is one Earth radius nearer to it than someone who sees it on the horizon.</p>
+      ${heading('globe', 'Globe')}
+      ${steps(
+        step('Angle round the Earth from you to the place the moon is overhead', 'γ', deg(gamma, 2)),
+        step("Earth's radius over the moon's distance", 'R ÷ D', `${km(EARTH_RADIUS_KM)} ÷ ${km(m.point.distKm)}`),
+        step('Height by geometry', 'atan((cos γ − R ÷ D) ÷ sin γ)', deg(m.globe.trueEl, 2)),
+        step('If the moon were treated as far away, it would be', '90° − γ', deg(90 - gamma, 2)),
+        step('Globe says, with the lift from the air', '', deg(m.globe.el, 2)),
+      )}
+      ${heading('flat', 'Flat')}
+      ${steps(
+        step('Distance on the flat map from you to the place under the moon', 'd', km(m.flat.groundKm)),
+        step('Height given to the moon', 'H', km(state.moonHeightKm)),
+        step('Height by geometry', 'atan(H ÷ d)', deg(m.flat.trueEl, 2)),
+        step('Flat says, with the lift from the air', '', deg(m.flat.el, 2)),
+      )}
+      ${steps(step('Measured', '', deg(m.obs.el, 2)))}`;
+    },
+  },
+
+  'moon.phase': {
+    tool: 'sky',
+    title: "How much of the moon's face is lit",
+    maths: true,
+    code: [['models.js', 'litFraction', 'globePlace', 'flatPlace']],
+    body(c, { state, km, percent }) {
+      const m = c.moon;
+      if (!m) return '<p>Turn on "Show the moon" to see the working.</p>';
+      const angle = (lit) => `${(Math.acos(2 * lit - 1) / DEG).toFixed(1)}°`;
+      return `
+      <p>The moon is a ball with one half in sunlight. How much of the lit half you see depends on one angle: the
+      angle at the moon between the sun and you. With the sun behind you it is 0° and the face is full. With the
+      sun behind the moon it is 180° and the face is dark.</p>
+      ${steps(step('Fraction of the face lit', '(1 + cos(angle)) ÷ 2', ''))}
+      <p>The same rule is used for both models. Only where they put the sun, the moon and you differs.</p>
+      ${heading('globe', 'Globe')}
+      ${steps(
+        step('The sun is', '', `${km(c.sub.distKm)} away`),
+        step('The moon is', '', `${km(m.point.distKm)} away`),
+        step('Angle at the moon between the sun and you', '', angle(m.lit.globe)),
+        step('Face lit', '', percent(m.lit.globe)),
+      )}
+      <p>The sun is so much further off than the moon that everyone on Earth is in nearly the same direction from
+      the moon, and sees the same phase.</p>
+      ${heading('flat', 'Flat')}
+      ${steps(
+        step('The sun and the moon are both above the map, at', '', `${km(state.sunHeightKm)} and ${km(state.moonHeightKm)}`),
+        step('You are on the ground, looking up', '', ''),
+        step('Angle at the moon between the sun and you', '', angle(m.lit.flat)),
+        step('Face lit', '', percent(m.lit.flat)),
+      )}
+      <p>Here the angle changes with where you stand. Directly under the flat model's moon the sunlight always
+      comes from the side, so the most you could see is half.</p>
+      ${steps(step('Measured, the same everywhere', '', percent(m.lit.measured)))}`;
+    },
+  },
+
+  'moon.face': {
+    tool: 'sky',
+    title: 'Who sees which face of the moon',
+    maths: true,
+    code: [['models.js', 'viewsApartDeg', 'globePlace', 'flatPlace']],
+    body(c, { state, deg, km }) {
+      const m = c.moon;
+      if (!m) return '<p>Turn on "Show the moon" to see the working.</p>';
+      const seen = m.cities.filter((x) => x.obs.el > 0);
+      const far = seen.reduce((a, b) => (b.turnFlat > a.turnFlat ? b : a), seen[0]);
+      return `
+      <p>Two people looking at the moon see the same face only if they look at it from the same direction. The
+      angle at the moon between their two lines of sight is how far round it one of them is from the other.</p>
+      <p>"Lit, measured" is the same in every row because the published figure does not depend on where you are.
+      "Lit, flat" and "Face turned" are what a ball ${km(state.moonHeightKm)} above a flat earth would show each
+      city, compared with the observer.</p>
+      ${
+        far
+          ? steps(
+              step(`${far.name}: view turned from yours, on the globe`, 'angle at the moon', deg(far.turnGlobe, 2)),
+              step('The same on the flat model', 'angle at the moon', deg(far.turnFlat, 0)),
+              step('The most it can be on the globe', "atan(Earth's width ÷ moon's distance)", deg(Math.atan((2 * EARTH_RADIUS_KM) / m.point.distKm) / DEG, 2)),
+            )
+          : '<p>The moon is not up in any of the cities at this moment.</p>'
+      }
+      <p>Everyone sees the same markings on the moon. That fits a moon far away, and does not fit one a few
+      thousand kilometres overhead.</p>`;
+    },
+  },
+
+  'moon.eclipse': {
+    tool: 'sky',
+    title: "The Earth's shadow on the moon",
+    maths: true,
+    code: [['models.js', 'earthShadow'], ['astro.js', 'publishedEclipse']],
+    body(c, { state, deg, km }) {
+      const m = c.moon;
+      if (!m) return '<p>Turn on "Show the moon" to see the working.</p>';
+      const s = m.shadow;
+      return `
+      <p>On the globe the Earth blocks sunlight and casts a shadow straight away from the sun. The sun is bigger
+      than the Earth, so the fully dark part of the shadow narrows with distance. At the moon it is still much
+      wider than the moon.</p>
+      ${heading('globe', 'Globe')}
+      ${steps(
+        step("Earth's radius", 'R', km(EARTH_RADIUS_KM)),
+        step("Sun's radius and distance", 'r, d', `${km(SUN_RADIUS_KM)}, ${km(c.sub.distKm)}`),
+        step("Moon's distance", 'D', km(m.point.distKm)),
+        step('Radius of the dark shadow at the moon, with a fiftieth added for the air', '1.02 × (R − D × (r − R) ÷ d)', km(s.shadowKm)),
+        step('The same as an angle seen from Earth', '', deg(s.shadowDeg, 2)),
+        step("Moon's radius as an angle", `atan(${Math.round(MOON_RADIUS_KM)} km ÷ D)`, deg(s.moonDeg, 2)),
+        step('How far the moon is from the point opposite the sun', '', deg(s.offDeg, 2)),
+        step('Globe says', '', s.kind === 'none' ? 'no eclipse' : `a ${s.kind} eclipse`),
+        step('Published', '', m.published === 'none' ? 'no eclipse' : `a ${m.published} eclipse`),
+      )}
+      <p>The moon is in the shadow when its distance from that point is less than the shadow's radius plus its
+      own, and wholly inside when it is less than the shadow's radius minus its own.</p>
+      ${heading('flat', 'Flat')}
+      <p>The flat model's sun and moon are both above the surface, ${km(state.sunHeightKm)} and
+      ${km(state.moonHeightKm)} up. The Earth is never between them, so no shadow of the Earth can fall on the
+      moon.</p>`;
+    },
   },
 
   // ---------- over the horizon ----------

@@ -6,9 +6,11 @@ import { STANDARD_AIR, lift } from './refraction.js';
 
 export const EARTH_RADIUS_KM = 6371.0088;
 export const SUN_RADIUS_KM = 695700;
+export const MOON_RADIUS_KM = 1737.4;
 export const DEG = Math.PI / 180;
 
 const SUN = Astronomy.Body.Sun;
+const MOON = Astronomy.Body.Moon;
 
 export function wrap180(lon) {
   return ((((lon + 180) % 360) + 360) % 360) - 180;
@@ -76,6 +78,90 @@ export function observedStar(date, lat, lon, point, air = STANDARD_AIR) {
   const hor = Astronomy.Horizon(Astronomy.MakeTime(date), new Astronomy.Observer(lat, lon, 0), point.ra, point.dec);
   const bend = lift(hor.altitude, air);
   return { az: hor.azimuth, el: hor.altitude + bend, lift: bend };
+}
+
+/**
+ * The place on Earth where the moon is directly overhead, with its distance
+ * from the centre of the Earth and its width as seen from there.
+ */
+export function moonPoint(date) {
+  const time = Astronomy.MakeTime(date);
+  const j2000 = Astronomy.GeoVector(MOON, time, true);
+  const eq = Astronomy.EquatorFromVector(Astronomy.RotateVector(Astronomy.Rotation_EQJ_EQD(time), j2000));
+  const distKm = eq.dist * Astronomy.KM_PER_AU;
+  return {
+    lat: eq.dec,
+    lon: wrap180((eq.ra - Astronomy.SiderealTime(time)) * 15),
+    distKm,
+    sizeDeg: (2 * Math.atan(MOON_RADIUS_KM / distKm)) / DEG,
+  };
+}
+
+/** The moon's position in the sky as measured by an observer. */
+export function observedMoon(date, lat, lon, air = STANDARD_AIR) {
+  const time = Astronomy.MakeTime(date);
+  const obs = new Astronomy.Observer(lat, lon, 0);
+  const eq = Astronomy.Equator(MOON, time, obs, true, true);
+  const hor = Astronomy.Horizon(time, obs, eq.ra, eq.dec);
+  const bend = lift(hor.altitude, air);
+  return {
+    az: hor.azimuth,
+    el: hor.altitude + bend,
+    lift: bend,
+    sizeDeg: (2 * Math.atan(MOON_RADIUS_KM / (eq.dist * Astronomy.KM_PER_AU))) / DEG,
+  };
+}
+
+/**
+ * How much of the moon's face is lit, as published: a fraction from 0 (new)
+ * to 1 (full), and whether it is growing. It is the same for everyone on
+ * Earth to within half a percent.
+ */
+export function moonPhase(date) {
+  const time = Astronomy.MakeTime(date);
+  return {
+    fraction: Astronomy.Illumination(MOON, time).phase_fraction,
+    waxing: Astronomy.MoonPhase(time) < 180,
+  };
+}
+
+/** The next full moon after a date. */
+export function nextFullMoon(date) {
+  return Astronomy.SearchMoonPhase(180, date, 40).date;
+}
+
+/**
+ * The next eclipse of the moon in which it enters the dark middle of the
+ * Earth's shadow, as published: its kind ('partial' or 'total') and its peak.
+ */
+export function nextLunarEclipse(date, totalOnly = false) {
+  const wanted = (kind) => kind === 'total' || (!totalOnly && kind === 'partial');
+  let found = Astronomy.SearchLunarEclipse(date);
+  for (let i = 0; i < 24 && !wanted(found.kind); i++) found = Astronomy.NextLunarEclipse(found.peak);
+  return { kind: found.kind, peak: found.peak.date };
+}
+
+/**
+ * Whether the moon is in the dark part of the Earth's shadow at a moment, as
+ * published: 'total', 'partial' or 'none'.
+ */
+export function publishedEclipse(date) {
+  const found = Astronomy.SearchLunarEclipse(new Date(date.getTime() - 6 * 3600000));
+  const minutes = Math.abs(found.peak.date.getTime() - date.getTime()) / 60000;
+  if (found.kind === 'total' && minutes <= found.sd_total) return 'total';
+  if (found.kind !== 'penumbral' && minutes <= found.sd_partial) return 'partial';
+  return 'none';
+}
+
+/** Every eclipse of the moon, of any kind, with its peak in a span of years. For checking. */
+export function lunarEclipses(fromYear, toYear) {
+  const list = [];
+  let found = Astronomy.SearchLunarEclipse(new Date(Date.UTC(fromYear, 0, 1)));
+  while (found.peak.date.getUTCFullYear() <= toYear) {
+    list.push({ kind: found.kind, peak: found.peak.date });
+    found = Astronomy.NextLunarEclipse(found.peak);
+  }
+  return list;
 }
 
 /** Name of the constellation containing a J2000 position, for checking the star table. */

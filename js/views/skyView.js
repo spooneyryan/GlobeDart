@@ -131,6 +131,23 @@ export class SkyView extends View3D {
     this.sun.renderOrder = 4;
     this.scene.add(this.sun);
 
+    // The moon, drawn only when the app passes it in: a ring where it is measured
+    // to be and a disc where this model puts it.
+    this.moonRing = new THREE.Mesh(
+      new THREE.RingGeometry(0.86, 1, 64),
+      new THREE.MeshBasicMaterial({ color: COLORS.measured, depthTest: false, side: THREE.DoubleSide }),
+    );
+    this.moonRing.renderOrder = 4.1;
+    this.moonRing.visible = false;
+    this.scene.add(this.moonRing);
+    this.moon = new THREE.Mesh(
+      new THREE.CircleGeometry(1, 48),
+      new THREE.MeshBasicMaterial({ color: 0xdfe5ec, depthTest: false, side: THREE.DoubleSide }),
+    );
+    this.moon.renderOrder = 4.2;
+    this.moon.visible = false;
+    this.scene.add(this.moon);
+
     // The user's own measurement, when one matches the time and place on show:
     // a diamond if they measured a bearing too, otherwise a ring at their elevation.
     this.ownMark = new THREE.Mesh(
@@ -185,6 +202,10 @@ export class SkyView extends View3D {
     this.starLabel.visible = false;
     this.starMeasuredLabel = this.labels.add('', 'measured');
     this.starMeasuredLabel.visible = false;
+    this.moonLabel = this.labels.add('moon', 'star');
+    this.moonLabel.visible = false;
+    this.moonMeasuredLabel = this.labels.add('moon, measured', 'measured');
+    this.moonMeasuredLabel.visible = false;
 
     // Readout chip and the fixed-magnification "solar filter" inset.
     this.readout = document.createElement('div');
@@ -193,12 +214,14 @@ export class SkyView extends View3D {
     this.scope = document.createElement('div');
     this.scope.className = 'scope';
     this.scope.innerHTML =
-      '<div class="scope-lens"><div class="scope-sun"></div><div class="scope-ground"></div></div>' +
+      '<div class="scope-lens"><div class="scope-sun"></div><div class="scope-ground"></div>' +
+      '<canvas class="scope-moon" width="240" height="240"></canvas></div>' +
       '<div class="scope-caption"></div>';
     container.appendChild(this.scope);
     this.scopeSun = this.scope.querySelector('.scope-sun');
     this.scopeGround = this.scope.querySelector('.scope-ground');
     this.scopeCaption = this.scope.querySelector('.scope-caption');
+    this.scopeMoon = this.scope.querySelector('.scope-moon');
 
     // Drag to look around; wheel or a two-finger pinch to zoom.
     const el = this.renderer.domElement;
@@ -269,8 +292,11 @@ export class SkyView extends View3D {
    * @param own       {az, el} the user's own measurement for this moment, or null (az may be null)
    * @param stars     null, or { model, measured, mags, lines, trails, selected, name }: this model's
    *                  and the measured {az, el} of every star, the index and name of the chosen one
+   * @param moon      null, or { model, measured, lit, side, shadow }: where this model puts the moon and
+   *                  where it is measured ({az, el, sizeDeg}), the fraction of its face this model lights,
+   *                  which way the lit side faces, and the Earth's shadow on it if this model has one
    */
-  update(sun, measured, lit, text, own = null, stars = null) {
+  update(sun, measured, lit, text, own = null, stars = null, moon = null) {
     const el = sun.el;
     const bright = lit ? smooth(-6, 8, el) : 0;
     const dusk = lit ? smooth(-12, -2, el) * (1 - smooth(0, 14, el)) : 0;
@@ -332,7 +358,72 @@ export class SkyView extends View3D {
       el < -sun.sizeDeg / 2 - 0.05
         ? 'Sun is below the horizon'
         : `Sun at the same zoom: ${sun.sizeDeg.toFixed(2)}° wide`;
+    this.updateMoon(moon);
     this.dirty = true;
+  }
+
+  updateMoon(moon) {
+    const show = !!moon;
+    this.moon.visible = show;
+    this.moonRing.visible = show && moon.measured.el > -1.5;
+    this.moonLabel.visible = show && moon.model.el > 1;
+    this.moonMeasuredLabel.visible = show && moon.measured.el > 0;
+    // The inset shows the moon's lit face in place of the sun.
+    this.scopeMoon.style.display = show ? 'block' : 'none';
+    this.scopeSun.style.display = this.scopeGround.style.display = show ? 'none' : '';
+    if (!show) return;
+
+    // Drawn a little larger than life so it can be found; the inset shows its true face.
+    const radius = FAR * Math.tan(Math.max(moon.model.sizeDeg / 2, 0.45) * DEG);
+    this.moon.position.copy(skyDir(moon.model.az, moon.model.el, FAR));
+    this.moon.lookAt(0, 0, 0);
+    this.moon.scale.setScalar(radius);
+    this.moonLabel.pos.copy(skyDir(moon.model.az, moon.model.el - 2.2, FAR));
+    this.moonRing.position.copy(skyDir(moon.measured.az, moon.measured.el, FAR));
+    this.moonRing.lookAt(0, 0, 0);
+    this.moonRing.scale.setScalar(FAR * Math.tan(1.6 * DEG));
+    this.moonMeasuredLabel.pos.copy(skyDir(moon.measured.az, moon.measured.el + 2.6, FAR));
+
+    const ctx = this.scopeMoon.getContext('2d');
+    const size = this.scopeMoon.width;
+    const r = size * 0.36;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, size, size);
+    ctx.translate(size / 2, size / 2);
+    // The unlit face, then the lit part: half the edge, closed by the curved line between light and dark.
+    ctx.fillStyle = '#2a3038';
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.save();
+    ctx.rotate((moon.side - 90) * DEG); // the lit edge is drawn on the right, then turned to face the sun
+    const curve = 2 * moon.lit - 1; // -1 new, 0 half, 1 full
+    ctx.fillStyle = '#e9edf2';
+    ctx.beginPath();
+    ctx.arc(0, 0, r, -Math.PI / 2, Math.PI / 2, false);
+    ctx.ellipse(0, 0, Math.max(0.001, r * Math.abs(curve)), r, 0, Math.PI / 2, curve < 0 ? -Math.PI / 2 : (3 * Math.PI) / 2, curve < 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    if (moon.shadow && moon.shadow.kind !== 'none') {
+      // The Earth's shadow, a disc far wider than the moon, sliding across it from the side away from the sun.
+      const scale = r / moon.shadow.moonDeg;
+      const toward = (moon.side + 180 - 90) * DEG;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.fillStyle = 'rgba(70, 18, 10, 0.88)';
+      ctx.beginPath();
+      ctx.arc(Math.cos(toward) * moon.shadow.offDeg * scale, Math.sin(toward) * moon.shadow.offDeg * scale, moon.shadow.shadowDeg * scale, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    const percent = Math.round(moon.lit * 100);
+    this.scopeCaption.textContent =
+      moon.shadow && moon.shadow.kind !== 'none'
+        ? `In the Earth's shadow: a ${moon.shadow.kind} eclipse`
+        : `Moon as this model lights it: ${percent}% lit`;
   }
 
   updateStars(stars, bright) {

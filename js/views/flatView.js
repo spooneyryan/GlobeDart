@@ -304,6 +304,15 @@ export class FlatView extends View3D {
         this.starTrack.add([radius * Math.cos(a), hs, radius * Math.sin(a)], [radius * Math.cos(b), hs, radius * Math.sin(b)]);
       }
     }
+    if (c.moon && !stars) {
+      // The same marker serves for the moon: a line down to the place it is overhead.
+      const hm = state.moonHeightKm / EARTH_RADIUS_KM;
+      const v = flatVec(c.moon.point.lat, c.moon.point.lon);
+      this.starDrop.add([v[0], hm, v[2]], [v[0], LIFT, v[2]]);
+      this.starLabel.pos.set(v[0], hm, v[2]);
+      this.starLabel.el.textContent = `The moon on the flat model, ${km(state.moonHeightKm)} up`;
+      this.starLabel.visible = true;
+    }
     this.starDrop.end();
     this.starTrack.end();
 
