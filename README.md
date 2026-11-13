@@ -42,14 +42,15 @@ The empty `.nojekyll` file tells GitHub Pages to serve the files exactly as they
 | `js/horizon.js` | What is hidden behind the horizon under each model, and how the air near the ground changes it |
 | `js/presets.js` | Well-known long views across water, each with the sources for its figures |
 | `js/raytrace.js` | Light followed step by step through air whose temperature changes with height, over curved or flat ground |
+| `js/atmosphere.js` | The standard atmosphere: how the air's pressure falls with height when gravity holds it down |
 | `js/rotation.js` | A turning globe: speed of the ground, the weight the turn takes off, and how a pendulum's swing turns |
 | `js/flight.js` | Level flight: how fast the nose comes down to follow a globe, and what flying dead straight would do |
-| `js/earth.js` | A link that opens Google Earth at a place, and a KML file of the view |
+| `js/earth.js` | A link that opens Google Earth at a place, KML files of the view and of a line of sight, and a reader for KML files |
 | `js/arguments/` | The demonstrations, one file per flat-earth argument, the list of them and of the tours, and the controls an argument can have of its own |
 | `js/explain.js` | What every number means and how it is worked out, written to be shown with the live numbers |
 | `js/info.js` | The small "i" buttons and the box each one opens |
 | `js/observations.js` | Horizon observations the user enters themselves: what bending each one implies, how each model fares, and the text form used in links |
-| `js/measurements.js` | Measurements the user enters themselves: stick-and-shadow conversion, scoring against both models, and the text form used in links |
+| `js/measurements.js` | Measurements of the sun or a star that the user enters themselves: stick-and-shadow conversion, scoring against both models, and the text form used in links |
 | `js/views/globeView.js`, `flatView.js` | Outside views of each model |
 | `js/views/skyView.js` | First-person sky view, used once per model with a shared look direction |
 | `js/views/horizonView.js` | The horizon drawings: the scene from the side and through a telescope, once per model |
@@ -57,8 +58,10 @@ The empty `.nojekyll` file tells GitHub Pages to serve the files exactly as they
 | `js/main.js` | State, controls, result panels, shareable URL, and the helpers handed to each argument |
 | `js/cities.js` | Preset places and the reference observers used for scoring |
 | `data/land-110m.json` | Natural Earth 1:110m land outlines (public domain) |
+| `data/bright-stars.json` | The Bright Star Catalogue: the 8,404 stars down to magnitude 6.5, drawn as the background stars |
 | `data/star-catalogue.json` | What the SIMBAD database gives for each of the 96 stars, kept so the star table can be checked offline |
 | `tools/check-stars.mjs` | Compares the star table with SIMBAD online |
+| `tools/fetch-bright-stars.mjs` | Fetches the Bright Star Catalogue from VizieR and rewrites `data/bright-stars.json` |
 | `vendor/` | three.js 0.187 and astronomy-engine 2.1.19, copied in unmodified (both MIT) |
 | `docs/refraction-plan.md` | Plan for modelling refraction properly. All four stages are built |
 | `docs/maths.md` | Every formula in one place: in words, in symbols, where it is in the code, and what checks it |
@@ -98,6 +101,15 @@ the page is what changes with the numbers, and the short instructions needed to 
 stick and the length of its shadow) and, optionally, a compass bearing. Each one is recorded at the time and place
 currently on show and scored against both models.
 
+A measurement can also be of a star: choose it under "What you measured". A star throws no shadow, so its height
+is sighted directly, along a straight edge with a protractor and plumb line or with a phone's level.
+
+- Each model is told only the place the star stood over at that moment, as it is for the sun.
+- The flat model's stars have a height of their own, so star measurements are fitted to a height separately from
+  sun measurements. The pole star measured from two places a long way apart is enough to show that no one height
+  works.
+- Adding or showing a star measurement turns the stars on and follows that star, so its mark sits beside it.
+
 - With no bearing, only elevations are compared, and the sky views draw a line at that elevation instead of a marker.
 - A single elevation can always be matched by choosing a flat sun height. The panel says so, and shows the height
   each measurement implies so that two or more can be compared.
@@ -119,6 +131,18 @@ your own temperature and pressure.
 - Temperature is in °C and pressure in hPa. Use the pressure where you are standing, not the sea-level figure from a
   weather report.
 
+## A flat model with bending light
+
+Under "Flat-model settings", "Its light travels" can be switched from straight lines to curving upward. This is
+the version some supporters propose so that the flat sun can set.
+
+- Nothing says how much light should curve, so it is set from what it has to explain: the sun is seen exactly on
+  the horizon from the distance its light is said to reach. The same curve is applied to the moon and the stars.
+- It gives the flat model a sunset. It does not make it fit. Over a whole day from the reference cities, the best
+  height and reach still leave the sun about 26° from where it is measured, which the maths check confirms.
+- The bearing to the sun is untouched by it, so sunrise is still in the wrong direction, and so are the
+  distances across the map.
+
 ## Stars
 
 "Show the stars" draws 96 bright stars in both skies: white where the model puts each one, teal where it is
@@ -129,7 +153,11 @@ score across every star.
   astronomical database and are within 8 arcseconds (0.002°) of it, which is the rounding. `node
   tools/check-stars.mjs` repeats the comparison online; the maths check repeats it against a saved copy.
 - The stars' own slow drift since 2000 is not allowed for. The largest is Alpha Centauri's, about 0.03°.
-- It is a list of bright and well-known stars, not a full catalogue.
+- Behind the 96 named stars are the other 8,300 or so that the eye can see: the Bright Star Catalogue, down to
+  magnitude 6.5. Each model places every one of them from the point it is overhead, as it does the named stars, so
+  the whole sky can be compared. They cannot be followed or measured; only the named ones can.
+- The catalogue is a saved copy in `data/`, fetched from VizieR by `node tools/fetch-bright-stars.mjs`. All 96
+  hand-entered stars are in it within 0.03°, which the maths check confirms. The two come from different sources.
 - The flat model puts every star at one height, turning about the point above the north pole once a day. That
   height has its own slider and its own best-fit button.
 - Stars fade in daylight but never vanish, so a demonstration works at any hour.
@@ -224,6 +252,9 @@ The top row is one whole lap speeded up; the bottom row is a stretch of flight d
   the flat model it never moves.
 - Both models say the pilot feels nothing and pushes nothing, so the tool says plainly that this argument cannot
   tell them apart from the cockpit. It then names the instruments that do sense the turning.
+- Two dials are drawn in the top row. The artificial horizon is pulled upright by gravity, so it reads level all
+  the way round on either model. A gyro left free keeps its direction against the stars, so on the globe it shows
+  the turn building up, and on the flat model nothing.
 
 ## Google Earth
 
@@ -236,6 +267,17 @@ is overhead, the followed star and the route.
 - Google Earth is drawn as a globe, so it is somewhere to look at the real ground, not evidence for either model.
 - Nothing is sent anywhere until the link is clicked. The app still loads nothing from the internet.
 
+**A line of sight.** In the horizon tool, a well-known view knows where its two ends are, so it can be opened in
+Google Earth or saved as a KML file. The file holds both ends at their heights, the way along the ground, and the
+line of sight itself with and without the air bending it. Where the line goes under the surface, the water is in
+the way. In Google Earth Pro, "Show Elevation Profile" on the ground line shows the real terrain along it. Heights
+in the file are above sea level, so the height of the water matters and can be set.
+
+**Reading a KML file.** "Load places from a KML file" lists the pins and paths in a file saved from Google Earth.
+A pin can become the observer. Two pins, or the two ends of a path, can become the ends of a line of sight, which
+sets the horizon tool's distance. The file is read in the browser and sent nowhere. KMZ files have to be unzipped
+first, and only pins and paths are read.
+
 ## The tours
 
 "Take a tour" lists the tours. Each walks through a few arguments in order, easiest first, and is meant for one
@@ -247,7 +289,7 @@ person showing another.
 | The sun and the stars | sunset, sunrise direction, December daylight, sun angles, the pole star, southern stars |
 | The moon | phases, the same face, eclipses |
 | The horizon | a ship, the horizon at eye level, water finding its level, the Bedford Level, things seen from too far away, two sunsets |
-| Travel and motion | southern flights, the ice wall, pilots and the nose, feeling the spin |
+| Travel, motion and air | southern flights, the ice wall, pilots and the nose, feeling the spin, air without a container |
 
 - "Choose your own" lists every argument with a tick box. Tick between two and twelve and they become a tour, in
   the order they are listed. Once it is running, "Copy link to this view" gives a link that carries the choice.
@@ -272,7 +314,7 @@ A link can name a demonstration or a tour and nothing else, and the app sets the
 ## The demonstrations
 
 The bar at the top lists the demonstrations under six headings: the sun, the moon, the stars, distances, the
-horizon and motion. Picking a heading shows its demonstrations beneath it. There are nineteen, each answering one
+horizon, and motion and air. Picking a heading shows its demonstrations beneath it. There are twenty, each answering one
 flat-earth claim, which is quoted above its explanation.
 
 ## Writing an argument
@@ -308,10 +350,11 @@ Use it freely, for anything, with no credit needed. The one thing not allowed is
 GlobeDart unchanged or nearly unchanged. The full terms are in `LICENSE`.
 
 three.js and Astronomy Engine in `vendor/` are other people's work under the MIT licence. In `data/`, the map is
-Natural Earth's, in the public domain, and the star figures come from the SIMBAD database, operated at CDS,
-Strasbourg, France. Those keep their own terms.
+Natural Earth's, in the public domain. The star figures come from the SIMBAD database, and the background stars
+from the Bright Star Catalogue (Hoffleit and Warren, 1991) through VizieR, both operated at CDS, Strasbourg,
+France. Those keep their own terms.
 
 ## Not built yet
 
-A full star catalogue, entering your own star measurements, and flat-model variants
-beyond the standard map with adjustable heights and light range. More ideas are in `docs/future.md`.
+Flat-model variants with a different map, the planets, and following or measuring a star that is not one of the
+96 named ones. More ideas are in `docs/future.md`.

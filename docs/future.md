@@ -16,6 +16,27 @@ the answer is shown, and the tour ends with a list of things to go and check. "C
 any arguments ticked, and its link carries the choice. Still to do: putting the steps of one's own tour in an
 order other than the listed one.
 
+## Also built: your own star measurements
+
+"Your own measurements" takes the height of a star as well as the sun's, and fits the flat model's star height to
+them separately. Still to do: stars that are not among the 96 in the table, and the planets.
+
+## Also built: every star the eye can see
+
+The Bright Star Catalogue, 8,404 stars, is drawn behind the named ones in both skies. Still to do: following or
+measuring one of them, and their names.
+
+## Also built: a flat model with bending light
+
+The flat model's light can be made to curve upward so that its sun sets. Still to do: variants with a different
+map, such as one with two poles.
+
+## Also built: the air needs no container
+
+"Air without a container" answers the claim that gas cannot sit next to a vacuum without a dome, with the
+standard atmosphere against a sealed container. Still to do: a drawing of its own. Today it borrows the level
+flight views.
+
 ## 1. Connect to Google Earth
 
 Let a place, a route or a sight line in GlobeDart be opened in Google Earth, and the other way round.
@@ -25,9 +46,11 @@ Notes:
 - Built: a link that opens Google Earth at the observer or the route, and a KML file with the observer, the place
   the sun is overhead, the followed star and the route.
 - Google publishes no specification for the link, so it uses the form Google Earth shows in its own address bar.
-- Still to do: the line of sight from "Over the horizon" with the real terrain along it. That tool has no place
-  on the map yet, only heights and a distance.
-- Still to do: reading a KML file back in.
+- Built: the line of sight from "Over the horizon" as a link and a KML file, with the ground line that Google
+  Earth Pro can show the real terrain along. A well-known view knows its two ends; so does a sight line made from
+  a KML file.
+- Built: reading a KML file back in, for its pins and paths.
+- Still to do: KMZ files, and using the heights stored with the pins.
 - Anything deeper than a link or a file needs Google's terms checked first. The app has no backend and loads
   nothing from the internet today, and that is worth keeping.
 
@@ -86,5 +109,5 @@ Notes:
 - The views: an aircraft circling a small globe with its nose drawn against a fixed direction, above the same
   flight at true scale, where the turn is too slow to see.
 - The dip of the horizon from a cruising airliner, about 3°, has its own argument: "Horizon at eye level".
-- Still to do: what a pilot's instruments show. The artificial horizon is kept level by gravity, so it follows the
-  curve too, and that deserves a drawing of its own.
+- Built: what a pilot's instruments show, as two dials in the top drawings. The artificial horizon is kept level
+  by gravity, so it follows the curve too. A gyro left free shows the turn.

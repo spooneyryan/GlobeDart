@@ -98,9 +98,12 @@ export class SkyView extends View3D {
     this.starTrails.object.renderOrder = 1.3;
     this.starLines = new DynamicSegments(80, COLORS.star, 0.4);
     this.starLines.object.renderOrder = 1.4;
+    // The fainter stars of the full catalogue, drawn behind the named ones.
+    this.starField = new PointCloud(9000, COLORS.star);
+    this.starField.object.renderOrder = 1.1;
     this.starPoints = new PointCloud(120, COLORS.star);
     this.starPoints.object.renderOrder = 1.5;
-    for (const part of [this.starMeasured, this.starTrails, this.starLines, this.starPoints]) {
+    for (const part of [this.starMeasured, this.starTrails, this.starLines, this.starPoints, this.starField]) {
       part.object.material.depthTest = false;
       part.object.visible = false;
       this.scene.add(part.object);
@@ -289,7 +292,8 @@ export class SkyView extends View3D {
    * @param measured  {az, el} the measured position
    * @param lit       whether this model says it is daytime here
    * @param text      readout text
-   * @param own       {az, el} the user's own measurement for this moment, or null (az may be null)
+   * @param own       {az, el, star, nearAz} the user's own measurement for this moment, or null (az may be null;
+   *                  star is the star's name, or null for the sun; nearAz is the bearing to put its label beside)
    * @param stars     null, or { model, measured, mags, lines, trails, selected, name }: this model's
    *                  and the measured {az, el} of every star, the index and name of the chosen one
    * @param moon      null, or { model, measured, lit, side, shadow }: where this model puts the moon and
@@ -331,13 +335,14 @@ export class SkyView extends View3D {
       this.ownMark.lookAt(0, 0, 0);
       this.ownMark.scale.setScalar(FAR * Math.tan(1.15 * DEG));
       this.ownLabel.pos.copy(this.ownMark.position);
-      this.ownLabel.el.textContent = 'you measured';
+      this.ownLabel.el.textContent = own.star ? `you measured ${own.star}` : 'you measured';
     } else if (own) {
       for (let az = 0; az < 360; az += 2) {
         this.ownCircle.add(skyDir(az, own.el, FAR).toArray(), skyDir(az + 2, own.el, FAR).toArray());
       }
-      this.ownLabel.pos.copy(skyDir(measured.az + 7, own.el, FAR));
-      this.ownLabel.el.textContent = `you measured ${own.el.toFixed(1)}° up`;
+      // The label sits on the ring beside what was measured: the sun, or the star.
+      this.ownLabel.pos.copy(skyDir((own.nearAz ?? measured.az) + 7, own.el, FAR));
+      this.ownLabel.el.textContent = `you measured ${own.star ? `${own.star} ` : ''}${own.el.toFixed(1)}° up`;
     }
     this.ownCircle.end();
 
@@ -428,7 +433,7 @@ export class SkyView extends View3D {
 
   updateStars(stars, bright) {
     const show = !!stars;
-    for (const part of [this.starMeasured, this.starTrails, this.starLines, this.starPoints]) {
+    for (const part of [this.starMeasured, this.starTrails, this.starLines, this.starPoints, this.starField]) {
       part.object.visible = show;
     }
     this.starRing.visible = false;
@@ -448,6 +453,16 @@ export class SkyView extends View3D {
     });
     this.starPoints.end(alpha);
     this.starMeasured.end(alpha * 0.6);
+
+    // The rest of the catalogue: where this model puts each star, smaller the fainter it is.
+    this.starField.begin();
+    if (stars.field) {
+      const { model, mags } = stars.field;
+      for (let i = 0; i < model.length; i++) {
+        if (model[i].el > -1) this.starField.add(at(model[i]), Math.max(1.1, 3.3 - 0.34 * mags[i]));
+      }
+    }
+    this.starField.end(alpha * 0.8);
 
     this.starLines.begin();
     for (const [a, b] of stars.lines) {

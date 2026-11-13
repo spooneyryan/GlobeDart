@@ -31,7 +31,8 @@ Parts that are not the author's
 
 The files in the "vendor" folder (three.js and Astronomy Engine) and the files
 in "data" (map outlines from Natural Earth; star positions from the SIMBAD
-database, operated at CDS, Strasbourg, France) come from other people and stay
+database and from the Bright Star Catalogue through VizieR, both operated at
+CDS, Strasbourg, France) come from other people and stay
 under their own terms, which are given in or beside those files. This licence
 does not change them. In particular the notices in the "vendor" files must
 stay with any copy of those files.

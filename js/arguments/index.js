@@ -37,8 +37,9 @@ import spin from './spin.js';
 import eyelevel from './eyelevel.js';
 import looming from './looming.js';
 import pilots from './pilots.js';
+import air from './air.js';
 
-export const ARGUMENTS = [sunset, angles, sunrise, december, polaris, southern, phases, sameface, eclipse, flights, icewall, ship, eyelevel, looming, waterlevel, bedford, twosunsets, pilots, spin];
+export const ARGUMENTS = [sunset, angles, sunrise, december, polaris, southern, phases, sameface, eclipse, flights, icewall, ship, eyelevel, looming, waterlevel, bedford, twosunsets, pilots, spin, air];
 
 /** The headings the arguments are listed under, in order. */
 export const GROUPS = [
@@ -47,7 +48,7 @@ export const GROUPS = [
   { id: 'stars', label: 'The stars' },
   { id: 'travel', label: 'Distances' },
   { id: 'horizon', label: 'The horizon' },
-  { id: 'motion', label: 'Motion' },
+  { id: 'motion', label: 'Motion and air' },
 ];
 
 export const ARGUMENT_BY_ID = Object.fromEntries(ARGUMENTS.map((a) => [a.id, a]));
@@ -60,7 +61,7 @@ export const TOURS = [
   { id: 'sky', label: 'The sun and the stars', about: 'What the sky does over a day, over a year, and from different places.', steps: ['sunset', 'sunrise', 'december', 'angles', 'polaris', 'southern'] },
   { id: 'moon', label: 'The moon', about: 'Its phases, its face, and the shadow that crosses it.', steps: ['phases', 'sameface', 'eclipse'] },
   { id: 'horizon', label: 'The horizon', about: 'Ships, skylines and still water.', steps: ['ship', 'eyelevel', 'waterlevel', 'bedford', 'looming', 'twosunsets'] },
-  { id: 'travel', label: 'Travel and motion', about: 'Flights, voyages, pilots and the spin.', steps: ['flights', 'icewall', 'pilots', 'spin'] },
+  { id: 'travel', label: 'Travel, motion and air', about: 'Flights, voyages, pilots, the spin and the air.', steps: ['flights', 'icewall', 'pilots', 'spin', 'air'] },
 ];
 
 /** The name, in links, of a tour somebody put together themselves. */

@@ -78,6 +78,18 @@
             <select id="hz-view"></select>
           </label>
           <div id="hz-view-note" hidden></div>
+          <div id="hz-sight" hidden>
+            <p class="hint"><span id="hz-sight-text"></span> <button type="button" class="info" data-info="hz.sight" aria-label="How this is worked out: the line of sight on the map">i</button></p>
+            <label class="row">
+              <span>Water level above the sea</span>
+              <span class="num"><input type="number" id="hz-sight-water" step="any" /><span>m</span></span>
+            </label>
+            <div class="buttons two">
+              <a id="hz-sight-link" class="button" target="_blank" rel="noopener noreferrer">Open in Google Earth</a>
+              <button id="hz-sight-kml">Save the sight line as KML</button>
+            </div>
+          </div>
+          <button id="hz-load-kml">Load two places from a KML file</button>
           <label class="row">
             <span>Looking at</span>
             <select id="hz-shape">
@@ -227,8 +239,15 @@
             <span class="row"><span>Sun height</span><output id="sun-height-label"></output></span>
             <input type="range" id="sun-height" min="0" max="1000" step="1" />
           </label>
+          <label class="row">
+            <span>Its light travels <button type="button" class="info" data-info="sky.bend" aria-label="How this is worked out: bending light">i</button></span>
+            <select id="flat-light">
+              <option value="straight">In straight lines</option>
+              <option value="bent">Curving upward</option>
+            </select>
+          </label>
           <label class="stack">
-            <span class="row"><span>How far its light reaches</span><output id="light-range-label"></output></span>
+            <span class="row"><span id="light-range-name">How far its light reaches</span><output id="light-range-label"></output></span>
             <input type="range" id="light-range" min="1000" max="20000" step="100" />
           </label>
           <button id="btn-bestfit">Use the best-fitting sun height</button>
@@ -292,6 +311,15 @@
           <h2>Google Earth <button type="button" class="info" data-info="sky.earth" aria-label="How this is worked out: Google Earth">i</button></h2>
           <a id="earth-link" class="button" target="_blank" rel="noopener noreferrer">Open this place in Google Earth</a>
           <button id="earth-kml">Save this view as a KML file</button>
+          <button id="earth-load">Load places from a KML file</button>
+          <input type="file" id="kml-file" accept=".kml,application/vnd.google-earth.kml+xml,application/xml,text/xml" hidden />
+        </section>
+
+        <section id="kml-section" hidden>
+          <h2>From your KML file <button type="button" class="info" data-info="sky.kml" aria-label="How this is worked out: loading a KML file">i</button></h2>
+          <p class="hint" id="kml-summary"></p>
+          <div id="kml-list" class="own-list"></div>
+          <button id="kml-clear">Clear this list</button>
         </section>
 
         <section>
@@ -578,6 +606,12 @@
             </label>
             <p class="hint" id="m-where"></p>
             <label class="row">
+              <span>What you measured</span>
+              <select id="m-what"></select>
+            </label>
+            <p class="hint" id="m-star-hint" hidden>Sight along a straight edge at the star and read its tilt, with a
+            protractor and plumb line or a phone's level. The pole star's height is close to your latitude.</p>
+            <label class="row" id="m-method-row">
               <span>How</span>
               <select id="m-method">
                 <option value="angle">I measured the angle</option>
@@ -586,7 +620,7 @@
             </label>
             <div id="m-angle-fields" class="fields">
               <label class="row">
-                <span>Sun's height above the horizon (°)</span>
+                <span id="m-el-label">Sun's height above the horizon (°)</span>
                 <input type="number" id="m-el" min="0" max="90" step="0.1" />
               </label>
             </div>

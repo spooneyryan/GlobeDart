@@ -76,6 +76,52 @@ function aircraft(ctx, x, y, angle, size) {
   ctx.restore();
 }
 
+/**
+ * A cockpit instrument seen from the side: the line is what the instrument
+ * takes to be level, and the small aircraft in the middle is fixed to the real
+ * one. `noseDown` is how far the nose is below that line, in radians.
+ */
+function instrument(ctx, x, y, r, noseDown, title, reading, align) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.translate(x, y);
+  ctx.rotate(-noseDown);
+  ctx.fillStyle = '#2f6ea5'; // sky above the line
+  ctx.fillRect(-r * 2, -r * 2, r * 4, r * 2);
+  ctx.fillStyle = '#6b4a2b'; // ground below it
+  ctx.fillRect(-r * 2, 0, r * 4, r * 2);
+  ctx.strokeStyle = '#f2f6fa';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(-r * 2, 0);
+  ctx.lineTo(r * 2, 0);
+  ctx.stroke();
+  ctx.restore();
+  // The aircraft's own mark: a bar with a dot, as on the real instrument.
+  ctx.strokeStyle = '#ffd24a';
+  ctx.fillStyle = '#ffd24a';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(x - r * 0.62, y);
+  ctx.lineTo(x - r * 0.2, y);
+  ctx.moveTo(x + r * 0.2, y);
+  ctx.lineTo(x + r * 0.62, y);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(x, y, 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#93a4b8';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.stroke();
+  const edge = align === 'left' ? x - r : x + r;
+  text(ctx, title, edge, y + r + 11, INK.muted, align, 400, 10);
+  text(ctx, reading, edge, y + r + 24, INK.text, align, 600, 11);
+}
+
 function backdrop(ctx, w, h) {
   const sky = ctx.createLinearGradient(0, 0, 0, h);
   sky.addColorStop(0, '#060c16');
@@ -129,14 +175,15 @@ function drawLap(ctx, w, h, model, s) {
     ctx.moveTo(0, ground);
     ctx.lineTo(w, ground);
     ctx.stroke();
-    px = w * (0.12 + 0.76 * s.phase);
+    // The flight keeps clear of the two instruments in the top corners.
+    px = w * (0.27 + 0.46 * s.phase);
     py = ground - Math.max(34, (h - top - bottom) * 0.3);
     ctx.strokeStyle = 'rgba(69, 214, 200, 0.35)';
     ctx.lineWidth = 1;
     ctx.setLineDash([3, 4]);
     ctx.beginPath();
-    ctx.moveTo(w * 0.12, py);
-    ctx.lineTo(w * 0.88, py);
+    ctx.moveTo(w * 0.27, py);
+    ctx.lineTo(w * 0.73, py);
     ctx.stroke();
     ctx.setLineDash([]);
     nose = 0;
@@ -147,6 +194,14 @@ function drawLap(ctx, w, h, model, s) {
   arrow(ctx, px, py, down, 26, INK.down, 2);
   arrow(ctx, px, py, nose, 40, INK.nose, 2);
   aircraft(ctx, px, py, nose, size);
+
+  // Two instruments. The artificial horizon is held to "down" by gravity, so it reads level all the way round.
+  // A gyro left to itself keeps its direction against the stars, so on a globe it shows the turn.
+  const turned = model === 'globe' ? s.phase * 360 : 0;
+  const r = compact ? 15 : 21;
+  const y = top + r + 4;
+  instrument(ctx, 12 + r, y, r, 0, 'artificial horizon', 'level', 'left');
+  instrument(ctx, w - 12 - r, y, r, (turned * Math.PI) / 180, 'a gyro left free', turned < 0.5 ? 'level' : `nose ${turned.toFixed(0)}° down`, 'right');
   return null;
 }
 

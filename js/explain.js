@@ -257,17 +257,21 @@ export const EXPLAIN = {
     tool: 'sky',
     title: 'Your own measurements',
     maths: true,
-    code: [['measurements.js', 'shadowToElevation', 'shadowToAzimuth', 'scoreMeasurement']],
+    code: [['measurements.js', 'shadowToElevation', 'shadowToAzimuth', 'overheadPoint', 'scoreMeasurement', 'summariseMeasurements']],
     body: () => `
-      <p>Do not take the published numbers on trust. Measure the sun yourself, enter it, and both models are
-      scored against your number instead.</p>
+      <p>Do not take the published numbers on trust. Measure the sun or a star yourself, enter it, and both models
+      are scored against your number instead.</p>
       ${steps(
         step('An upright stick and the length of its shadow on level ground', "sun's height = atan(stick ÷ shadow)", ''),
         step('The compass direction the shadow points', "sun's bearing = that + 180°", ''),
       )}
+      <p>A star throws no shadow, so its height is sighted directly: along a straight edge with a protractor and
+      plumb line, or with a phone held along the line of sight. Each model is told only the place that star stood
+      over at that moment, as it is for the sun.</p>
       <p>With no bearing, only the heights are compared. With one, the miss is the full angle on the sky.</p>
       <p>A single height can always be matched by choosing a sun height for the flat model. The test is whether a
-      second measurement, from another place or another time of day, agrees on the same height.</p>
+      second measurement, from another place or another time of day, agrees on the same height. The flat model's
+      stars have a height of their own, so star measurements are fitted separately and tested the same way.</p>
       <p>A stick and a tape measure are good to a degree or two, so expect even the right model to be off by about
       that much.</p>`,
   },
@@ -332,7 +336,38 @@ export const EXPLAIN = {
       <p><b>How far its light reaches</b> is the size of the patch the sun lights, like a spotlight. It decides
       where the flat map is shaded as day. It does not move the sun, so a place "beyond its light" still has the
       sun in plain line of sight.</p>
+      <p><b>Its light travels</b> switches to a version in which light curves upward, so that a far-off sun looks
+      lower and can set. It has its own explanation.</p>
       <p><b>Flat map shading</b> switches between that spotlight and the places where it really is day.</p>`,
+  },
+
+  'sky.bend': {
+    tool: 'sky',
+    title: 'Bending light',
+    maths: true,
+    code: [['models.js', 'flatBendPerKm', 'flatPredict', 'impliedSunHeightKm']],
+    body: (c, { state, km, deg }) => {
+      const bent = state.flatLight === 'bent';
+      const curve = (2 * state.sunHeightKm) / state.lightRangeKm ** 2;
+      const d = c.flat.groundKm;
+      return `
+      <p>With light in straight lines the flat sun can never set: it is always above the surface, so it is always
+      above the horizon. Some supporters answer that light curves upward as it travels, so that a sun far enough
+      away is seen on the horizon, and then not at all.</p>
+      <p>Nothing says how much light should curve, so the amount is set from what it has to explain: the sun is
+      seen exactly on the horizon from as far as its light is said to reach. That is the most generous choice.</p>
+      ${steps(
+        step('How much light curves', 'c = 2 × H ÷ reach²', `2 × ${km(state.sunHeightKm)} ÷ (${km(state.lightRangeKm)})² = ${(curve * 1e6).toFixed(1)} m of rise in the second kilometre per thousand km`),
+        step("The sun's height above the horizon", 'atan((H − c × d² ÷ 2) ÷ d)', `from ${km(d)} away: ${deg(c.flat.trueEl)}${bent ? '' : ' (with straight light, as now set)'}`),
+        step('Its bearing', 'the same as before', 'light that bends up does not move sideways'),
+      )}
+      <p>This gives the flat model a sunset. It does not make it fit. Tried over a whole day from the reference
+      cities, the best pair of settings still leaves the sun about 26° from where it is measured, no better than
+      straight light. Three things are left as they were: the bearing to the sun, which is why sunrise is in the
+      wrong direction; the distances across the map, which the bend is worked out from; and the sun's width,
+      which should still shrink as it goes away.</p>
+      <p>The moon and the stars are seen by the same light, so they are bent by the same amount.</p>`;
+    },
   },
 
   'sky.air': {
@@ -365,6 +400,21 @@ export const EXPLAIN = {
       it in Google Earth to see the real ground under them.</p>
       <p>Google Earth is itself drawn as a globe, so it is somewhere to look, not a proof of anything. Nothing is
       sent to Google until you follow the link.</p>`,
+  },
+
+  'sky.kml': {
+    tool: 'sky',
+    title: 'Loading a KML file',
+    code: [['earth.js', 'parseKml']],
+    body: () => `
+      <p>A KML file is what Google Earth saves when you choose "Save Place As" for a pin, a path or a folder.
+      Loading one lists the pins (places) and paths in it.</p>
+      <p>"Observer" moves the observer to a place. Picking one place as "From" and another as "To" puts the
+      horizon tool's line of sight between them and sets its distance. "Sight along it" does the same with the
+      two ends of a path.</p>
+      <p>The file is read here, in the browser. Nothing is sent anywhere. Only pins and paths are read: shapes,
+      pictures and anything else in the file are ignored. A KMZ file is a zipped KML and has to be unzipped
+      first.</p>`,
   },
 
   // ---------- the moon ----------
@@ -531,6 +581,28 @@ export const EXPLAIN = {
       a tower beside a lake stands on ground above the lake, and both count.</p>
       <p>The view is set up for a person standing at the water's edge in standard air. Change the height of your
       eye or the air to match the day a particular photograph was taken.</p>`,
+  },
+
+  'hz.sight': {
+    tool: 'horizon',
+    title: 'The line of sight on the map',
+    maths: true,
+    code: [['horizon.js', 'sightLineHeightM'], ['earth.js', 'buildSightKml'], ['distances.js', 'greatCirclePath']],
+    body: (hz, { fmtH, fmtD }) => `
+      <p>When the two ends of the view are known places, the line of sight can be looked at over the real ground
+      in Google Earth. A well-known view knows its ends. So does a sight line made from two places in a KML
+      file.</p>
+      <p>The file that is saved holds both ends at their heights, the way along the ground, and the line of sight
+      itself. Along the line, at a distance x from the eye:</p>
+      ${steps(
+        step('A straight run from the eye to the top', 'eye + (top − eye) × x ÷ d', ''),
+        step('Less the rise of the water toward the line', 'x × (d − x) ÷ 2R′', `at most ${fmtH((hz.distanceKm ** 2 / (8 * (6371.0088 / Math.max(1e-9, 1 - hz.k)))) * 1000)}, half way along ${fmtD(hz.distanceKm)}`),
+      )}
+      <p>The heights in the file are above sea level, so the height of the water has to be right: a lake can be
+      hundreds of metres up. Where the line dips under the surface in Google Earth, the water is in the way.</p>
+      <p>In Google Earth Pro, right-click "The ground under the line of sight" and choose "Show Elevation Profile"
+      to see the real terrain along the way. Google Earth is itself drawn as a globe, so this is a way to look at
+      the ground, not a proof.</p>`,
   },
 
   'hz.eye': {
@@ -795,6 +867,27 @@ export const EXPLAIN = {
         step('Each minute', '÷ 60', fmtAngle(fl.rateDegPerMin)),
       )}
       <p>On a flat earth the path is a straight line and the nose never turns.</p>`,
+  },
+
+  'fl.instruments': {
+    tool: 'flight',
+    title: 'What the instruments show',
+    maths: true,
+    code: [['flight.js', 'pitchRateDegPerMin']],
+    body: (fl, { fmtAngle }) => `
+      <p>The two small dials in the top drawings are the same kind of instrument, a spinning gyro, used in two
+      ways.</p>
+      <p><b>The artificial horizon</b> is a gyro that is slowly and constantly pulled upright by gravity. It
+      follows "down", and down turns with the aircraft as it goes round the globe. So it reads level in level
+      flight on either model, and a pilot watching it sees nothing happen.</p>
+      <p><b>A gyro left free</b> keeps its direction against the stars. Carried round a globe, the aircraft turns
+      under it:</p>
+      ${steps(step('Drift from the flight alone', 'the rate the nose comes down', `${fmtAngle(fl.rateDegPerMin * 60)} an hour`))}
+      <p>On the flat model it would not drift at all. Real gyros do drift at this rate, and makers correct for it.
+      Pilots' textbooks call it transport wander. The turning of the Earth adds a second drift of up to 15° an
+      hour, called earth rate, which depends on the latitude.</p>
+      <p>The drawing is from the side, so the dials show the nose rising or falling against each instrument's idea
+      of level. A real artificial horizon is looked at from behind.</p>`,
   },
 
   'fl.round': {

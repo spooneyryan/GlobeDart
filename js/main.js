@@ -5,6 +5,7 @@ import {
   seasons,
   starPoints,
   observedStar,
+  siderealHours,
   wrap180,
   moonPoint,
   observedMoon,
@@ -16,6 +17,7 @@ import {
 import {
   globePredict,
   flatPredict,
+  flatBendPerKm,
   impliedSunHeightKm,
   skySeparation,
   rmsMiss,
@@ -34,6 +36,7 @@ import {
   shadowToElevation,
   shadowToAzimuth,
   summariseMeasurements,
+  overheadPoint,
   cleanMeasurement,
   mergeMeasurements,
   encodeMeasurements,
@@ -51,6 +54,8 @@ import {
   horizonScene,
   HORIZON_LIMITS,
   TARGET_SHAPES,
+  sightLineHeightM,
+  hiddenHeightM,
   dipDeg,
   sunSinkDegPerHour,
   secondSunsetSeconds,
@@ -65,7 +70,7 @@ import {
   decodeObservations,
 } from './observations.js';
 import { STARS, STAR_LINES, FEATURED_STARS, starIndex, SKY_TURN_DEG_PER_MIN } from './stars.js';
-import { ROUTES, CRUISE_KMH, SOUND_KMH, routeStats, greatCirclePath } from './distances.js';
+import { ROUTES, CRUISE_KMH, SOUND_KMH, routeStats, greatCirclePath, globeDistanceKm } from './distances.js';
 import { makeLandCanvas } from './scene-utils.js';
 import { GlobeView } from './views/globeView.js';
 import { FlatView } from './views/flatView.js';
@@ -77,7 +82,7 @@ import { initInfo, refreshInfo, infoButton, explainHtml } from './info.js';
 import { HorizonView } from './views/horizonView.js';
 import { FlightView } from './views/flightView.js';
 import { FLIGHT_LIMITS, flightScene, schulerMinutes } from './flight.js';
-import { earthUrl, buildKml } from './earth.js';
+import { earthUrl, buildKml, buildSightKml, parseKml, KML_LIMITS } from './earth.js';
 import { makeAir, traceView } from './raytrace.js';
 import { VIEWS, viewSizes, viewById } from './presets.js';
 
@@ -98,11 +103,15 @@ const state = {
   pressureHpa: STANDARD_AIR.pressureHpa,
   sightLines: false,
   flatLighting: 'model',
+  flatLight: 'straight', // how the flat model's light travels: 'straight', or 'bent' (curving upward, so that the sun can set)
   follow: true,
   playing: false,
   speed: 10, // simulated minutes per real second
   demo: null,
   own: {}, // the values of the controls that belong to the argument on show
+  // Where the horizon tool's line of sight is on the map, when that is known:
+  // { from: {name, lat, lon}, to: {name, lat, lon}, waterM }. waterM is the water's height above the sea.
+  sight: null,
   tour: null, // a guided tour: null, or { id, step, shown } (which tour, which step, and whether its answer is on show)
   ownTour: [], // the steps of a tour the user put together
   picking: false, // whether the steps of that tour are being chosen
@@ -228,9 +237,29 @@ const samePlace = (m) => Math.abs(m.lat - state.lat) < 0.006 && Math.abs(wrap180
 /** True when the views are showing the time and place this measurement was taken. */
 const isShown = (m) => sameMoment(m, 60000) && samePlace(m);
 
+/**
+ * The measurement to mark in the two skies: one taken at the time and place on
+ * show. If there are several, the one of what is being looked at wins.
+ */
+function shownMeasurement(sunObs, air) {
+  const shown = measurements.filter(isShown);
+  const m = shown.find((x) => (state.stars ? x.star === state.star : !x.star)) ?? shown[0];
+  if (!m) return null;
+  const nearAz = m.star ? observedStar(state.date, state.lat, state.lon, overheadPoint(m), air).az : sunObs.az;
+  return { ...m, nearAz };
+}
+
 // ---------- model evaluation ----------
 
-const flatParams = () => ({ sunHeightKm: state.sunHeightKm, lightRangeKm: state.lightRangeKm });
+const flatParams = () => ({
+  sunHeightKm: state.sunHeightKm,
+  lightRangeKm: state.lightRangeKm,
+  starHeightKm: state.starHeightKm,
+  // With bending light the sun is seen on the horizon from exactly as far as its light reaches.
+  bendSetKm: state.flatLight === 'bent' ? state.lightRangeKm : 0,
+});
+/** How much the flat model's light curves, per km. The moon and the stars are seen by the same light as the sun. */
+const flatBend = () => flatBendPerKm(flatParams());
 
 // The air the measurement and both models are seen through: none, standard, or the user's own.
 function currentAir() {
@@ -255,7 +284,7 @@ function compute() {
       obs: o,
       flat: f,
       miss: skySeparation(o, f),
-      implied: impliedSunHeightKm(sub, city.lat, city.lon, o.el),
+      implied: impliedSunHeightKm(sub, city.lat, city.lon, o.el, flatParams()),
     };
   });
   const stars = state.stars ? computeStars() : null;
@@ -288,7 +317,7 @@ function compute() {
     route: computeRoute(),
     // The user's measurement for this moment and place, and every one of theirs
     // (from anywhere) taken within five minutes that has a bearing to draw.
-    own: measurements.find(isShown) ?? null,
+    own: shownMeasurement(obs, air),
     ownLines: measurements.filter((m) => m.az !== null && sameMoment(m, 300000)),
   };
 }
@@ -309,7 +338,7 @@ function computeMoon(sub, sunObs, sunGlobe, sunFlat) {
   const { date, lat, lon } = state;
   const air = currentAir();
   const point = moonPoint(date);
-  const dome = { sunHeightKm: state.moonHeightKm, lightRangeKm: Infinity };
+  const dome = { sunHeightKm: state.moonHeightKm, lightRangeKm: Infinity, bendPerKm: flatBend() };
   const obs = observedMoon(date, lat, lon, air);
   const globe = globePredictNear(point, lat, lon, air);
   const flat = flatPredict(point, lat, lon, dome, air);
@@ -345,7 +374,7 @@ function computeMoon(sub, sunObs, sunGlobe, sunFlat) {
         obs: o,
         flat: fl,
         miss: skySeparation(o, fl),
-        implied: impliedSunHeightKm(point, place.lat, place.lon, o.el),
+        implied: impliedSunHeightKm(point, place.lat, place.lon, o.el, { bendPerKm: flatBend() }),
         litGlobe: litFraction(g.sun, g.moon, globePlace(place.lat, place.lon)),
         litFlat: litFraction(f.sun, f.moon, flatPlace(place.lat, place.lon)),
         // How far round the moon this city's view is from the observer's.
@@ -415,10 +444,62 @@ function renderMoon(c) {
 const STAR_MAGS = STARS.map((star) => star.mag);
 const TRAIL_STEPS = 36;
 const TRAIL_STEP_MIN = 10;
-const starDome = () => ({ sunHeightKm: state.starHeightKm, lightRangeKm: Infinity });
+const starDome = () => ({ sunHeightKm: state.starHeightKm, lightRangeKm: Infinity, bendPerKm: flatBend() });
 
 // Every star is treated exactly like the sun: both models are told the point on
 // Earth it is overhead, and each predicts where the observer should see it.
+// ---------- the background stars ----------
+
+// Every star the eye can see: the Bright Star Catalogue, read from data/ the first time the stars are shown.
+// Each model is told where a star is overhead, as for the named stars, and places it in the sky from that.
+let starField = null;
+let starFieldAsked = false;
+async function loadStarField() {
+  if (starFieldAsked) return;
+  starFieldAsked = true;
+  try {
+    const d = await (await fetch('data/bright-stars.json')).json();
+    const named = STARS.map((s) => ({ ra: s.ra * 15, dec: s.dec }));
+    // The named stars are drawn already, so they are left out here.
+    const isNamed = (ra, dec) =>
+      named.some((n) => Math.abs(n.dec - dec) < 0.05 && Math.abs(wrap180(n.ra - ra)) * Math.cos((dec * Math.PI) / 180) < 0.05);
+    const stars = [];
+    for (let i = 0; i < d.count; i++) {
+      if (!isNamed(d.ra[i], d.dec[i])) stars.push({ ra: d.ra[i] / 15, dec: d.dec[i], mag: d.mag[i] });
+    }
+    starField = { stars, mags: stars.map((s) => s.mag), day: null, ofDate: null };
+    requestUpdate();
+  } catch {
+    // Without the file the named stars are still there.
+  }
+}
+
+/** Where each model puts every background star, for the time and place on show. */
+function computeStarField(air, dome) {
+  if (!starField) {
+    loadStarField();
+    return null;
+  }
+  const { date, lat, lon } = state;
+  // A star's place among the stars drifts too slowly to matter within a day. How far the sky has turned does not.
+  const day = Math.floor(date.getTime() / 86400000);
+  if (starField.day !== day) {
+    starField.ofDate = starPoints(date, starField.stars).map((p) => ({ ra: p.ra, dec: p.dec }));
+    starField.day = day;
+  }
+  const turned = siderealHours(date);
+  const n = starField.ofDate.length;
+  const globe = new Array(n);
+  const flat = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const star = starField.ofDate[i];
+    const overhead = { lat: star.dec, lon: wrap180((star.ra - turned) * 15), sizeDeg: 0 };
+    globe[i] = globePredict(overhead, lat, lon, air);
+    flat[i] = flatPredict(overhead, lat, lon, dome, air);
+  }
+  return { globe, flat, mags: starField.mags };
+}
+
 function computeStars() {
   const { date, lat, lon } = state;
   const air = currentAir();
@@ -448,6 +529,7 @@ function computeStars() {
     points,
     mags: STAR_MAGS,
     lines: STAR_LINES,
+    field: computeStarField(air, dome),
     selected,
     name: STARS[selected].name,
     measured: points.map((pt) => observedStar(date, lat, lon, pt, air)),
@@ -463,7 +545,7 @@ function computeStars() {
         obs: o,
         flat: f,
         miss: skySeparation(o, f),
-        implied: impliedSunHeightKm(chosen, place.lat, place.lon, o.el),
+        implied: impliedSunHeightKm(chosen, place.lat, place.lon, o.el, { bendPerKm: flatBend() }),
       };
     }),
   };
@@ -736,6 +818,8 @@ function renderFlight(fl) {
     <tr><td>Nose comes down each minute${infoButton('fl.rate', 'how fast the nose comes down')}</td><td>${fmtAngle(fl.rateDegPerMin)}</td><td>0°</td></tr>
     <tr><td>Each hour</td><td>${fmtAngle(fl.rateDegPerMin * 60)}</td><td>0°</td></tr>
     <tr><td>Over ${fmtTime(fl.minutes)}</td><td>${fmtAngle(fl.turnDeg)}</td><td>0°</td></tr>
+    <tr><td>The artificial horizon reads${infoButton('fl.instruments', 'what the instruments show')}</td><td>level</td><td>level</td></tr>
+    <tr><td>A gyro left free drifts each hour</td><td>${fmtAngle(fl.rateDegPerMin * 60)}</td><td>0°</td></tr>
     <tr><td>Once right round takes${infoButton('fl.round', 'once round')}</td><td>${fmtTime(fl.hoursRound * 60)}</td><td class="dim">no way round</td></tr>
     <tr><td>Flying dead straight for ${fmtTime(fl.minutes)} gains${infoButton('fl.climb', 'flying dead straight')}</td><td>${fmtH(fl.climbM)}</td><td>nothing</td></tr>`;
   $('fl-verdict').textContent = 'Either way the pilot pushes nothing and feels nothing, so this cannot tell the two models apart.';
@@ -918,17 +1002,169 @@ function currentKml() {
   });
 }
 
+// ---------- the line of sight on the map ----------
+
+/** The sight line belongs to the scene only while the distance on show is still the distance between its two ends. */
+const sightShown = () => !!state.sight && sameSize(globeDistanceKm(state.sight.from, state.sight.to), state.targetKm);
+
+/** Puts the horizon tool's line of sight between two places, if they are a distance apart that the tool can show. */
+function setSight(from, to, waterM = 0) {
+  const d = globeDistanceKm(from, to);
+  const [least, most] = HZ_LIMITS.targetKm;
+  if (!(d >= least && d <= most)) {
+    toast(`Those places are ${fmtD(d)} apart. This tool shows from ${fmtD(least)} to ${fmtD(most)}.`);
+    return false;
+  }
+  state.sight = { from: { name: from.name, lat: from.lat, lon: from.lon }, to: { name: to.name, lat: to.lat, lon: to.lon }, waterM };
+  Object.assign(state, { targetKm: d, sailing: false });
+  return true;
+}
+
+/** The line of sight as a KML file: both ends, the ground under it, and the line itself with and without air. */
+function sightKml() {
+  const { from, to, waterM } = state.sight;
+  const steps = 64;
+  const d = state.targetKm;
+  const sizes = { eyeM: state.eyeM, targetM: state.targetM, distanceKm: d };
+  const track = greatCirclePath(from, to, steps);
+  const line = (k) => track.map((p, i) => ({ ...p, altM: waterM + sightLineHeightM((d * i) / steps, sizes, k) }));
+  const hidden = (k) => {
+    const m = hiddenHeightM(state.eyeM, d, k);
+    return m <= 0 ? 'On a globe nothing is hidden.' : m >= state.targetM ? 'On a globe the whole target is hidden.' : `On a globe the bottom ${fmtH(m)} is hidden.`;
+  };
+  const below = 'Where the line goes under the surface, the water is in the way.';
+  const lines = [
+    {
+      name: `Line of sight to the top, with the air bending light (k = ${state.k.toFixed(2)})`,
+      description: `${hidden(state.k)} ${below}`,
+      colour: 'ffffb16f',
+      path: line(state.k),
+    },
+  ];
+  if (state.k > 0.005) {
+    lines.push({ name: 'A dead straight line to the top, as with no air', description: `${hidden(0)} ${below}`, colour: 'ffffffff', path: line(0) });
+  }
+  return buildSightKml({
+    title: `GlobeDart: ${from.name} to ${to.name}`,
+    from: { ...from, altM: waterM + state.eyeM, description: `The eye, ${fmtH(state.eyeM)} above the water.` },
+    to: { ...to, altM: waterM + state.targetM, description: `The top of the target, ${fmtH(state.targetM)} above the water and ${fmtD(d)} away.` },
+    track,
+    lines,
+  });
+}
+
+// ---------- Google Earth: files out and in ----------
+
+function saveFile(name, text) {
+  const url = URL.createObjectURL(new Blob([text], { type: 'application/vnd.google-earth.kml+xml' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast(`Saved ${name}`);
+}
+
+// What the last KML file loaded held, and which of its places have been picked as the ends of a sight line.
+const KML_SHOWN = 30;
+let kmlData = null;
+let kmlEnds = { from: null, to: null };
+
+function renderKml() {
+  const section = $('kml-section');
+  section.hidden = !kmlData;
+  if (!kmlData) return;
+  const { points, lines, fileName } = kmlData;
+  const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  $('kml-summary').textContent =
+    `${fileName}: ${count(points.length, 'place', 'places')} and ${count(lines.length, 'path', 'paths')}.` +
+    (points.length > KML_SHOWN ? ` The first ${KML_SHOWN} places are listed.` : '') +
+    ' "Observer" moves the observer there. Pick a "From" and a "To" to put a line of sight between two places.';
+  const on = (end, i) => (kmlEnds[end] === i ? ' class="active"' : '');
+  $('kml-list').innerHTML =
+    points
+      .slice(0, KML_SHOWN)
+      .map(
+        (p, i) => `<div class="kml-item" data-point="${i}">
+          <div><b>${esc(p.name)}</b><small>${where(p.lat, p.lon)}</small></div>
+          <span class="own-actions">
+            <button data-act="observer">Observer</button>
+            <button data-act="from"${on('from', i)}>From</button>
+            <button data-act="to"${on('to', i)}>To</button>
+          </span>
+        </div>`,
+      )
+      .join('') +
+    lines
+      .map((l, i) => {
+        const [a, b] = [l.path[0], l.path[l.path.length - 1]];
+        return `<div class="kml-item" data-line="${i}">
+          <div><b>${esc(l.name)}</b><small>a path of ${l.path.length} points, ${fmtD(globeDistanceKm(a, b))} end to end</small></div>
+          <span class="own-actions"><button data-act="line">Sight along it</button></span>
+        </div>`;
+      })
+      .join('');
+}
+
+/** Puts a line of sight between two places and shows it in the horizon tool. */
+function sightBetween(from, to) {
+  if (!setSight(from, to)) return;
+  if (state.demo) state.demo = null;
+  setMode('horizon');
+  toast(`Line of sight: ${from.name} to ${to.name}, ${fmtD(state.targetKm)}`);
+  requestUpdate();
+}
+
 function bindEarthControls() {
-  $('earth-kml').addEventListener('click', () => {
-    const url = URL.createObjectURL(new Blob([currentKml()], { type: 'application/vnd.google-earth.kml+xml' }));
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'globedart.kml';
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    toast('Saved globedart.kml');
+  $('earth-kml').addEventListener('click', () => saveFile('globedart.kml', currentKml()));
+  $('hz-sight-kml').addEventListener('click', () => state.sight && saveFile('globedart-sight-line.kml', sightKml()));
+  $('hz-sight-water').addEventListener('change', (e) => {
+    const m = Number(e.target.value);
+    if (state.sight && e.target.value.trim() !== '' && Number.isFinite(m)) state.sight.waterM = clamp(m, -500, 6000);
+    requestUpdate();
+  });
+
+  for (const id of ['earth-load', 'hz-load-kml']) $(id).addEventListener('click', () => $('kml-file').click());
+  $('kml-file').addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // so that the same file can be chosen again
+    if (!file) return;
+    if (file.size > KML_LIMITS.bytes) return toast('That file is too large to read here');
+    const found = parseKml(await file.text());
+    if (found.problem) return toast(found.problem);
+    kmlData = { ...found, fileName: file.name };
+    kmlEnds = { from: null, to: null };
+    renderKml();
+    $('kml-section').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    return toast(`Read ${file.name}`);
+  });
+  $('kml-clear').addEventListener('click', () => {
+    kmlData = null;
+    renderKml();
+  });
+  $('kml-list').addEventListener('click', (e) => {
+    const act = e.target.closest('button[data-act]')?.dataset.act;
+    const item = e.target.closest('.kml-item');
+    if (!act || !item || !kmlData) return;
+    if (act === 'line') {
+      const path = kmlData.lines[Number(item.dataset.line)].path;
+      const name = kmlData.lines[Number(item.dataset.line)].name;
+      return sightBetween({ ...path[0], name: `the start of ${name}` }, { ...path[path.length - 1], name: `the end of ${name}` });
+    }
+    const i = Number(item.dataset.point);
+    const place = kmlData.points[i];
+    if (act === 'observer') {
+      state.follow = true;
+      setObserver(place, true);
+      return toast(`Observer moved to ${place.name}`);
+    }
+    kmlEnds[act] = i;
+    if (kmlEnds.from !== null && kmlEnds.to !== null && kmlEnds.from !== kmlEnds.to) {
+      sightBetween(kmlData.points[kmlEnds.from], kmlData.points[kmlEnds.to]);
+    }
+    return renderKml();
   });
 }
 
@@ -948,6 +1184,11 @@ function bindViewControls() {
       layers: false,
       sailing: false,
     });
+    state.sight = {
+      from: { name: view.from.name, lat: view.from.lat, lon: view.from.lon },
+      to: { name: view.to.name, lat: view.to.lat, lon: view.to.lon },
+      waterM: view.waterM,
+    };
     if (state.demo && DEMOS[state.demo].tool === 'horizon') state.demo = null;
     requestUpdate();
   });
@@ -1392,10 +1633,14 @@ function update() {
   let globeText = up
     ? `Sun ${deg(c.globe.el)} above the horizon, bearing ${bearing(c.globe.az)}\nWidth ${deg(c.globe.sizeDeg, 2)}`
     : `Sun is ${deg(-c.globe.el)} below the horizon\nIt has set: the ground is in the way`;
+  // With straight light the flat sun is always above the horizon. With bending light it can set.
+  const flatSet = c.flat.el < -0.833;
   let flatText =
-    `Sun ${deg(c.flat.el)} above the horizon, bearing ${bearing(c.flat.az)}\n` +
+    (flatSet
+      ? `Sun is ${deg(-c.flat.el)} below the horizon, bearing ${bearing(c.flat.az)}\n`
+      : `Sun ${deg(c.flat.el)} above the horizon, bearing ${bearing(c.flat.az)}\n`) +
     `Width ${deg(c.flat.sizeDeg, 2)}, and ${deg(flatMiss)} from where it is measured` +
-    (c.flat.lit ? '' : '\nBeyond its light range, yet in plain line of sight');
+    (flatSet ? '\nIt has set: its light curves away overhead' : c.flat.lit ? '' : '\nBeyond its light range, yet in plain line of sight');
   const s = c.stars;
   if (s) {
     const g = s.globe[s.selected];
@@ -1420,10 +1665,19 @@ function update() {
   }
   const skyMoon = (key) =>
     m && { model: m[key], measured: m.obs, lit: m.lit[key], side: m.side[key], shadow: key === 'globe' ? m.shadow : null };
-  const skyStars = (model, trails) =>
-    s && { model, measured: s.measured, mags: s.mags, lines: s.lines, trails, selected: s.selected, name: s.name };
-  globeSky.update(c.globe, c.obs, true, globeText, c.own, skyStars(s?.globe, s?.globeTrails), skyMoon('globe'));
-  flatSky.update(c.flat, c.obs, c.flat.lit, flatText, c.own, skyStars(s?.flat, s?.flatTrails), skyMoon('flat'));
+  const skyStars = (key) =>
+    s && {
+      model: s[key],
+      measured: s.measured,
+      mags: s.mags,
+      lines: s.lines,
+      trails: s[`${key}Trails`],
+      field: s.field && { model: s.field[key], mags: s.field.mags },
+      selected: s.selected,
+      name: s.name,
+    };
+  globeSky.update(c.globe, c.obs, true, globeText, c.own, skyStars('globe'), skyMoon('globe'));
+  flatSky.update(c.flat, c.obs, c.flat.lit, flatText, c.own, skyStars('flat'), skyMoon('flat'));
   const views = $('views');
   views.classList.toggle('has-own', c.ownLines.length > 0);
   views.classList.toggle('has-route', !!c.route);
@@ -1480,7 +1734,7 @@ function renderCompare(c, flatMiss) {
     <tr><td>Sun's width${infoButton('sky.width', 'width of the sun')}</td><td>${deg(c.obs.sizeDeg, 2)}</td><td>${deg(c.globe.sizeDeg, 2)}</td>
       <td class="${Math.abs(c.flat.sizeDeg - c.obs.sizeDeg) > 0.03 ? 'bad' : ''}">${deg(c.flat.sizeDeg, 2)}</td></tr>
     <tr><td>Sun visible?</td><td>${up ? 'yes' : 'no, set'}</td><td>${c.globe.el > -0.833 ? 'yes' : 'no, set'}</td>
-      <td class="${up ? '' : 'bad'}">yes</td></tr>
+      <td class="${up === c.flat.el > -0.833 ? '' : 'bad'}">${c.flat.el > -0.833 ? 'yes' : 'no, set'}</td></tr>
     <tr><td>Miss${infoButton('sky.miss', 'miss')}</td><td class="dim">n/a</td><td class="${cls(globeMiss)}">${deg(globeMiss, 2)}</td>
       <td class="${cls(flatMiss)}">${deg(flatMiss, 1)}</td></tr>
     ${bendingRow(c.obs, c.globe, c.flat, infoButton('sky.lift', 'lift from the air'))}`;
@@ -1504,8 +1758,9 @@ function renderOwn() {
         const implied =
           s.implied === null
             ? ''
-            : `<p class="hint">For the flat model to match this elevation, its sun would have to be
+            : `<p class="hint">For the flat model to match this elevation, its ${m.star ? 'stars' : 'sun'} would have to be
                <b class="f">${km(s.implied)}</b> up.</p>`;
+        const what = m.star ? esc(m.star) : 'The sun';
         const far =
           s.globeMiss > 10
             ? `<p class="hint">This is a long way from the published position for that time and place. It is worth
@@ -1513,7 +1768,7 @@ function renderOwn() {
             : '';
         return `<div class="own-card ${isShown(m) ? 'shown' : ''}" data-i="${i}">
           <div class="own-head">
-            <div>${m.label ? `<b>${esc(m.label)}</b>` : ''}<small>${whenUtc(m.t)}</small>
+            <div><b>${m.label ? esc(m.label) : what}</b>${m.label ? `<small>${what}</small>` : ''}<small>${whenUtc(m.t)}</small>
               <small>${where(m.lat, m.lon)}${m.tempC === null ? '' : `, air ${m.tempC} °C`}</small></div>
             <span class="own-actions">
               <button data-act="show" title="Show this time and place in the views">Show</button>
@@ -1535,26 +1790,34 @@ function renderOwn() {
       .join('');
 
     const n = measurements.length;
-    const verdict =
-      sum.best.rms < 1
-        ? `One sun height (about ${km(sum.best.heightKm)}) can match what you have entered so far. That is expected
-           with ${n === 1 ? 'a single measurement' : 'so few'}: any one elevation can be explained by choosing a
-           height. The test is whether a measurement from another place, or from the same place at another time of
-           day, agrees on the same height.`
-        : sum.impliedMin !== null && n > 1
-          ? `Your measurements put the flat sun at heights from <b class="f">${km(sum.impliedMin)}</b> to
-             <b class="f">${km(sum.impliedMax)}</b>. The best single height, ${km(sum.best.heightKm)}, still misses
-             by ${deg(sum.best.rms)} on average.`
-          : `The best flat sun height for this, ${km(sum.best.heightKm)}, still misses by ${deg(sum.best.rms)}.`;
+    // What one kind of measurement says about the flat model's height for it.
+    const verdictFor = (group, thing, it) => {
+      if (!group) return '';
+      const { best, count } = group;
+      if (best.rms < 1) {
+        return `<p class="hint">One height for the flat ${thing} (about ${km(best.heightKm)}) can match what you have
+          entered for ${it} so far. That is expected with ${count === 1 ? 'a single measurement' : 'so few'}: any one
+          elevation can be explained by choosing a height. The test is whether a measurement from another place, or
+          from the same place at another time, agrees on the same height.</p>`;
+      }
+      if (group.impliedMin !== null && count > 1) {
+        return `<p class="hint">Your measurements put the flat ${thing} at heights from
+          <b class="f">${km(group.impliedMin)}</b> to <b class="f">${km(group.impliedMax)}</b>. The best single
+          height, ${km(best.heightKm)}, still misses by ${deg(best.rms)} on average.</p>`;
+      }
+      return `<p class="hint">The best height for the flat ${thing}, ${km(best.heightKm)}, still misses by ${deg(best.rms)}.</p>`;
+    };
+    const fitting = sum.sun && sum.stars ? 'the heights that best fit' : `the ${sum.stars ? 'star' : 'sun'} height that best fits`;
     summary =
       `<p class="hint">Typical miss across your ${n} measurement${n === 1 ? '' : 's'}:</p>` +
       bar('Globe', sum.globeRms, 'var(--globe)') +
       bar('Flat, as set', sum.flatRms, 'var(--flat)') +
-      bar('Flat, best', sum.best.rms, 'var(--flat)') +
-      `<p class="hint">${verdict}</p>
-       <p class="hint">A stick and a tape measure are good to a degree or two, so expect even a correct model to miss
-       by about that much.</p>
-       <button data-act="fit">Use the sun height that best fits my measurements</button>`;
+      bar('Flat, best', sum.bestRms, 'var(--flat)') +
+      verdictFor(sum.sun, 'sun', 'it') +
+      verdictFor(sum.stars, 'stars', 'them') +
+      `<p class="hint">A stick and a tape measure, or a phone held along a line of sight, are good to a degree or two,
+       so expect even a correct model to miss by about that much.</p>
+       <button data-act="fit">Use ${fitting} my measurements</button>`;
   }
   const html = `${list}\u0000${summary}`;
   if (html === ownHtml) return;
@@ -1928,6 +2191,8 @@ function syncInputs() {
   $('light-range').value = state.lightRangeKm;
   $('light-range-label').textContent = km(state.lightRangeKm);
   $('flat-lighting').value = state.flatLighting;
+  $('flat-light').value = state.flatLight;
+  $('light-range-name').textContent = state.flatLight === 'bent' ? 'How far off the sun is seen to set' : 'How far its light reaches';
   $('stars').checked = state.stars;
   $('star').value = state.star;
   $('star-height').value = heightToSlider(state.starHeightKm);
@@ -1975,6 +2240,14 @@ function syncInputs() {
   const note = $('hz-view-note');
   note.hidden = !view;
   if (note.innerHTML !== noteHtml) note.innerHTML = noteHtml;
+  const sight = sightShown() ? state.sight : null;
+  $('hz-sight').hidden = !sight;
+  if (sight) {
+    const middle = greatCirclePath(sight.from, sight.to, 2)[1];
+    $('hz-sight-text').textContent = `On the map: from ${sight.from.name} to ${sight.to.name}, ${fmtD(state.targetKm)}.`;
+    $('hz-sight-link').href = earthUrl(middle.lat, middle.lon, Math.max(5, state.targetKm * 1.6));
+    setIfIdle($('hz-sight-water'), String(sight.waterM));
+  }
   setIfIdle($('ss-low'), tidy(heightNumber(state.sunsetLowM)));
   setIfIdle($('ss-high'), tidy(heightNumber(state.sunsetHighM)));
   setIfIdle($('ss-lat'), state.lat.toFixed(1));
@@ -2074,6 +2347,10 @@ function bindControls() {
   });
   $('flat-lighting').addEventListener('change', (e) => {
     state.flatLighting = e.target.value;
+    requestUpdate();
+  });
+  $('flat-light').addEventListener('change', (e) => {
+    state.flatLight = e.target.value === 'bent' ? 'bent' : 'straight';
     requestUpdate();
   });
   // Stars
@@ -2360,14 +2637,28 @@ function bindMeasurementForm() {
     const shadow = Number($('m-shadow').value);
     return filled('m-stick') && filled('m-shadow') && stick > 0 && shadow > 0 ? shadowToElevation(stick, shadow) : null;
   };
+  // What was measured: the sun, or one of the stars. A star throws no shadow, so it is always an angle.
+  $('m-what').innerHTML =
+    '<option value="">The sun</option><optgroup label="A star">' +
+    STARS.map((s) => s.name)
+      .sort((a, b) => a.localeCompare(b))
+      .map((name) => `<option value="${esc(name)}">${esc(name)}</option>`)
+      .join('') +
+    '</optgroup>';
+  const usingShadow = () => !$('m-what').value && $('m-method').value === 'shadow';
   const showMethod = () => {
-    const shadow = $('m-method').value === 'shadow';
+    const star = $('m-what').value;
+    const shadow = usingShadow();
+    $('m-method-row').hidden = !!star;
+    $('m-star-hint').hidden = !star;
     $('m-angle-fields').hidden = shadow;
     $('m-shadow-fields').hidden = !shadow;
+    $('m-el-label').textContent = star ? `Height of ${star} above the horizon (°)` : "Sun's height above the horizon (°)";
     $('m-az-label').textContent = shadow
       ? 'Compass bearing the shadow points (°, optional)'
-      : 'Compass bearing to the sun (°, optional)';
+      : `Compass bearing to ${star || 'the sun'} (°, optional)`;
   };
+  $('m-what').addEventListener('change', showMethod);
   const showShadowResult = () => {
     const el = shadowElevation();
     $('m-shadow-result').textContent =
@@ -2380,7 +2671,7 @@ function bindMeasurementForm() {
   showShadowResult();
 
   $('m-add').addEventListener('click', () => {
-    const shadow = $('m-method').value === 'shadow';
+    const shadow = usingShadow();
     const el = shadow ? shadowElevation() : filled('m-el') ? Number($('m-el').value) : null;
     if (el === null || !Number.isFinite(el) || el < 0 || el > 90) {
       return toast(shadow ? 'Enter the stick height and the shadow length' : 'Enter an elevation from 0 to 90 degrees');
@@ -2400,6 +2691,7 @@ function bindMeasurementForm() {
       az,
       label: $('m-label').value,
       tempC: $('m-temp').value,
+      star: $('m-what').value,
     });
     if (!m) return toast('That measurement could not be read');
     const before = measurements.length;
@@ -2408,6 +2700,8 @@ function bindMeasurementForm() {
     saveMeasurements();
     state.date = new Date(m.t);
     state.playing = false;
+    // A star that has just been measured is put on show, so its mark can be seen beside it.
+    if (m.star) Object.assign(state, { stars: true, star: m.star });
     for (const id of ['m-el', 'm-shadow', 'm-az', 'm-label', 'm-temp']) $(id).value = '';
     showShadowResult();
     toast('Measurement added');
@@ -2418,10 +2712,12 @@ function bindMeasurementForm() {
     const btn = e.target.closest('button[data-act]');
     if (!btn) return;
     if (btn.dataset.act === 'fit') {
-      const best = summariseMeasurements(measurements, flatParams(), currentAir())?.best;
-      if (!best) return;
-      state.sunHeightKm = best.heightKm;
-      toast(`Best fit to your measurements: ${km(best.heightKm)}, off by ${deg(best.rms)}`);
+      const sum = summariseMeasurements(measurements, flatParams(), currentAir());
+      if (!sum) return;
+      if (sum.sun) state.sunHeightKm = clamp(sum.sun.best.heightKm, MIN_HEIGHT_KM, MAX_HEIGHT_KM);
+      if (sum.stars) state.starHeightKm = clamp(sum.stars.best.heightKm, MIN_HEIGHT_KM, MAX_HEIGHT_KM);
+      const heights = [sum.sun && `sun ${km(sum.sun.best.heightKm)}`, sum.stars && `stars ${km(sum.stars.best.heightKm)}`].filter(Boolean).join(', ');
+      toast(`Best fit to your measurements: ${heights}, off by ${deg(sum.bestRms)}`);
       requestUpdate();
       return;
     }
@@ -2431,6 +2727,7 @@ function bindMeasurementForm() {
       state.date = new Date(m.t);
       state.playing = false;
       state.follow = true;
+      if (m.star) Object.assign(state, { stars: true, star: m.star });
       setObserver(m, true);
     } else if (btn.dataset.act === 'remove') {
       measurements = measurements.filter((x) => x !== m);
@@ -2452,6 +2749,7 @@ function writeHash() {
     r: Math.round(state.lightRangeKm),
     sl: state.sightLines ? 1 : 0,
     fl: state.flatLighting,
+    ...(state.flatLight === 'bent' ? { fb: 1 } : {}),
     rf: { off: 0, standard: 1, custom: 2 }[state.refraction],
   });
   if (state.refraction === 'custom') {
@@ -2494,6 +2792,10 @@ function writeHash() {
     p.set('td', Number(state.targetKm.toFixed(2)));
     p.set('eh', tidy(state.eyeM));
     p.set('k', state.k.toFixed(2));
+    if (sightShown()) {
+      const { from, to, waterM } = state.sight;
+      p.set('sg', [from.lat, from.lon, to.lat, to.lon].map((n) => Number(n.toFixed(5))).concat(Number(waterM.toFixed(2))).join(','));
+    }
     if (state.sunsetLowM !== 0.2 || state.sunsetHighM !== 1.7 || state.sunsetSeconds !== null) {
       p.set('s1', tidy(state.sunsetLowM));
       p.set('s2', tidy(state.sunsetHighM));
@@ -2530,6 +2832,7 @@ function readHash() {
   state.tempC = num('tc', ...AIR_LIMITS.tempC) ?? state.tempC;
   state.pressureHpa = num('ph', ...AIR_LIMITS.pressureHpa) ?? state.pressureHpa;
   if (p.get('fl') === 'observed' || p.get('fl') === 'model') state.flatLighting = p.get('fl');
+  state.flatLight = p.get('fb') === '1' ? 'bent' : 'straight';
   if (DEMOS[p.get('demo')]) state.demo = p.get('demo');
   if (p.has('tl')) state.ownTour = cleanTourSteps(p.get('tl').split('~'));
   // A tour is named by "tn"; a step number alone means the first tour, as it did when there was only one.
@@ -2561,6 +2864,21 @@ function readHash() {
   state.targetKm = num('td', ...HZ_LIMITS.targetKm) ?? state.targetKm;
   state.eyeM = num('eh', ...HZ_LIMITS.eyeM) ?? state.eyeM;
   state.k = num('k', 0, 1) ?? state.k;
+  // The two ends of the line of sight, and the height of the water. Their names come back if they are a well-known view's.
+  const ends = (p.get('sg') ?? '').split(',').map(Number);
+  if (ends.length === 5 && ends.every(Number.isFinite) && Math.abs(ends[0]) <= 90 && Math.abs(ends[2]) <= 90 && Math.abs(ends[1]) <= 180 && Math.abs(ends[3]) <= 180) {
+    const near = (a, b) => Math.abs(a.lat - b.lat) < 1e-4 && Math.abs(a.lon - b.lon) < 1e-4;
+    const from = { lat: ends[0], lon: ends[1] };
+    const to = { lat: ends[2], lon: ends[3] };
+    const known = VIEWS.find((v) => near(v.from, from) && near(v.to, to));
+    state.sight = {
+      from: { name: known?.from.name ?? 'the first place', ...from },
+      to: { name: known?.to.name ?? 'the second place', ...to },
+      waterM: clamp(ends[4], -500, 6000),
+    };
+  } else if (p.has('td')) {
+    state.sight = null;
+  }
   state.layers = p.get('ly') === '1';
   state.sunsetHighM = num('s2', 0.02, HZ_LIMITS.eyeM[1]) ?? state.sunsetHighM;
   state.sunsetLowM = num('s1', 0, state.sunsetHighM * 0.99) ?? Math.min(state.sunsetLowM, state.sunsetHighM * 0.99);

@@ -1,12 +1,14 @@
 // Measurements the user took themselves, and how each model scores against them.
 //
-// A measurement is { t, lat, lon, el, az, label, tempC }:
+// A measurement is { t, lat, lon, el, az, label, tempC, star }:
 //   t      time it was taken, milliseconds since the epoch
-//   el     sun's elevation above the horizon, degrees
-//   az     compass bearing to the sun, degrees from true north, or null if not measured
+//   el     elevation above the horizon of what was measured, degrees
+//   az     compass bearing to it, degrees from true north, or null if not measured
 //   tempC  air temperature when it was taken, degrees Celsius, or null if not noted
-import { DEG, subsolarPoint, wrap360 } from './astro.js';
-import { globePredict, flatPredict, impliedSunHeightKm, skySeparation } from './models.js';
+//   star   the name of the star that was measured, or null for the sun
+import { DEG, subsolarPoint, starPoints, wrap360 } from './astro.js';
+import { STARS, starIndex } from './stars.js';
+import { globePredict, flatPredict, flatBendPerKm, impliedSunHeightKm, skySeparation } from './models.js';
 import { STANDARD_AIR, AIR_LIMITS } from './refraction.js';
 
 export const MAX_MEASUREMENTS = 40;
@@ -38,12 +40,29 @@ export function airFor(m, air) {
   return air && m.tempC !== null && m.tempC !== undefined ? { ...air, tempC: m.tempC } : air;
 }
 
+/** The place on Earth that the sun, or the star that was measured, stood over when the measurement was taken. */
+export function overheadPoint(m) {
+  const date = new Date(m.t);
+  return m.star ? starPoints(date, [STARS[starIndex(m.star)]])[0] : subsolarPoint(date);
+}
+
+/**
+ * The flat model's settings for what was measured. The stars have a height of
+ * their own (`starHeightKm`), and nothing limits how far their light reaches.
+ */
+export function flatParamsFor(m, flatParams) {
+  // If the flat model's light bends, starlight bends as much as sunlight does.
+  return m.star
+    ? { sunHeightKm: flatParams.starHeightKm ?? flatParams.sunHeightKm, lightRangeKm: Infinity, bendPerKm: flatBendPerKm(flatParams) }
+    : flatParams;
+}
+
 /** Both models' predictions for one measurement, and how far each one is off. */
 export function scoreMeasurement(m, flatParams, air = STANDARD_AIR) {
-  const sub = subsolarPoint(new Date(m.t));
+  const sub = overheadPoint(m);
   const own = airFor(m, air);
   const globe = globePredict(sub, m.lat, m.lon, own);
-  const flat = flatPredict(sub, m.lat, m.lon, flatParams, own);
+  const flat = flatPredict(sub, m.lat, m.lon, flatParamsFor(m, flatParams), own);
   return {
     sub,
     air: own,
@@ -51,25 +70,20 @@ export function scoreMeasurement(m, flatParams, air = STANDARD_AIR) {
     flat,
     globeMiss: measurementMiss(m, globe),
     flatMiss: measurementMiss(m, flat),
-    // Flat-model sun height that would reproduce this one elevation.
-    implied: impliedSunHeightKm(sub, m.lat, m.lon, m.el),
+    // The flat-model height, of the sun or of the stars, that would reproduce this one elevation.
+    implied: impliedSunHeightKm(sub, m.lat, m.lon, m.el, m.star ? { bendPerKm: flatBendPerKm(flatParams) } : { bendSetKm: flatParams.bendSetKm }),
   };
 }
 
 const rms = (values) => (values.length ? Math.sqrt(values.reduce((a, v) => a + v * v, 0) / values.length) : null);
 
-/**
- * Typical miss of each model over a set of measurements, plus the single flat-model
- * sun height that fits all of them best.
- */
-export function summariseMeasurements(list, flatParams, air = STANDARD_AIR, minKm = 100, maxKm = 1e6, steps = 180) {
-  if (!list.length) return null;
-  const scored = list.map((m) => ({ m, ...scoreMeasurement(m, flatParams, air) }));
+/** The one flat-model height that fits a set of scored measurements best, and how far it still misses. */
+function bestHeight(scored, flatParams, minKm, maxKm, steps) {
   const heightAt = (x) => minKm * Math.pow(maxKm / minKm, x);
   const missAt = (x) =>
     rms(
       scored.map((s) =>
-        measurementMiss(s.m, flatPredict(s.sub, s.m.lat, s.m.lon, { ...flatParams, sunHeightKm: heightAt(x) }, s.air)),
+        measurementMiss(s.m, flatPredict(s.sub, s.m.lat, s.m.lon, { ...flatParamsFor(s.m, flatParams), sunHeightKm: heightAt(x) }, s.air)),
       ),
     );
   // Coarse sweep over the whole range, then narrow in around the best step.
@@ -87,15 +101,48 @@ export function summariseMeasurements(list, flatParams, air = STANDARD_AIR, minK
     if (missAt(a) < missAt(b)) hi = b;
     else lo = a;
   }
-  const best = { heightKm: heightAt((lo + hi) / 2), rms: Math.min(bestMiss, missAt((lo + hi) / 2)) };
+  return { heightKm: heightAt((lo + hi) / 2), rms: Math.min(bestMiss, missAt((lo + hi) / 2)) };
+}
+
+/** What a set of measurements of one kind (the sun, or the stars) says about the flat model's height for it. */
+function summariseKind(scored, flatParams, minKm, maxKm, steps) {
+  if (!scored.length) return null;
   const implied = scored.map((s) => s.implied).filter((h) => h !== null);
+  return {
+    count: scored.length,
+    best: bestHeight(scored, flatParams, minKm, maxKm, steps),
+    impliedMin: implied.length ? Math.min(...implied) : null,
+    impliedMax: implied.length ? Math.max(...implied) : null,
+  };
+}
+
+/**
+ * Typical miss of each model over a set of measurements. The flat model has one
+ * height for the sun and another for the stars, so the two kinds are fitted
+ * apart: `sun` and `stars` each hold the single height that fits that kind
+ * best, or are null when there are none of that kind. `bestRms` is the flat
+ * model's typical miss with both heights at their best.
+ */
+export function summariseMeasurements(list, flatParams, air = STANDARD_AIR, minKm = 100, maxKm = 1e6, steps = 180) {
+  if (!list.length) return null;
+  const scored = list.map((m) => ({ m, ...scoreMeasurement(m, flatParams, air) }));
+  const sun = summariseKind(scored.filter((s) => !s.m.star), flatParams, minKm, maxKm, steps);
+  const stars = summariseKind(scored.filter((s) => s.m.star), flatParams, minKm, maxKm, steps);
+  const atBest = scored.map((s) => {
+    const heightKm = (s.m.star ? stars : sun).best.heightKm;
+    return measurementMiss(s.m, flatPredict(s.sub, s.m.lat, s.m.lon, { ...flatParamsFor(s.m, flatParams), sunHeightKm: heightKm }, s.air));
+  });
   return {
     scored,
     globeRms: rms(scored.map((s) => s.globeMiss)),
     flatRms: rms(scored.map((s) => s.flatMiss)),
-    best,
-    impliedMin: implied.length ? Math.min(...implied) : null,
-    impliedMax: implied.length ? Math.max(...implied) : null,
+    bestRms: rms(atBest),
+    sun,
+    stars,
+    // The sun's own figures, under the names they had before stars could be measured.
+    best: sun?.best ?? null,
+    impliedMin: sun?.impliedMin ?? null,
+    impliedMax: sun?.impliedMax ?? null,
   };
 }
 
@@ -111,6 +158,9 @@ export function cleanMeasurement(raw) {
   // A temperature that cannot be read is dropped; the measurement itself is still good.
   const temp = num(raw.tempC);
   const [coldest, hottest] = AIR_LIMITS.tempC;
+  // A star the app does not know cannot be scored, and must not be scored as the sun.
+  const star = blank(raw.star) ? null : String(raw.star);
+  if (star !== null && starIndex(star) < 0) return null;
   if (![t, lat, lon, el].every(Number.isFinite)) return null;
   if (Math.abs(lat) > 90 || Math.abs(lon) > 180 || el < 0 || el > 90) return null;
   if (az !== null && (!Number.isFinite(az) || az < 0 || az > 360)) return null;
@@ -123,10 +173,11 @@ export function cleanMeasurement(raw) {
     az: az === null ? null : Number((az % 360).toFixed(1)),
     label: String(raw.label ?? '').replace(/[,;]/g, ' ').trim().slice(0, 30),
     tempC: Number.isFinite(temp) && temp >= coldest && temp <= hottest ? Number(temp.toFixed(1)) : null,
+    star,
   };
 }
 
-export const measurementKey = (m) => `${m.t}|${m.lat}|${m.lon}|${m.el}|${m.az ?? ''}`;
+export const measurementKey = (m) => `${m.t}|${m.lat}|${m.lon}|${m.el}|${m.az ?? ''}|${m.star ?? ''}`;
 
 /** Joins lists, dropping duplicates and anything unusable, oldest first. Of two copies, one with a temperature wins. */
 export function mergeMeasurements(...lists) {
@@ -140,10 +191,12 @@ export function mergeMeasurements(...lists) {
   return [...seen.values()].sort((a, b) => a.t - b.t).slice(0, MAX_MEASUREMENTS);
 }
 
-/** Compact text form for a shareable link: `time,lat,lon,el,az,label,temperature;...`. */
+/** Compact text form for a shareable link: `time,lat,lon,el,az,label,temperature,star;...`. Empty fields at the end are left off. */
 export function encodeMeasurements(list) {
   return list
-    .map((m) => [new Date(m.t).toISOString().slice(0, 19) + 'Z', m.lat, m.lon, m.el, m.az ?? '', m.label, m.tempC ?? ''].join(',').replace(/,$/, ''))
+    .map((m) =>
+      [new Date(m.t).toISOString().slice(0, 19) + 'Z', m.lat, m.lon, m.el, m.az ?? '', m.label, m.tempC ?? '', m.star ?? ''].join(',').replace(/,+$/, ''),
+    )
     .join(';');
 }
 
@@ -151,8 +204,8 @@ export function decodeMeasurements(text) {
   if (!text) return [];
   return mergeMeasurements(
     text.split(';').map((part) => {
-      const [time, lat, lon, el, az, label, tempC] = part.split(',');
-      return { t: Date.parse(time), lat, lon, el, az, label, tempC };
+      const [time, lat, lon, el, az, label, tempC, star] = part.split(',');
+      return { t: Date.parse(time), lat, lon, el, az, label, tempC, star };
     }),
   );
 }

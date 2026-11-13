@@ -15,6 +15,8 @@ import {
   horizonDistanceKm,
   hiddenHeightM,
   horizonLineM,
+  sightLineHeightM,
+  middleMarkRiseM,
   dipDeg,
   flatNeeds,
   horizonScene,
@@ -24,7 +26,7 @@ import {
 } from '../js/horizon.js';
 import { ARGUMENTS, GROUPS, TOOLS, TOURS, OWN_TOUR, MAX_TOUR_STEPS, cleanTourSteps } from '../js/arguments/index.js';
 import { SLIDER_STEPS, defaultsFor, cleanValue, cleanOwn, sliderPosition, sliderValue, encodeOwn, decodeOwn, controlFaults } from '../js/arguments/controls.js';
-import { earthUrl, buildKml } from '../js/earth.js';
+import { earthUrl, buildKml, buildSightKml, parseKml, KML_LIMITS } from '../js/earth.js';
 import { VIEWS, viewSizes } from '../js/presets.js';
 import { makeAir, traceRay, traceView, astronomicalBend } from '../js/raytrace.js';
 import {
@@ -43,13 +45,17 @@ import {
   starPoints,
   observedStar,
   constellationAt,
+  siderealHours,
+  wrap180,
+  DEG,
   EARTH_RADIUS_KM,
 } from '../js/astro.js';
 import { STARS, STAR_LINES, starIndex } from '../js/stars.js';
-import { ROUTES, routeStats, greatCirclePath, blockHours } from '../js/distances.js';
+import { ROUTES, routeStats, greatCirclePath, blockHours, globeDistanceKm } from '../js/distances.js';
 import {
   globePredict,
   flatPredict,
+  flatBendPerKm,
   impliedSunHeightKm,
   skySeparation,
   rmsMiss,
@@ -76,6 +82,8 @@ import {
   encodeMeasurements,
   decodeMeasurements,
   scoreMeasurement,
+  measurementKey,
+  overheadPoint,
 } from '../js/measurements.js';
 
 let failures = 0;
@@ -148,6 +156,47 @@ const fit = flatFitCurve(samples, params, STANDARD_AIR);
 console.log(`globe rms ${f(globeRms, 4)} deg; flat best ${f(fit.best.rms, 2)} deg at ${Math.round(fit.best.heightKm)} km`);
 check('flat best fit is still off by more than 5 deg', fit.best.rms > 5);
 
+// 6a. The flat model with light that curves upward.
+{
+  const sunNow = subsolarPoint(new Date(Date.UTC(2026, 2, 20, 12)));
+  const straight = { sunHeightKm: 5000, lightRangeKm: 10000 };
+  const bent = { ...straight, bendSetKm: 10000 };
+  const at = (groundKm) => ({ lat: sunNow.lat + groundKm / 111.19493, lon: sunNow.lon }); // a place that far north of the sun on the flat map
+  check('with no bending asked for, the flat model is exactly as it was',
+    flatBendPerKm(straight) === 0 && flatPredict(sunNow, 40, 10, { ...straight, bendSetKm: 0 }).el === flatPredict(sunNow, 40, 10, straight).el);
+  check('the bend is set so that the sun is on the horizon from as far as its light reaches',
+    near(flatBendPerKm(bent), (2 * 5000) / 1e8, 1e-15) && Math.abs(flatPredict(sunNow, at(10000).lat, sunNow.lon, bent, null).trueEl) < 0.01,
+    f(flatPredict(sunNow, at(10000).lat, sunNow.lon, bent, null).trueEl, 4));
+  check('nearer than that it is above the horizon but lower than with straight light, and further off it has set',
+    flatPredict(sunNow, at(5000).lat, sunNow.lon, bent, null).trueEl > 0 &&
+    flatPredict(sunNow, at(5000).lat, sunNow.lon, bent, null).trueEl < flatPredict(sunNow, at(5000).lat, sunNow.lon, straight, null).trueEl &&
+    flatPredict(sunNow, at(7000).lat, sunNow.lon + 150, bent, null).trueEl < 0);
+  check('directly underneath it is still overhead, and the bearing is never changed',
+    near(flatPredict(sunNow, sunNow.lat, sunNow.lon, bent, null).trueEl, 90, 1e-6) && flatPredict(sunNow, 40, 10, bent).az === flatPredict(sunNow, 40, 10, straight).az);
+  const seen = flatPredict(sunNow, 40, 10, bent, null).trueEl;
+  check('the sun height one observer implies comes back out when the bend is allowed for',
+    near(impliedSunHeightKm(sunNow, 40, 10, seen, bent), 5000, 1e-6) &&
+    near(impliedSunHeightKm(sunNow, 40, 10, seen, { bendPerKm: flatBendPerKm(bent) }), 5000, 1e-6) &&
+    impliedSunHeightKm(sunNow, -60, sunNow.lon + 170, 5, bent) === null);
+  // How well can it do? Every pair of settings on a grid, over a day at an equinox and at both solstices.
+  const tries = [];
+  for (const day of [Date.UTC(2026, 2, 20), Date.UTC(2026, 5, 21), Date.UTC(2026, 11, 21)]) {
+    for (let hour = 0; hour < 24; hour += 2) {
+      const when = new Date(day + hour * 3600000);
+      const sunThen = subsolarPoint(when);
+      for (const c of REF_CITIES) {
+        const o = observedSun(when, c.lat, c.lon);
+        if (o.el > 2) tries.push({ sub: sunThen, c, o });
+      }
+    }
+  }
+  const typical = (p) => Math.sqrt(tries.reduce((sum, s) => sum + skySeparation(s.o, flatPredict(s.sub, s.c.lat, s.c.lon, p)) ** 2, 0) / tries.length);
+  let bestBent = Infinity;
+  for (let h = 2000; h <= 12000; h += 1000) for (let reach = 8000; reach <= 20000; reach += 2000) bestBent = Math.min(bestBent, typical({ sunHeightKm: h, lightRangeKm: reach, bendSetKm: reach }));
+  check('no height and reach make bending light fit: over a day it still misses by more than 20 degrees', bestBent > 20 && typical({ sunHeightKm: 5000, lightRangeKm: 1e4 }) > 20,
+    `best ${f(bestBent, 1)} deg over ${tries.length} sightings`);
+}
+
 // 7. Sun events.
 const ev = sunEvents(new Date('2026-11-12T12:00:00Z'), 51.51, -0.13);
 console.log('London 12 Nov 2026:', ev.rise?.toISOString(), ev.noon?.toISOString(), ev.set?.toISOString());
@@ -180,6 +229,49 @@ check('measurements survive a round trip through a link',
   JSON.stringify(decodeMeasurements(encodeMeasurements(list))) === JSON.stringify(mergeMeasurements(list)));
 check('unusable measurements are dropped',
   mergeMeasurements([{ t: 'x', lat: 0, lon: 0, el: 10 }, { t: t0, lat: 0, lon: 0, el: 95 }, { t: t0, lat: '', lon: 0, el: 10 }]).length === 0);
+
+// 8a. Measurements of a star.
+{
+  const night = Date.UTC(2026, 10, 12, 22);
+  const star = (name) => STARS.find((s) => s.name === name);
+  const sight = (starName, cityName, withBearing = false) => {
+    const c = REF_CITIES.find((x) => x.name === cityName);
+    const o = observedStar(new Date(night), c.lat, c.lon, starPoints(new Date(night), [star(starName)])[0]);
+    return cleanMeasurement({ t: night, lat: c.lat, lon: c.lon, el: o.el, az: withBearing ? o.az : null, label: cityName, star: starName });
+  };
+  const london = sight('Polaris', 'London');
+  check('a measurement can be of a star', london?.star === 'Polaris' && cleanMeasurement({ ...london, star: '' }).star === null);
+  check('a star the app does not know is refused, not scored as the sun', cleanMeasurement({ ...london, star: 'Nonsense' }) === null);
+  check("the pole star's height from London is within a degree of London's latitude", Math.abs(london.el - london.lat) < 1, f(london.el, 2));
+  const overhead = overheadPoint(london);
+  check('the place a star stands over has the latitude of its place in the sky', near(overhead.lat, overhead.dec, 1e-9) && overhead.lat > 89);
+  const starParams = { ...params, starHeightKm: 6000 };
+  const scored = scoreMeasurement(london, starParams);
+  check('the globe matches a star measurement taken from the published positions', scored.globeMiss < 0.05, f(scored.globeMiss, 4));
+  check("the flat model's stars use their own height, not the sun's",
+    scoreMeasurement(london, { ...starParams, sunHeightKm: 9000 }).flat.el === scored.flat.el &&
+    scoreMeasurement(london, { ...starParams, starHeightKm: 3000 }).flat.el < scored.flat.el - 5);
+  const oneStar = summariseMeasurements([london], starParams);
+  check('one star height alone can be matched by some height for the flat stars, and says nothing about the sun',
+    oneStar.stars.best.rms < 0.05 && oneStar.sun === null && oneStar.best === null && oneStar.bestRms < 0.05,
+    `flat best ${f(oneStar.stars.best.rms, 3)} at ${Math.round(oneStar.stars.best.heightKm)} km`);
+  const threeStars = summariseMeasurements([london, sight('Polaris', 'Cairo'), sight('Polaris', 'New York')], starParams);
+  check('the pole star from three places cannot', threeStars.stars.best.rms > 2 && threeStars.globeRms < 0.05 && threeStars.stars.count === 3,
+    `flat best ${f(threeStars.stars.best.rms, 2)} at ${Math.round(threeStars.stars.best.heightKm)} km, implied ${Math.round(threeStars.stars.impliedMin)} to ${Math.round(threeStars.stars.impliedMax)} km`);
+  const mixed = summariseMeasurements([measure('Cairo', false), london], starParams);
+  check('the sun and the stars are each fitted to a height of their own',
+    mixed.sun.count === 1 && mixed.stars.count === 1 && mixed.bestRms < 0.05 && Math.abs(mixed.sun.best.heightKm - mixed.stars.best.heightKm) > 500,
+    `sun ${Math.round(mixed.sun.best.heightKm)} km, stars ${Math.round(mixed.stars.best.heightKm)} km`);
+  const both = [sight('Sirius', 'Cairo', true), london, measure('Cairo', true)];
+  check('star measurements survive a round trip through a link',
+    JSON.stringify(decodeMeasurements(encodeMeasurements(both))) === JSON.stringify(mergeMeasurements(both)), encodeMeasurements([london]));
+  check('a link written before stars could be measured still reads, as the sun',
+    decodeMeasurements('2026-11-12T11:00:00Z,30.04,31.24,35.2,170,Cairo,12')[0].star === null);
+  check('a measurement with nothing optional ends at its last number in a link',
+    /,\d+(\.\d+)?$/.test(encodeMeasurements([measure('London', false)].map((m) => ({ ...m, label: '' })))));
+  check('the sun and a star at the same height, time and place are two measurements',
+    measurementKey(london) !== measurementKey({ ...london, star: null }) && mergeMeasurements([london, { ...london, star: null }]).length === 2);
+}
 
 // 9. Distances under each model.
 const place = (name) => CITIES.find((x) => x.name === name);
@@ -273,6 +365,27 @@ const starSamples = REF_CITIES.flatMap((c) => pts.map((p) => ({ lat: c.lat, lon:
 const starFit = flatFitCurve(starSamples, domeParams, STANDARD_AIR);
 console.log(`stars: flat best ${f(starFit.best.rms, 1)} deg at ${Math.round(starFit.best.heightKm)} km`);
 check('no star height brings the flat model within 10 deg', starFit.best.rms > 10);
+
+// 10a. The full catalogue the background stars are drawn from.
+{
+  const bsc = JSON.parse(readFileSync(new URL('../data/bright-stars.json', import.meta.url), 'utf8'));
+  check('the saved star catalogue holds as many stars as it says, all with a position and a brightness',
+    bsc.count > 8000 && [bsc.hr, bsc.ra, bsc.dec, bsc.mag].every((list) => list.length === bsc.count && list.every(Number.isFinite)) &&
+    bsc.ra.every((v) => v >= 0 && v < 360) && bsc.dec.every((v) => Math.abs(v) <= 90), `${bsc.count} stars`);
+  check('it goes down to what the eye can see and no further, brightest first',
+    bsc.mag.every((m, i) => m <= bsc.magLimit && (i === 0 || m >= bsc.mag[i - 1])) && bsc.magLimit === 6.5);
+  check('its brightest star is Sirius, where the hand-entered table puts it',
+    bsc.mag[0] === -1.46 && near(bsc.ra[0], star('Sirius').ra * 15, 0.01) && near(bsc.dec[0], star('Sirius').dec, 0.01));
+  // The hand-entered table and the catalogue come from different sources. Every star in one should be in the other.
+  const apart = (s, i) => Math.hypot((wrap180(s.ra * 15 - bsc.ra[i])) * Math.cos(s.dec * DEG), s.dec - bsc.dec[i]);
+  const unmatched = STARS.filter((s) => !bsc.ra.some((_, i) => apart(s, i) < 0.03));
+  check(`all ${STARS.length} stars in the hand-entered table are in the catalogue, within 0.03 degrees`, unmatched.length === 0, unmatched.map((s) => s.name).join(', '));
+  check('the sky turns once in a sidereal day: a star is overhead a degree further west every four minutes',
+    near(wrap180((siderealHours(new Date(t0 + 240000)) - siderealHours(new Date(t0))) * 15), 1.0027, 0.0005));
+  const sirius = starPoints(new Date(t0), [star('Sirius')])[0];
+  check('where a star is overhead follows from its place among the stars and how far the sky has turned',
+    near(wrap180((sirius.ra - siderealHours(new Date(t0))) * 15), sirius.lon, 1e-9));
+}
 
 // 11. Bending of light by the air.
 const arcmin = (el) => standardLift(el) * 60;
@@ -544,6 +657,64 @@ check('every opening tag in the KML file is closed',
   ['kml', 'Document', 'Placemark', 'Point', 'LineString', 'LookAt', 'coordinates', 'name'].every(
     (tag) => (kml.match(new RegExp(`<${tag}[ >]`, 'g')) ?? []).length === (kml.match(new RegExp(`</${tag}>`, 'g')) ?? []).length));
 
+// 15a. A line of sight on the map, and reading a KML file back in.
+{
+  const sizes = { eyeM: 2, targetM: 100, distanceKm: 40 };
+  check('the line of sight starts at the eye and ends at the top of the target',
+    near(sightLineHeightM(0, sizes, K_STANDARD), 2, 1e-9) && near(sightLineHeightM(40, sizes, K_STANDARD), 100, 1e-9));
+  check('half way along, it is lower than a straight run by the rise of the water in between',
+    near(51 - sightLineHeightM(20, sizes, 0), middleMarkRiseM(40, 0), 1e-9) && near(51 - sightLineHeightM(20, sizes, K_STANDARD), middleMarkRiseM(40, K_STANDARD), 1e-9));
+  check('light that follows the curve gives a straight run', near(sightLineHeightM(20, sizes, 1), 51, 1e-9));
+  // The line to the lowest point that can be seen just touches the water, and goes no lower.
+  const lowest = hiddenHeightM(sizes.eyeM, sizes.distanceKm, K_STANDARD);
+  let least = Infinity;
+  for (let i = 0; i <= 4000; i++) least = Math.min(least, sightLineHeightM((40 * i) / 4000, { ...sizes, targetM: lowest }, K_STANDARD));
+  check('the line of sight to the lowest point that shows just grazes the water', Math.abs(least) < 0.001, least.toExponential(1));
+
+  const allauch = VIEWS.find((v) => v.id === 'canigou-allauch');
+  const s = viewSizes(allauch);
+  const track = greatCirclePath(allauch.from, allauch.to, 16);
+  const sightKml = buildSightKml({
+    title: 'A & B',
+    from: { ...allauch.from, name: 'Eye <1>', description: 'x', altM: s.eyeM },
+    to: { ...allauch.to, name: 'Top', description: 'y', altM: s.targetM },
+    track,
+    lines: [{ name: 'Line', description: 'z', colour: 'ffffb16f', path: track.map((p, i) => ({ ...p, altM: sightLineHeightM((s.distanceKm * i) / 16, s, K_STANDARD) })) }],
+  });
+  check('the sight-line file escapes its text and gives the line its heights above the sea',
+    sightKml.includes('<name>A &amp; B</name>') && sightKml.includes('Eye &lt;1&gt;') && (sightKml.match(/<altitudeMode>absolute<\/altitudeMode>/g) ?? []).length === 3);
+  const back = parseKml(sightKml);
+  check('reading that file back gives its two ends and its two paths',
+    back.problem === null && back.points.length === 2 && back.lines.length === 2 && back.points[0].name === 'Eye <1>' && back.lines[1].path.length === 17,
+    `${back.points.length} places, ${back.lines.length} paths`);
+  check('and the ends are where they were put, with their heights',
+    near(back.points[0].lat, allauch.from.lat, 1e-5) && near(back.points[1].lon, allauch.to.lon, 1e-5) && near(back.points[0].altM, Math.round(s.eyeM), 1e-9) &&
+    near(globeDistanceKm(back.points[0], back.points[1]), s.distanceKm, 0.01));
+  const ownFile = parseKml(kml);
+  check("the app's own view file reads back: the observer, the sun and both ends of the route, and the route",
+    ownFile.points.length === 4 && ownFile.points[0].name === 'Observer' && ownFile.lines.length === 1 && ownFile.lines[0].path.length === 25);
+  const earthStyle = `<?xml version="1.0"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><Folder>
+    <Placemark><name><![CDATA[Tom & Jerry's <b>pier</b>]]></name><Point><coordinates>
+      -86.5442,42.0081,177 </coordinates></Point></Placemark>
+    <Placemark><name>Caf&#233; &amp; bar</name><LineString><coordinates>-87.6,41.8,0
+      -86.5,42.0,0 999,5,0 nonsense</coordinates></LineString></Placemark>
+    <Placemark><name>Off the map</name><Point><coordinates>10,95,0</coordinates></Point></Placemark>
+    <Placemark><Point><coordinates>1,2</coordinates></Point></Placemark>
+  </Folder></Document></kml>`;
+  const read = parseKml(earthStyle);
+  check('names are read as the text they stand for, with their wrapping and escapes undone',
+    read.points[0].name === "Tom & Jerry's <b>pier</b>" && read.lines[0].name === 'Café & bar', `${read.points[0]?.name} / ${read.lines[0]?.name}`);
+  check('coordinates are longitude first, anything off the Earth is dropped, and a missing height is zero',
+    read.points.length === 2 && read.points[0].lat === 42.0081 && read.points[0].lon === -86.5442 && read.points[0].altM === 177 &&
+    read.lines[0].path.length === 2 && read.points[1].altM === 0 && read.points[1].name === 'Place 2');
+  check('a zipped file, an empty one and something that is not KML are each turned away with a reason',
+    [parseKml('PK\u0003\u0004junk'), parseKml('   '), parseKml('<html><body>hello</body></html>'), parseKml('<kml><Document></Document></kml>')].every(
+      (r) => r.points.length === 0 && r.lines.length === 0 && typeof r.problem === 'string' && r.problem.length > 10));
+  check('a file that is too large is not read', parseKml('<kml>' + ' '.repeat(KML_LIMITS.bytes) + '</kml>').problem !== null);
+  const crowd = '<kml>' + Array.from({ length: KML_LIMITS.points + 50 }, (_, i) => `<Placemark><Point><coordinates>${i % 90},${i % 45}</coordinates></Point></Placemark>`).join('') + '</kml>';
+  check(`no more than ${KML_LIMITS.points} places are kept from one file`, parseKml(crowd).points.length === KML_LIMITS.points);
+}
+
 // 16. Light followed through layers of air.
 const RAD = Math.PI / 180;
 // The whole atmosphere, in the conditions the lift formula assumes, must reproduce that formula.
@@ -709,7 +880,7 @@ check('every explanation has a button that opens it', unused.length === 0, unuse
 // Each explanation is worked through with real numbers and must come out whole.
 const plain = (n, d = 1) => n.toFixed(d);
 const stubApp = {
-  state: { date: now, sunsetLowM: 0.2, sunsetHighM: 1.7, lat: hereNow.lat, lon: hereNow.lon, sunHeightKm: 5000, moonHeightKm: 5000, refraction: 'custom', tempC: -5, pressureHpa: 1000, mode: 'sky' },
+  state: { date: now, sunsetLowM: 0.2, sunsetHighM: 1.7, lat: hereNow.lat, lon: hereNow.lon, sunHeightKm: 5000, lightRangeKm: 10000, flatLight: 'bent', moonHeightKm: 5000, refraction: 'custom', tempC: -5, pressureHpa: 1000, mode: 'sky' },
   percent: (x) => `${Math.round(x * 100)}%`,
   deg: (n, d = 1) => `${plain(n, d)}°`,
   km: (n) => `${Math.round(n)} km`,

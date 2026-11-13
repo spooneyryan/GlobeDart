@@ -37,6 +37,18 @@ export function lapseForCoefficient(k, { tempC, pressureHpa } = STANDARD_GROUND_
 }
 
 /**
+ * How high the line of sight to the top of the target is above the water, in
+ * metres, at a distance along the way. Between the eye and the target the
+ * water rises toward the line by x(d − x) ÷ 2R′, most of all half way. Where
+ * the answer is below zero the water is in the way.
+ */
+export function sightLineHeightM(xKm, { eyeM, targetM, distanceKm }, k = 0) {
+  const r = effectiveRadiusKm(k);
+  const straight = eyeM + ((targetM - eyeM) * xKm) / distanceKm;
+  return Number.isFinite(r) ? straight - ((xKm * (distanceKm - xKm)) / (2 * r)) * 1000 : straight;
+}
+
+/**
  * Three marks the same height above still water, the middle one half way along.
  * This is how far the middle mark stands above the straight line of sight from
  * the first to the last, in metres: d² ÷ 8R′ for a stretch d long. It does not

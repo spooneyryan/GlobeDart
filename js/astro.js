@@ -73,6 +73,11 @@ export function starPoints(date, stars) {
   });
 }
 
+/** How far the sky has turned: Greenwich sidereal time, in hours. A star is overhead where its right ascension less this is the longitude. */
+export function siderealHours(date) {
+  return Astronomy.SiderealTime(Astronomy.MakeTime(date));
+}
+
 /** A star's position in the sky as measured by an observer. `point` comes from starPoints. */
 export function observedStar(date, lat, lon, point, air = STANDARD_AIR) {
   const hor = Astronomy.Horizon(Astronomy.MakeTime(date), new Astronomy.Observer(lat, lon, 0), point.ra, point.dec);

@@ -152,16 +152,26 @@ export function globePredict(sub, lat, lon, air = STANDARD_AIR) {
  *   w        = 2 × H × tan(width ÷ 2)
  *   s        = √(d² + H²)          straight-line distance from the observer to the sun
  *   width    = 2 × atan(w ÷ 2s)    what it should then show from the observer
+ *
+ * A variant some supporters propose has light curve upward as it travels, so
+ * that a far-off sun looks lower than it is and can set. With c the amount of
+ * curve (see flatBendPerKm), a ray that leaves the eye at slope s is at height
+ * s·x + c·x²/2 after a distance x, and has to reach H at d:
+ *
+ *   height   = atan((H − c × d² ÷ 2) ÷ d)
+ *
+ * The bearing is not changed by it: the light bends up, not sideways.
  */
 export function flatPredict(sub, lat, lon, params, air = STANDARD_AIR) {
   const heightKm = params.sunHeightKm;
+  const bend = flatBendPerKm(params);
   const a = flatPoleDistanceKm(lat);
   const b = flatPoleDistanceKm(sub.lat);
   const dLambda = (sub.lon - lon) * DEG;
   const north = a - b * Math.cos(dLambda);
   const east = b * Math.sin(dLambda);
   const groundKm = Math.hypot(north, east);
-  const trueEl = Math.atan2(heightKm, groundKm) / DEG;
+  const trueEl = Math.atan2(heightKm - (bend * groundKm * groundKm) / 2, groundKm) / DEG;
   const az = wrap360(Math.atan2(east, north) / DEG);
   const slantKm = Math.hypot(groundKm, heightKm);
   const sunWidthKm = 2 * heightKm * Math.tan((sub.sizeDeg / 2) * DEG);
@@ -179,14 +189,40 @@ export function flatPredict(sub, lat, lon, params, air = STANDARD_AIR) {
 }
 
 /**
+ * How much light curves upward in the "bending light" version of the flat
+ * model, per km travelled. Nothing fixes this number, so it is set from what
+ * it is there to explain: the sun, H up, is seen exactly on the horizon from
+ * the distance its light is said to reach.
+ *
+ *   c = 2 × H ÷ reach²
+ *
+ * `params.bendSetKm` is that reach, and goes with the sun's own height. The
+ * stars and the moon are seen by the same light, so they are handed the sun's
+ * figure ready-made as `params.bendPerKm`. With neither, light is straight.
+ */
+export function flatBendPerKm(params) {
+  if (params.bendPerKm !== undefined) return params.bendPerKm;
+  return params.bendSetKm ? (2 * params.sunHeightKm) / (params.bendSetKm * params.bendSetKm) : 0;
+}
+
+/**
  * The height the sun would have to be at, on a flat earth, to explain one
  * observer's measured height e, a distance d on the map from the place under it:
  *   H = d × tan(e)
  * If the earth were flat, every observer would get the same answer.
+ *
+ * With bending light (`light` as for flatBendPerKm, less the height):
+ *   H = d × tan(e) + c × d² ÷ 2                  for a given amount of curve
+ *   H = d × tan(e) ÷ (1 − d² ÷ reach²)           when the curve is tied to the sun's own height
+ * Beyond the reach the sun cannot be above the horizon at any height, and there is no answer.
  */
-export function impliedSunHeightKm(sub, lat, lon, observedElDeg) {
+export function impliedSunHeightKm(sub, lat, lon, observedElDeg, light = {}) {
   if (observedElDeg <= 0) return null;
-  return flatMapDistanceKm(lat, lon, sub.lat, sub.lon) * Math.tan(observedElDeg * DEG);
+  const d = flatMapDistanceKm(lat, lon, sub.lat, sub.lon);
+  const straight = d * Math.tan(observedElDeg * DEG);
+  if (light.bendPerKm !== undefined) return straight + (light.bendPerKm * d * d) / 2;
+  if (!light.bendSetKm) return straight;
+  return d < light.bendSetKm ? straight / (1 - (d * d) / (light.bendSetKm * light.bendSetKm)) : null;
 }
 
 // ---------- the moon ----------

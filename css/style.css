@@ -1150,6 +1150,42 @@ code {
   gap: 2px 6px;
 }
 
+#hz-sight {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-left: 3px solid var(--globe);
+  padding: 2px 0 2px 9px;
+}
+
+#hz-sight .hint {
+  margin: 0;
+}
+
+body[data-mode='flight'] #kml-section {
+  display: none;
+}
+
+.kml-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.kml-item small {
+  display: block;
+  color: var(--muted);
+}
+
+.kml-item button.active {
+  border-color: var(--globe);
+  color: var(--text);
+}
+
 #hz-view-note {
   border-left: 3px solid var(--line);
   padding: 2px 0 2px 9px;

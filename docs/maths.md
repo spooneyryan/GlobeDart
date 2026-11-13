@@ -103,7 +103,20 @@ width  = 2 × atan(w ÷ 2s)           the width it should then show
 
 The flat model's stars are handled the same way, all at one height of their own.
 
-- Code: `js/models.js`, `flatPredict`, `flatPoleDistanceKm`, `flatMapDistanceKm`.
+**Bending light.** A version some supporters propose has light curve upward, so that a far-off sun looks lower
+and can set. With c the amount of curve, a ray leaving the eye at slope s is `s × x + c × x² ÷ 2` high after a
+distance x, and must reach H at d:
+
+```
+height   = atan((H − c × d² ÷ 2) ÷ d)
+c        = 2 × H ÷ reach²            so that the sun is on the horizon from as far as its light reaches
+```
+
+The bearing is unchanged. The moon and the stars are bent by the sun's c. Over a day, from the reference cities,
+no height and reach bring this version within 20° of the measurements.
+
+- Code: `js/models.js`, `flatPredict`, `flatBendPerKm`, `flatPoleDistanceKm`, `flatMapDistanceKm`.
+- Checks for bending light: section 6a.
 - Checks: section 4 (overhead under the sun; a known triangle at the pole; equinox sunrise bears 45°, not 90°),
   section 17 (the formulas agree with measuring straight across the map).
 
@@ -194,14 +207,22 @@ model's height by geometry.
 - Checks: section 11, and section 16 (following light through the whole atmosphere gives the same lift within
   0.2 sixtieths of a degree from 2° up).
 
-## 6. Your own measurements of the sun
+## 6. Your own measurements of the sun and the stars
 
 An upright stick of height s and its shadow of length l on level ground put the sun at `atan(s ÷ l)`, in the
 direction opposite the shadow. Each measurement is then scored against both models exactly as in section 4. With
 no bearing, only the heights are compared.
 
-- Code: `js/measurements.js`, `shadowToElevation`, `shadowToAzimuth`, `scoreMeasurement`, `summariseMeasurements`.
-- Checks: section 8.
+A measurement of a star is scored the same way, with the place the star stood over at that moment in the place of
+the sun's. The flat model uses its height for the stars, and nothing limits how far their light reaches.
+
+The single flat-model height that fits a set of measurements best is found by trying heights from 100 km to
+1,000,000 km. Sun measurements and star measurements are fitted apart, because the flat model has a height for
+each.
+
+- Code: `js/measurements.js`, `shadowToElevation`, `shadowToAzimuth`, `overheadPoint`, `scoreMeasurement`,
+  `summariseMeasurements`.
+- Checks: sections 8 and 8a.
 
 ## 7. Distances
 
@@ -363,6 +384,9 @@ the Earth's radius: `2π × √(R ÷ g)`, which is 84.4 minutes.
 
 On a flat earth the path is a straight line and all four are zero or meaningless.
 
+A gyro left free keeps its direction against the stars, so carried round the globe it drifts at the same rate as
+the nose comes down. The artificial horizon is pulled upright by gravity and does not.
+
 - Code: `js/flight.js`, `pitchRateDegPerMin`, `hoursRound`, `climbIfStraightM`, `schulerMinutes`.
 - Checks: section 14 (run from `js/arguments/pilots.js`).
 
@@ -383,6 +407,26 @@ way in the south.
 
 - Code: `js/rotation.js`, `groundSpeedKmh`, `weightLost`, `pendulumDegPerHour`.
 - Checks: section 14 (run from `js/arguments/spin.js`).
+
+## 12a. The air
+
+The pressure at any height is the weight of the air above it, so climbing a small height dh lowers it by the
+weight of the air in that step. With ρ the density, g gravity, M the mass of a mole of air and T the temperature:
+
+```
+dp = −ρ × g × dh          and          ρ = p × M ÷ (R × T)
+```
+
+Where the temperature is steady this gives `p = p₀ × e^(−h ÷ H)` with `H = R × T ÷ (M × g)`, about 8.4 km. The
+app uses the International Standard Atmosphere, which changes the temperature layer by layer up to 84 km:
+1013.25 hPa at the sea, 226 at 11 km, 55 at 20 km. A sealed container with no gravity would have the same
+pressure at every height.
+
+What keeps the air is speed: a molecule's typical speed is `√(3 × R × T ÷ M)`, about 0.5 km a second, against
+11.2 km a second to leave the Earth.
+
+- Code: `js/atmosphere.js`, `standardAir`, `scaleHeightM`, `molecularSpeedMS`; `js/arguments/air.js`.
+- Checks: section 14 (run from `js/arguments/air.js`).
 
 ## 13. Two more that need no new maths
 
