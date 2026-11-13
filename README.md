@@ -45,7 +45,7 @@ The empty `.nojekyll` file tells GitHub Pages to serve the files exactly as they
 | `js/rotation.js` | A turning globe: speed of the ground, the weight the turn takes off, and how a pendulum's swing turns |
 | `js/flight.js` | Level flight: how fast the nose comes down to follow a globe, and what flying dead straight would do |
 | `js/earth.js` | A link that opens Google Earth at a place, and a KML file of the view |
-| `js/arguments/` | The demonstrations, one file per flat-earth argument, and the list of them |
+| `js/arguments/` | The demonstrations, one file per flat-earth argument, the list of them and of the tours, and the controls an argument can have of its own |
 | `js/explain.js` | What every number means and how it is worked out, written to be shown with the live numbers |
 | `js/info.js` | The small "i" buttons and the box each one opens |
 | `js/observations.js` | Horizon observations the user enters themselves: what bending each one implies, how each model fares, and the text form used in links |
@@ -236,19 +236,38 @@ is overhead, the followed star and the route.
 - Google Earth is drawn as a globe, so it is somewhere to look at the real ground, not evidence for either model.
 - Nothing is sent anywhere until the link is clicked. The app still loads nothing from the internet.
 
-## The tour
+## The tours
 
-"Take the tour" walks through six of the arguments in order, easiest first: sunset, sunrise direction, sun angles
-from many cities, southern stars, southern flights and a ship over the horizon. It is meant for one person
-showing another.
+"Take a tour" lists the tours. Each walks through a few arguments in order, easiest first, and is meant for one
+person showing another.
 
+| Tour | Steps |
+|---|---|
+| The short tour | sunset, sunrise direction, sun angles from many cities, southern stars, southern flights, a ship over the horizon |
+| The sun and the stars | sunset, sunrise direction, December daylight, sun angles, the pole star, southern stars |
+| The moon | phases, the same face, eclipses |
+| The horizon | a ship, the horizon at eye level, water finding its level, the Bedford Level, things seen from too far away, two sunsets |
+| Travel and motion | southern flights, the ice wall, pilots and the nose, feeling the spin |
+
+- "Choose your own" lists every argument with a tick box. Tick between two and twelve and they become a tour, in
+  the order they are listed. Once it is running, "Copy link to this view" gives a link that carries the choice.
 - Each step opens with the claim and a question to ask before anything is shown. The views stay dimmed until
   "Show what each model says" is pressed, so the other person can commit to an answer first.
-- The last step lists, for each argument, what anyone can go and check for themselves.
-- Picking a demonstration directly leaves the tour. The step and whether its answer is showing are kept in the
-  link.
-- The steps are the `TOUR` list in `js/arguments/index.js`. Each argument carries its own question (`ask`) and
-  self-check (`check`).
+- The last step lists, for each argument in that tour, what anyone can go and check for themselves.
+- Picking a demonstration directly leaves the tour. The tour, the step and whether its answer is showing are kept
+  in the link.
+- The tours are the `TOURS` list in `js/arguments/index.js`. Each argument carries its own question (`ask`) and
+  self-check (`check`). The checks make sure every argument is in at least one tour.
+
+### Short links
+
+A link can name a demonstration or a tour and nothing else, and the app sets the scene itself:
+
+| Link ends with | Opens |
+|---|---|
+| `#demo=bedford` | the demonstration with that name (the file names in `js/arguments/`) |
+| `#tn=horizon` | that tour at its first step: `short`, `sky`, `moon`, `horizon` or `travel` |
+| `#tn=own&tl=sunset~ship~bedford` | a tour of those arguments |
 
 ## The demonstrations
 
@@ -262,6 +281,20 @@ Each demonstration is one file in `js/arguments/`, listed in `js/arguments/index
 the flat-earth side's own words, a question to ask first, what to go and check, the tool it uses, a function that sets the scene, and a function that writes
 the explanation from the live numbers. It can also export `checks`, which `tools/check-maths.mjs` runs, so an
 argument's numbers are tested along with everything else. The top of `index.js` lists the fields.
+
+An argument can have controls of its own, for a number none of the three tools has. It lists them as `controls`,
+each a slider or a list to pick from, and the app draws them above the explanation and hands their values to the
+argument as `own`:
+
+```js
+controls: [{ id: 'south', label: 'Sail round at', min: 10, max: 80, step: 1, value: 60, show: (v) => `${v}° south` }],
+body(data, app, own) { /* own.south is the number on the slider */ }
+```
+
+The values go back to where they start each time the argument is opened, and are kept in links. Three arguments
+use this so far: the ice wall (which line of latitude to sail round), water finding its level (a stretch of your
+own) and the Bedford Level (the length of water for a three-mark test). `js/arguments/controls.js` describes the
+fields, and the checks refuse a control that is badly described.
 
 ## Phones and tablets
 

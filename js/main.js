@@ -70,7 +70,8 @@ import { makeLandCanvas } from './scene-utils.js';
 import { GlobeView } from './views/globeView.js';
 import { FlatView } from './views/flatView.js';
 import { SkyView } from './views/skyView.js';
-import { ARGUMENTS, ARGUMENT_BY_ID, GROUPS, TOOLS, TOUR } from './arguments/index.js';
+import { ARGUMENTS, ARGUMENT_BY_ID, GROUPS, TOOLS, TOURS, OWN_TOUR, MIN_TOUR_STEPS, MAX_TOUR_STEPS, cleanTourSteps } from './arguments/index.js';
+import { SLIDER_STEPS, controlsOf, defaultsFor, cleanValue, cleanOwn, sliderPosition, sliderValue, encodeOwn, decodeOwn } from './arguments/controls.js';
 import { EXPLAIN } from './explain.js';
 import { initInfo, refreshInfo, infoButton, explainHtml } from './info.js';
 import { HorizonView } from './views/horizonView.js';
@@ -101,7 +102,10 @@ const state = {
   playing: false,
   speed: 10, // simulated minutes per real second
   demo: null,
-  tour: null, // the guided tour: null, or { step, shown } (which step, and whether its answer is on show)
+  own: {}, // the values of the controls that belong to the argument on show
+  tour: null, // a guided tour: null, or { id, step, shown } (which tour, which step, and whether its answer is on show)
+  ownTour: [], // the steps of a tour the user put together
+  picking: false, // whether the steps of that tour are being chosen
   stars: false,
   star: 'Polaris',
   starHeightKm: 5000, // flat model only: how high its layer of stars sits
@@ -1120,7 +1124,7 @@ const INTRO = {
     same observer. Top row: the view from outside. Bottom row: what the observer should see in the sky.</p>
     <p>The <b class="m">teal ring</b> marks where the sun is actually measured to be. A model is right when its sun
     sits inside the ring.</p>
-    <p class="try">Take the tour, pick a demonstration above, or change the time, the place and the flat-model
+    <p class="try">Take a tour, pick a demonstration above, or change the time, the place and the flat-model
     settings yourself. Drag any view to look around; scroll or pinch to zoom.</p>`,
 };
 
@@ -1169,35 +1173,71 @@ const TOUR_END = {
   title: 'What to go and check',
   body: () => `
     <p>None of that has to be taken on trust. Every step was something anyone can go and look at:</p>
-    <ol class="tour-list">${TOUR.map((id) => `<li><b>${esc(DEMOS[id].label)}.</b> ${esc(DEMOS[id].check)}</li>`).join('')}</ol>
-    <p class="try">The other demonstrations along the top cover the pole star, December daylight, the horizon from
-    an airliner, photographs taken from "too far away", and what pilots do. "Your own measurements" checks both
-    models against numbers of your own.</p>`,
+    <ol class="tour-list">${tourSteps().map((id) => `<li><b>${esc(DEMOS[id].label)}.</b> ${esc(DEMOS[id].check)}</li>`).join('')}</ol>
+    <p class="try">The demonstrations along the top answer more claims, and "Take a tour" has other tours. "Your
+    own measurements" checks both models against numbers of your own.</p>`,
 };
 
-// Which group of demonstrations the bar is listing.
+const TOUR_PICK = {
+  title: 'Choose your own tour',
+  body: () => {
+    const chosen = new Set(state.ownTour);
+    const full = chosen.size >= MAX_TOUR_STEPS;
+    const groups = GROUPS.map((g) => {
+      const boxes = ARGUMENTS.filter((a) => a.group === g.id).map(
+        (a) =>
+          `<label title="${esc(a.claim)}"><input type="checkbox" data-pick="${a.id}"${chosen.has(a.id) ? ' checked' : ''}${
+            full && !chosen.has(a.id) ? ' disabled' : ''
+          } /> ${esc(a.label)}</label>`,
+      );
+      return `<fieldset class="pick-group"><legend>${esc(g.label)}</legend>${boxes.join('')}</fieldset>`;
+    }).join('');
+    const ready = chosen.size >= MIN_TOUR_STEPS;
+    return `
+    <p>Tick the arguments to walk through, up to ${MAX_TOUR_STEPS}. They are shown in the order they are listed
+    here. Once the tour is running, "Copy link to this view" gives a link that carries your choice.</p>
+    ${groups}
+    <div class="buttons two">
+      <button data-pick-cancel>Cancel</button>
+      <button class="primary" data-pick-start${ready ? '' : ' disabled'}>${ready ? `Start with ${chosen.size} steps` : `Tick at least ${MIN_TOUR_STEPS}`}</button>
+    </div>`;
+  },
+};
+
+/** The tour that is running: its name and its steps. */
+function tourOf(tour = state.tour) {
+  if (!tour) return null;
+  if (tour.id === OWN_TOUR) return { id: OWN_TOUR, label: 'Your tour', steps: state.ownTour };
+  return TOURS.find((t) => t.id === tour.id) ?? TOURS[0];
+}
+const tourSteps = () => tourOf()?.steps ?? [];
+
+// Which group of demonstrations the bar is listing. "Take a tour" lists the tours in the same place.
+const TOURS_GROUP = 'tours';
 let demoGroup = GROUPS[0].id;
 let shownGroup = null; // the group the bar last scrolled to
 
 /** Puts an argument on show: its scene, its tool, and the pair of views a phone starts with. */
 function showArgument(id) {
   demoGroup = DEMOS[id].group;
-  Object.assign(state, { demo: id, playing: false, sailing: false, flying: false });
-  DEMOS[id].apply(app);
+  Object.assign(state, { demo: id, playing: false, sailing: false, flying: false, picking: false });
+  state.own = defaultsFor(DEMOS[id]);
+  DEMOS[id].apply(app, state.own);
   setMode(DEMOS[id].tool);
   setPair(DEMOS[id].pair);
   requestUpdate();
 }
 
 /** Moves the tour to a step. The step opens on its question; the views are left as they were until it is answered. */
-function tourGo(step) {
-  state.tour = { step: clamp(step, 0, TOUR.length), shown: false };
-  Object.assign(state, { demo: null, playing: false, sailing: false, flying: false });
+function tourGo(step, id = state.tour?.id ?? TOURS[0].id) {
+  state.tour = { id, step: 0, shown: false };
+  state.tour.step = clamp(step, 0, tourSteps().length);
+  Object.assign(state, { demo: null, playing: false, sailing: false, flying: false, picking: false });
   requestUpdate();
 }
 
 function tourShow() {
-  const id = state.tour && TOUR[state.tour.step];
+  const id = state.tour && tourSteps()[state.tour.step];
   if (!id) return;
   state.tour.shown = true;
   showArgument(id);
@@ -1205,7 +1245,69 @@ function tourShow() {
 
 function tourLeave() {
   state.tour = null;
+  state.picking = false;
   requestUpdate();
+}
+
+/** Opens the list of arguments to tick for a tour of one's own. */
+function tourPick() {
+  Object.assign(state, { tour: null, demo: null, picking: true, playing: false, sailing: false, flying: false });
+  requestUpdate();
+}
+
+// A short link names a demonstration or a tour and nothing else, so its scene still has to be set.
+let bareLink = null;
+function applyBareLink() {
+  if (!bareLink) return;
+  const { demo, own, tourShown } = bareLink;
+  bareLink = null;
+  if (tourShown) tourShow();
+  else if (demo) showArgument(demo);
+  // Opening the argument put its controls back to the start. The link may say otherwise.
+  if (state.demo) state.own = decodeOwn(DEMOS[state.demo], own);
+}
+
+// The explanation is only rewritten when it changes, so that what is in it can be clicked and selected.
+let demoBodyHtml = null;
+function setDemoBody(html) {
+  if (html === demoBodyHtml) return;
+  demoBodyHtml = html;
+  const body = $('demo-body');
+  const ticked = body.contains(document.activeElement) ? document.activeElement.dataset.pick : null;
+  body.innerHTML = html;
+  if (ticked) body.querySelector(`[data-pick="${ticked}"]`)?.focus();
+}
+
+// The controls that belong to the argument on show. They are built once per argument and then kept in step.
+let controlsFor = null;
+function renderDemoControls(argument, own) {
+  const box = $('demo-controls');
+  const list = controlsOf(argument);
+  box.hidden = list.length === 0;
+  const key = list.length ? argument.id : null;
+  if (controlsFor !== key) {
+    controlsFor = key;
+    box.innerHTML = list
+      .map((c) =>
+        c.options
+          ? `<label class="row"><span>${esc(c.label)}</span><select data-own="${c.id}">${c.options
+              .map(([value, label]) => `<option value="${esc(value)}">${esc(label)}</option>`)
+              .join('')}</select></label>`
+          : `<label class="stack"><span class="row"><span>${esc(c.label)}</span><output data-own-label="${c.id}"></output></span>
+             <input type="range" data-own="${c.id}" ${
+               c.scale === 'log' ? `min="0" max="${SLIDER_STEPS}" step="1"` : `min="${c.min}" max="${c.max}" step="${c.step}"`
+             } /></label>`,
+      )
+      .join('');
+  }
+  for (const c of list) {
+    const input = box.querySelector(`[data-own="${c.id}"]`);
+    const value = own[c.id];
+    // A log slider is left where it is if that place already stands for the value, so it does not creep while dragged.
+    const inStep = c.options ? input.value === String(value) : c.scale === 'log' ? sliderValue(c, Number(input.value)) === value : Number(input.value) === value;
+    if (!inStep) input.value = String(c.options ? value : c.scale === 'log' ? sliderPosition(c, value) : value);
+    if (!c.options) box.querySelector(`[data-own-label="${c.id}"]`).textContent = c.show ? c.show(value, app) : String(value);
+  }
 }
 
 // ---------- views ----------
@@ -1711,24 +1813,28 @@ function setMode(mode) {
 function renderDemo(c) {
   const tour = state.tour;
   // If the scene has been changed away from the step on show, the step goes back to its question.
-  if (tour?.shown && state.demo !== TOUR[tour.step]) tour.shown = false;
-  const ended = !!tour && tour.step >= TOUR.length;
+  const steps = tourSteps();
+  if (tour?.shown && state.demo !== steps[tour.step]) tour.shown = false;
+  const ended = !!tour && tour.step >= steps.length;
   const asking = !!tour && !ended;
-  const demo = ended
-    ? TOUR_END
-    : asking
-      ? DEMOS[TOUR[tour.step]]
-      : state.demo
-        ? DEMOS[state.demo]
-        : { sky: INTRO, horizon: HORIZON_INTRO, flight: FLIGHT_INTRO }[state.mode];
+  const demo = state.picking
+    ? TOUR_PICK
+    : ended
+      ? TOUR_END
+      : asking
+        ? DEMOS[steps[tour.step]]
+        : state.demo
+          ? DEMOS[state.demo]
+          : { sky: INTRO, horizon: HORIZON_INTRO, flight: FLIGHT_INTRO }[state.mode];
   $('tour-bar').hidden = !tour;
   $('tour-end').hidden = !ended;
   $('tour-ask').hidden = !asking;
   if (tour) {
-    $('tour-step').textContent = ended ? 'Tour: the end' : `Tour: step ${tour.step + 1} of ${TOUR.length}`;
+    const name = tourOf().label;
+    $('tour-step').textContent = ended ? `${name}: the end` : `${name}: step ${tour.step + 1} of ${steps.length}`;
     $('tour-back').disabled = tour.step === 0;
     $('tour-next').hidden = ended;
-    $('tour-next').textContent = tour.step === TOUR.length - 1 ? 'Finish' : 'Next';
+    $('tour-next').textContent = tour.step === steps.length - 1 ? 'Finish' : 'Next';
   }
   if (asking) {
     $('tour-question').textContent = demo.ask;
@@ -1739,12 +1845,18 @@ function renderDemo(c) {
   $('demo-title').textContent = demo.title;
   $('demo-claim').hidden = !demo.claim;
   $('demo-claim-text').textContent = demo.claim ?? '';
-  // A step's explanation waits until its question has been answered.
-  $('demo-body').innerHTML = asking && !tour.shown ? '' : demo.body(c, app);
+  // A step's explanation, and any controls of its own, wait until its question has been answered.
+  const answered = !(asking && !tour.shown);
+  const argument = answered && state.demo && demo === DEMOS[state.demo] ? demo : null;
+  const own = cleanOwn(argument, state.own);
+  renderDemoControls(argument, own);
+  setDemoBody(answered ? demo.body(c, app, own) : '');
   for (const btn of document.querySelectorAll('#demo-list button')) {
-    btn.classList.toggle('active', btn.dataset.demo === state.demo);
+    const on = btn.dataset.tour ? (state.picking ? btn.dataset.tour === OWN_TOUR : btn.dataset.tour === tour?.id) : btn.dataset.demo === state.demo;
+    btn.classList.toggle('active', on);
     btn.hidden = btn.dataset.group !== demoGroup;
   }
+  $('tour-start').setAttribute('aria-pressed', String(demoGroup === TOURS_GROUP));
   for (const btn of document.querySelectorAll('#demo-groups button[data-group]')) {
     const open = btn.dataset.group === demoGroup;
     btn.classList.toggle('active', open);
@@ -2072,9 +2184,10 @@ function bindControls() {
   });
 
   $('demo-groups').insertAdjacentHTML('beforeend', GROUPS.map((g) => `<button data-group="${g.id}">${esc(g.label)}</button>`).join(''));
-  $('demo-list').innerHTML = ARGUMENTS.map(
-    (a) => `<button data-demo="${a.id}" data-group="${a.group}" title="${esc(a.claim)}">${esc(a.label)}</button>`,
-  ).join('');
+  $('demo-list').innerHTML =
+    ARGUMENTS.map((a) => `<button data-demo="${a.id}" data-group="${a.group}" title="${esc(a.claim)}">${esc(a.label)}</button>`).join('') +
+    TOURS.map((t) => `<button data-tour="${t.id}" data-group="${TOURS_GROUP}" title="${esc(t.about)}">${esc(t.label)} · ${t.steps.length}</button>`).join('') +
+    `<button data-tour="${OWN_TOUR}" data-group="${TOURS_GROUP}" title="Pick the arguments yourself">Choose your own</button>`;
   for (const btn of document.querySelectorAll('#demo-groups button[data-group]')) {
     btn.addEventListener('click', () => {
       demoGroup = btn.dataset.group;
@@ -2088,7 +2201,35 @@ function bindControls() {
       showArgument(btn.dataset.demo);
     });
   }
-  $('tour-start').addEventListener('click', () => tourGo(0));
+  for (const btn of document.querySelectorAll('#demos button[data-tour]')) {
+    btn.addEventListener('click', () => (btn.dataset.tour === OWN_TOUR ? tourPick() : tourGo(0, btn.dataset.tour)));
+  }
+  // Choosing the steps of a tour: the ticks and the two buttons are inside the explanation, which is redrawn.
+  $('demo-body').addEventListener('change', (e) => {
+    const id = e.target.dataset?.pick;
+    if (!id) return;
+    const chosen = new Set(state.ownTour);
+    if (e.target.checked) chosen.add(id);
+    else chosen.delete(id);
+    state.ownTour = cleanTourSteps([...chosen]);
+    requestUpdate();
+  });
+  $('demo-body').addEventListener('click', (e) => {
+    if (e.target.closest('[data-pick-start]') && state.ownTour.length >= MIN_TOUR_STEPS) tourGo(0, OWN_TOUR);
+    else if (e.target.closest('[data-pick-cancel]')) tourLeave();
+  });
+  // A control that belongs to the argument on show.
+  $('demo-controls').addEventListener('input', (e) => {
+    const control = controlsOf(DEMOS[state.demo]).find((c) => c.id === e.target.dataset.own);
+    if (!control) return;
+    const raw = control.options ? e.target.value : control.scale === 'log' ? sliderValue(control, Number(e.target.value)) : Number(e.target.value);
+    state.own = { ...state.own, [control.id]: cleanValue(control, raw) };
+    requestUpdate();
+  });
+  $('tour-start').addEventListener('click', () => {
+    demoGroup = TOURS_GROUP;
+    requestUpdate();
+  });
   $('tour-again').addEventListener('click', () => tourGo(0));
   $('tour-back').addEventListener('click', () => tourGo(state.tour.step - 1));
   $('tour-next').addEventListener('click', () => tourGo(state.tour.step + 1));
@@ -2317,8 +2458,14 @@ function writeHash() {
     p.set('tc', state.tempC);
     p.set('ph', state.pressureHpa);
   }
-  if (state.demo) p.set('demo', state.demo);
+  if (state.demo) {
+    p.set('demo', state.demo);
+    const own = encodeOwn(DEMOS[state.demo], state.own);
+    if (own) p.set('a', own);
+  }
   if (state.tour) {
+    if (state.tour.id !== TOURS[0].id) p.set('tn', state.tour.id);
+    if (state.tour.id === OWN_TOUR) p.set('tl', state.ownTour.join('~'));
     p.set('ts', state.tour.step + 1);
     if (state.tour.shown) p.set('tv', 1);
   }
@@ -2384,9 +2531,18 @@ function readHash() {
   state.pressureHpa = num('ph', ...AIR_LIMITS.pressureHpa) ?? state.pressureHpa;
   if (p.get('fl') === 'observed' || p.get('fl') === 'model') state.flatLighting = p.get('fl');
   if (DEMOS[p.get('demo')]) state.demo = p.get('demo');
-  const tourStep = num('ts', 1, TOUR.length + 1);
-  state.tour = tourStep === null ? null : { step: Math.round(tourStep) - 1, shown: p.get('tv') === '1' };
+  if (p.has('tl')) state.ownTour = cleanTourSteps(p.get('tl').split('~'));
+  // A tour is named by "tn"; a step number alone means the first tour, as it did when there was only one.
+  const tourId =
+    p.get('tn') === OWN_TOUR && state.ownTour.length >= MIN_TOUR_STEPS ? OWN_TOUR : (TOURS.find((t) => t.id === p.get('tn')) ?? TOURS[0]).id;
+  const tourLength = tourOf({ id: tourId }).steps.length;
+  const tourStep = num('ts', 1, tourLength + 1) ?? (p.has('tn') ? 1 : null);
+  state.tour = tourStep === null ? null : { id: tourId, step: Math.round(tourStep) - 1, shown: p.get('tv') === '1' };
+  state.picking = false;
   if (state.tour && !state.tour.shown) state.demo = null;
+  // A link written by the app always carries the time. One without it was typed by hand.
+  const wanted = !p.has('t') && (state.tour?.shown || (!state.tour && state.demo));
+  bareLink = wanted ? { demo: state.demo, own: p.get('a'), tourShown: !!state.tour?.shown } : null;
   if (state.demo) demoGroup = DEMOS[state.demo].group;
   state.stars = p.get('st') === '1';
   state.moon = p.get('mo') === '1';
@@ -2415,6 +2571,7 @@ function readHash() {
   state.lapse100 = num('lg', -1, 2) ?? state.lapse100;
   if (p.has('u')) state.units = p.get('u') === 'i' ? 'imperial' : 'metric';
   if (state.demo && DEMOS[state.demo].tool !== state.mode) state.demo = null;
+  state.own = state.demo ? decodeOwn(DEMOS[state.demo], p.get('a')) : {};
   // Measurements that came with the link are added to the ones already here.
   measurements = mergeMeasurements(measurements, decodeMeasurements(p.get('m')));
   observations = mergeObservations(observations, decodeObservations(p.get('o')));
@@ -2455,12 +2612,14 @@ async function start() {
   globeView.focus(state.lat, state.lon);
   flatView.focus(state.lat, state.lon);
   focusRoute();
+  applyBareLink();
   setMode(state.mode);
   setPair(state.demo ? DEMOS[state.demo].pair : 'outside');
   window.addEventListener('resize', requestUpdate);
   // A link pasted into a tab that already has the app open changes only the hash.
   window.addEventListener('hashchange', () => {
     readHash();
+    applyBareLink();
     setMode(state.mode);
     globeView.focus(state.lat, state.lon);
     flatView.focus(state.lat, state.lon);

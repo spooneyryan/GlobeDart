@@ -10,8 +10,10 @@
 //   check   what anyone can go and look at for themselves
 //   tool    which tool it uses: 'sky', 'horizon' or 'flight'
 //   pair    which pair of views a phone shows first: 'outside' or 'sky'
-//   apply(app)        sets the scene by changing app.state
-//   body(data, app)   the explanation as HTML, rebuilt from the live numbers
+//   apply(app, own)        sets the scene by changing app.state
+//   body(data, app, own)   the explanation as HTML, rebuilt from the live numbers
+//   controls          optional: sliders and lists of its own, described in controls.js.
+//                     Their values are the `own` handed to apply and body
 //   checks(t)         optional: tests of the numbers it relies on, run by tools/check-maths.mjs
 //
 // `app` is the set of helpers main.js hands over. To add an argument, write
@@ -52,5 +54,24 @@ export const ARGUMENT_BY_ID = Object.fromEntries(ARGUMENTS.map((a) => [a.id, a])
 
 export const TOOLS = ['sky', 'horizon', 'flight'];
 
-/** The guided tour: a few of the strongest arguments, easiest first. */
-export const TOUR = ['sunset', 'sunrise', 'angles', 'southern', 'flights', 'ship'];
+/** The guided tours. Each is a list of arguments in the order they are shown, easiest first. The first is the one a bare link starts. */
+export const TOURS = [
+  { id: 'short', label: 'The short tour', about: 'Six of the strongest arguments, easiest first.', steps: ['sunset', 'sunrise', 'angles', 'southern', 'flights', 'ship'] },
+  { id: 'sky', label: 'The sun and the stars', about: 'What the sky does over a day, over a year, and from different places.', steps: ['sunset', 'sunrise', 'december', 'angles', 'polaris', 'southern'] },
+  { id: 'moon', label: 'The moon', about: 'Its phases, its face, and the shadow that crosses it.', steps: ['phases', 'sameface', 'eclipse'] },
+  { id: 'horizon', label: 'The horizon', about: 'Ships, skylines and still water.', steps: ['ship', 'eyelevel', 'waterlevel', 'bedford', 'looming', 'twosunsets'] },
+  { id: 'travel', label: 'Travel and motion', about: 'Flights, voyages, pilots and the spin.', steps: ['flights', 'icewall', 'pilots', 'spin'] },
+];
+
+/** The name, in links, of a tour somebody put together themselves. */
+export const OWN_TOUR = 'own';
+export const MIN_TOUR_STEPS = 2;
+export const MAX_TOUR_STEPS = 12;
+
+/** A list of steps somebody chose, made usable: arguments that exist, each once, in the order the app lists them. */
+export function cleanTourSteps(ids) {
+  const wanted = new Set(ids ?? []);
+  return ARGUMENTS.filter((a) => wanted.has(a.id))
+    .map((a) => a.id)
+    .slice(0, MAX_TOUR_STEPS);
+}

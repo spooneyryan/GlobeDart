@@ -5,7 +5,8 @@ import { impliedCoefficient } from '../observations.js';
 //   Rowbotham: "Zetetic Astronomy", Experiment 1.
 //   Wallace: "My Life" (1905), volume 2, chapter 39.
 const FOOT_M = 0.3048;
-const SIX_MILES_KM = 6 * 1.609344;
+const MILE_KM = 1.609344;
+const SIX_MILES_KM = 6 * MILE_KM;
 const ROWBOTHAM = { eyeM: (8 / 12) * FOOT_M, flagM: 5 * FOOT_M };
 const WALLACE = { markM: (13 + 3 / 12) * FOOT_M, expectedM: 5 * FOOT_M };
 
@@ -19,6 +20,7 @@ export default {
   check: 'Put three markers the same height above a long, straight stretch of still water. Sight from the first to the last, and see where the middle one falls.',
   tool: 'horizon',
   pair: 'outside',
+  controls: [{ id: 'miles', label: 'Length of water for the three marks', min: 1, max: 20, step: 0.5, value: 6, show: (v, { fmtD }) => fmtD(v * MILE_KM) }],
   apply({ state }) {
     // What Rowbotham did in 1838: an eye just above the water, and a boat with a flag.
     Object.assign(state, {
@@ -31,7 +33,8 @@ export default {
       sailing: false,
     });
   },
-  body(hz, { state, fmtH, fmtD }) {
+  body(hz, { state, fmtH, fmtD }, own) {
+    const marksKm = own.miles * MILE_KM;
     const d = SIX_MILES_KM;
     const eye = ROWBOTHAM.eyeM;
     const kFlag = impliedCoefficient(eye, d, ROWBOTHAM.flagM);
@@ -42,7 +45,7 @@ export default {
     // A row for the bending on show, unless it is one of the two already listed.
     const onShow = [0, K_STANDARD].some((k) => Math.abs(hz.k - k) < 0.005)
       ? ''
-      : row(`Globe, the bending on show (k = ${hz.k.toFixed(2)})`, middleMarkRiseM(d, hz.k), 'globe');
+      : row(`Globe, the bending on show (k = ${hz.k.toFixed(2)})`, middleMarkRiseM(marksKm, hz.k), 'globe');
     return `
     <p>The Old Bedford River in the English fens runs dead straight for six miles. In 1838 Samuel Rowbotham stood
     in it with a telescope ${said('8 inches', eye)} above the water, and watched a boat carrying a flag
@@ -58,20 +61,20 @@ export default {
     set three marks the same height above the water, ${said('13 ft 3 in', WALLACE.markM)}: his telescope on one bridge, a disc on
     a pole three miles off, and a black band on a bridge at six. On flat water the disc sits on the band. On a
     globe the water humps up in between, and the disc stands above the band by this much:</p>
-    <table class="data"><thead><tr><th>Model</th><th>Disc above the band</th></tr></thead><tbody>
-    ${row('Globe, no air', middleMarkRiseM(d, 0), 'globe')}
-    ${row('Globe, standard air', middleMarkRiseM(d, K_STANDARD), 'globe')}
+    <table class="data"><thead><tr><th>Model</th><th>Disc above the band, over ${fmtD(marksKm)}</th></tr></thead><tbody>
+    ${row('Globe, no air', middleMarkRiseM(marksKm, 0), 'globe')}
+    ${row('Globe, standard air', middleMarkRiseM(marksKm, K_STANDARD), 'globe')}
     ${onShow}
     ${row('Flat', 0, 'flat')}
     </tbody></table>
-    <p>Wallace expected about ${said('5 ft', WALLACE.expectedM)}. The sketches of what the telescope showed were drawn by
+    <p>Over his six miles Wallace expected about ${said('5 ft', WALLACE.expectedM)}. The sketches of what the telescope showed were drawn by
     the flat-earth side's own referee and printed in <i>The Field</i>. They show the disc standing above the
     band, and the umpire awarded Wallace the bet. In 1901 Henry Oldham repeated it with three poles and found the
     middle one about ${said('6 ft', 6 * FOOT_M)} high.</p>
     <p>For the flat reading to survive this test, the air at that height would have to bend light exactly
     as much as the globe curves, for the whole six miles: k = 1, and the disc back on the band.</p>
     <p class="try">Try: this is Rowbotham's view, and in standard air the boat is hidden. Drag "Bending" up and
-    watch the flag appear.</p>`;
+    watch the flag appear. Then change the length of water above, to plan a three-mark test of your own.</p>`;
   },
   checks({ check, near }) {
     const d = SIX_MILES_KM;

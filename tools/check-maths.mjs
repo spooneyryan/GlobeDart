@@ -22,7 +22,8 @@ import {
   secondSunsetSeconds,
   radiusFromTwoSunsetsKm,
 } from '../js/horizon.js';
-import { ARGUMENTS, GROUPS, TOOLS, TOUR } from '../js/arguments/index.js';
+import { ARGUMENTS, GROUPS, TOOLS, TOURS, OWN_TOUR, MAX_TOUR_STEPS, cleanTourSteps } from '../js/arguments/index.js';
+import { SLIDER_STEPS, defaultsFor, cleanValue, cleanOwn, sliderPosition, sliderValue, encodeOwn, decodeOwn, controlFaults } from '../js/arguments/controls.js';
 import { earthUrl, buildKml } from '../js/earth.js';
 import { VIEWS, viewSizes } from '../js/presets.js';
 import { makeAir, traceRay, traceView, astronomicalBend } from '../js/raytrace.js';
@@ -473,9 +474,55 @@ const groupIds = GROUPS.map((g) => g.id);
 check('every argument is listed under a group that exists, and no group is empty',
   ARGUMENTS.every((a) => groupIds.includes(a.group)) && groupIds.every((id) => ARGUMENTS.some((a) => a.group === id)),
   ARGUMENTS.filter((a) => !groupIds.includes(a.group)).map((a) => a.id).join(', '));
-check('every step of the tour is an argument that exists, and none comes twice',
-  TOUR.every((id) => ARGUMENTS.some((a) => a.id === id)) && new Set(TOUR).size === TOUR.length && TOUR.length >= 3);
-check('every question in the tour ends as a question', TOUR.every((id) => ARGUMENTS.find((a) => a.id === id).ask.trim().endsWith('?')));
+const badTours = TOURS.filter(
+  (t) =>
+    ![t.id, t.label, t.about].every((v) => typeof v === 'string' && v.length > 0) ||
+    !t.steps.every((id) => ARGUMENTS.some((a) => a.id === id)) ||
+    new Set(t.steps).size !== t.steps.length ||
+    t.steps.length < 3 ||
+    t.steps.length > MAX_TOUR_STEPS,
+);
+check(`all ${TOURS.length} tours have a name, and steps that are arguments that exist, none twice`, badTours.length === 0, badTours.map((t) => t.id).join(', '));
+check('no two tours share a name, and none takes the name kept for a tour of your own',
+  new Set(TOURS.map((t) => t.id)).size === TOURS.length && !TOURS.some((t) => t.id === OWN_TOUR));
+check('every argument is in at least one tour', ARGUMENTS.every((a) => TOURS.some((t) => t.steps.includes(a.id))),
+  ARGUMENTS.filter((a) => !TOURS.some((t) => t.steps.includes(a.id))).map((a) => a.id).join(', '));
+check('every question an argument asks ends as a question', ARGUMENTS.every((a) => a.ask.trim().endsWith('?')),
+  ARGUMENTS.filter((a) => !a.ask.trim().endsWith('?')).map((a) => a.id).join(', '));
+check('a tour of your own keeps only arguments that exist, each once, in the listed order',
+  cleanTourSteps(['ship', 'nonsense', 'sunset', 'ship']).join() === 'sunset,ship' && cleanTourSteps(null).length === 0);
+check(`and is cut off at ${MAX_TOUR_STEPS} steps`, cleanTourSteps(ARGUMENTS.map((a) => a.id)).length === Math.min(MAX_TOUR_STEPS, ARGUMENTS.length));
+
+// 14a. Controls that belong to an argument.
+const faults = ARGUMENTS.flatMap(controlFaults);
+check(`the ${ARGUMENTS.filter((a) => a.controls?.length).length} arguments with controls of their own describe them properly`, faults.length === 0, faults.join('; '));
+{
+  const slider = { id: 'n', label: 'N', min: 10, max: 80, step: 0.5, value: 60 };
+  const wide = { id: 'w', label: 'W', min: 0.1, max: 500, scale: 'log', value: 5 };
+  const list = { id: 'l', label: 'L', options: [['a', 'A'], ['b', 'B']], value: 'a' };
+  const made = { id: 'made', controls: [slider, wide, list] };
+  check('a slider value is kept within its range and on its step',
+    cleanValue(slider, 200) === 80 && cleanValue(slider, -5) === 10 && cleanValue(slider, 33.26) === 33.5 && cleanValue(slider, '45') === 45);
+  check('anything that is not a number goes back to where the slider starts',
+    cleanValue(slider, 'x') === 60 && cleanValue(slider, '') === 60 && cleanValue(slider, null) === 60 && cleanValue(slider, NaN) === 60);
+  check('a list keeps only its own options', cleanValue(list, 'b') === 'b' && cleanValue(list, 'z') === 'a');
+  check('a log slider runs from its least value to its greatest',
+    sliderValue(wide, 0) === 0.1 && sliderValue(wide, SLIDER_STEPS) === 500 && sliderPosition(wide, 0.1) === 0 && sliderPosition(wide, 500) === SLIDER_STEPS);
+  let worstSlide = 0;
+  for (let p = 0; p <= SLIDER_STEPS; p++) worstSlide = Math.max(worstSlide, Math.abs(sliderPosition(wide, sliderValue(wide, p)) - p));
+  check('and every place on it stands for a value that leads back to within one place', worstSlide <= 1, `worst ${worstSlide}`);
+  check('values that have not been changed are left out of a link', encodeOwn(made, defaultsFor(made)) === '' && encodeOwn({ id: 'none' }, {}) === '');
+  const changed = { n: 33.5, w: 12.3, l: 'b' };
+  check('values survive being written into a link and read back',
+    JSON.stringify(decodeOwn(made, encodeOwn(made, changed))) === JSON.stringify(changed), encodeOwn(made, changed));
+  check('a link cannot set a control the argument does not have, or push one out of range',
+    JSON.stringify(decodeOwn(made, 'zz:9~n:9999~l:nope~w:abc')) === JSON.stringify({ n: 80, w: 5, l: 'a' }));
+  check('missing values are filled in from where the controls start', JSON.stringify(cleanOwn(made, { n: 20 })) === JSON.stringify({ n: 20, w: 5, l: 'a' }));
+  check('a badly described control is caught',
+    controlFaults({ id: 'x', controls: [{ id: 'Bad Id', label: '', min: 5, max: 1, value: 3 }] }).length >= 3 &&
+    controlFaults({ id: 'x', controls: [{ id: 'a', label: 'A', min: 0, max: 10, step: 3, value: 5 }] }).length === 1 &&
+    controlFaults({ id: 'x', controls: [{ id: 'a', label: 'A', min: 0, max: 10, scale: 'log', value: 5 }] }).length === 1);
+}
 for (const a of ARGUMENTS) a.checks?.({ check, near, f });
 
 // 15. Google Earth.

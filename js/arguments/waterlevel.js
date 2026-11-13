@@ -32,6 +32,7 @@ export default {
   check: 'Look across a wide lake from the waterline at a far shore or a lighthouse, on a day when the air and the water are about the same temperature.',
   tool: 'horizon',
   pair: 'outside',
+  controls: [{ id: 'across', label: 'A stretch of your own', min: 0.1, max: 500, scale: 'log', value: 5, show: (v, { fmtD }) => fmtD(v) }],
   apply({ state }) {
     Object.assign(state, {
       shape: 'lighthouse',
@@ -43,8 +44,10 @@ export default {
       sailing: false,
     });
   },
-  body(hz, { fmtH, fmtD }) {
-    const rows = STRETCHES.map(([name, km]) => `<tr><td>${name}</td><td>${small(bulgeM(km), fmtH)}</td></tr>`).join('');
+  body(hz, { fmtH, fmtD }, own) {
+    const rows =
+      STRETCHES.map(([name, km]) => `<tr><td>${name}</td><td>${small(bulgeM(km), fmtH)}</td></tr>`).join('') +
+      `<tr><td><b>Yours, ${fmtD(own.across)}</b></td><td><b>${small(bulgeM(own.across), fmtH)}</b></td></tr>`;
     return `
     <p>Water does find its level. But "level" means square to the pull of gravity, not flat. On a globe gravity
     pulls toward the middle, so a level surface curves with the Earth. Still water is level everywhere and flat
@@ -59,7 +62,8 @@ export default {
     far side.</p>
     <p>A spirit level cannot show it, and neither can a canal a few hundred metres long. A sight line tens of
     kilometres long across open water can.</p>
-    <p class="try">Try: drag the distance. Then raise your eye, and watch how much of the lighthouse comes back.</p>`;
+    <p class="try">Try: set "A stretch of your own" to a lake or a canal you know. Then drag the distance in
+    the panel, raise your eye, and watch how much of the lighthouse comes back.</p>`;
   },
   checks({ check, near }) {
     check('water level argument: still water rises about 2 m in the middle of a 10 km stretch', near(bulgeM(10), 1.96, 0.01));

@@ -11,9 +11,10 @@ markings the right way up), eclipses of the sun, and the tides.
 
 ## Also built: a guided tour
 
-"Take the tour" walks through six arguments in order, each opening with a question to ask before the answer is
-shown, and ends with a list of things to go and check. Still to do: more than one tour (for example a short one
-for the horizon alone), and letting someone choose the steps.
+"Take a tour" offers five tours, each a few arguments in order. Every step opens with a question to ask before
+the answer is shown, and the tour ends with a list of things to go and check. "Choose your own" makes a tour from
+any arguments ticked, and its link carries the choice. Still to do: putting the steps of one's own tour in an
+order other than the listed one.
 
 ## 1. Connect to Google Earth
 
@@ -39,7 +40,9 @@ Notes:
 
 - Built: each argument is a file in `js/arguments/` with its claim, the tool it uses, a function that sets the
   scene, and text built from the live numbers. Each can carry its own checks, which `tools/check-maths.mjs` runs.
-- Still to do: letting an argument add controls of its own. Today it can only use the three tools that exist.
+- Built: an argument can list sliders and pick-lists of its own (`controls`), drawn above its explanation and
+  kept in links. The ice wall, water finding its level and the Bedford Level use them.
+- Still to do: an argument drawing a view of its own. Today it can only use the views of the three tools.
 - Added since: "the horizon always rises to eye level", "we can see things the curve should hide", and the pilots
   argument below.
 - Also added: "Antarctica is an ice wall", "we would feel the spin" and "water always finds its level". The

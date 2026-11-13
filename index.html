@@ -36,7 +36,7 @@
       </div>
       <nav id="demos" aria-label="Demonstrations">
         <div id="demo-groups" role="group" aria-label="Kinds of demonstration">
-          <button id="tour-start" class="primary">Take the tour</button>
+          <button id="tour-start" class="primary" aria-pressed="false">Take a tour</button>
         </div>
         <div id="demo-list" role="group" aria-label="Demonstrations of this kind"></div>
       </nav>
@@ -397,6 +397,7 @@
             <p id="tour-question"></p>
             <button id="tour-show" class="primary">Show what each model says</button>
           </div>
+          <div id="demo-controls" hidden></div>
           <div id="demo-body"></div>
           <div id="tour-end" class="buttons two" hidden>
             <button id="tour-again">Start again</button>

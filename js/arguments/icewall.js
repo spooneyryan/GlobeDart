@@ -5,7 +5,8 @@ import { flatPoleDistanceKm } from '../models.js';
 export const roundGlobeKm = (lat) => 2 * Math.PI * EARTH_RADIUS_KM * Math.cos(lat * DEG);
 export const roundFlatKm = (lat) => 2 * Math.PI * flatPoleDistanceKm(lat);
 
-const SOUTH = [-40, -50, -60, -70];
+// Lines of latitude to compare, in degrees south. The one chosen with the slider is added to them.
+const SOUTH = [40, 50, 60, 70];
 
 export default {
   id: 'icewall',
@@ -17,23 +18,31 @@ export default {
   check: 'Look up the logged distance of any voyage round Antarctica, or the route a flight takes between South America and Australia.',
   tool: 'sky',
   pair: 'outside',
+  controls: [{ id: 'south', label: 'Sail round at', min: 10, max: 80, step: 1, value: 60, show: (v) => `${v}° south` }],
   apply({ state, focusRoute, SUN_DEMO }) {
     Object.assign(state, SUN_DEMO, { route: { from: 'Punta Arenas', to: 'Perth' } });
     focusRoute();
   },
-  body(c, { km }) {
-    const rows = SOUTH.map(
-      (lat) => `<tr><td>${-lat}° south</td><td>${km(roundGlobeKm(lat))}</td><td class="bad">${km(roundFlatKm(lat))}</td>
-        <td class="bad">${(roundFlatKm(lat) / roundGlobeKm(lat)).toFixed(1)} times</td></tr>`,
-    ).join('');
+  body(c, { km }, own) {
+    const chosen = own.south;
+    const rows = [...new Set([...SOUTH, chosen])]
+      .sort((a, b) => a - b)
+      .map((south) => {
+        const globe = roundGlobeKm(-south);
+        const flat = roundFlatKm(-south);
+        const name = south === chosen ? `<b>${south}° south</b>` : `${south}° south`;
+        return `<tr><td>${name}</td><td>${km(globe)}</td><td class="bad">${km(flat)}</td><td class="bad">${(flat / globe).toFixed(1)} times</td></tr>`;
+      })
+      .join('');
     const r = c.route;
     return `
     <p>The two models disagree most about the far south. On the globe the lines of latitude shrink toward the
     south pole. On the flat map they are the outermost and longest circles of all.</p>
     <table class="data"><thead><tr><th>Once round at</th><th class="globe">Globe</th><th class="flat">Flat</th><th></th></tr></thead>
     <tbody>${rows}</tbody></table>
-    <p>So a ship keeping to 60° south sails 20,000 km to come back to where it started on the globe, and over
-    100,000 km on the flat map. Ships' logs settle which.</p>
+    <p>So a ship keeping to ${chosen}° south sails <b class="g">${km(roundGlobeKm(-chosen))}</b> to come back to
+    where it started on the globe, and <b class="f">${km(roundFlatKm(-chosen))}</b> on the flat map. Ships' logs
+    settle which.</p>
     ${
       r
         ? `<p>It changes which way is shortest, too. From ${r.a.name} to ${r.b.name} the globe's shortest path is
@@ -43,8 +52,8 @@ export default {
     }
     <p>There is a research station at the south pole itself. On the flat map there is no such place: the south
     pole is the whole of the rim.</p>
-    <p class="try">Try: orbit both views to follow the two lines, then pick "Southern flights" for a route with a
-    real timetable.</p>`;
+    <p class="try">Try: drag "Sail round at" further south. Then orbit both views to follow the two lines, and
+    pick "Southern flights" for a route with a real timetable.</p>`;
   },
   checks({ check, near }) {
     check('ice wall argument: once round at 60 degrees south is about 20,000 km on the globe', near(roundGlobeKm(-60), 20015, 5));

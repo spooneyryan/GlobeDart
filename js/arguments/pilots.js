@@ -6,7 +6,7 @@ export default {
   label: 'Pilots and the nose',
   title: 'Do pilots have to keep pushing the nose down?',
   claim: 'On a ball, pilots would have to keep dipping the nose to follow the curve. They never do.',
-  ask: "How fast would a pilot have to push the nose down to follow the curve? Guess a number, in degrees a minute.",
+  ask: 'How fast would a pilot have to push the nose down to follow the curve? How many degrees a minute would you guess?',
   check: "Ask a pilot what keeps an aircraft level, or look up how an inertial navigation unit allows for the Earth's radius.",
   tool: 'flight',
   pair: 'outside',
