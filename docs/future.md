@@ -58,8 +58,13 @@ Notes:
   side-on drawing and a through-the-telescope drawing for each model.
 - People can also enter their own horizon observations and have both models checked against them (Stage 4).
 - Light can be followed through layered air, which shows looming and mirages (Stage 3).
-- Sourced presets for well-known observations (a skyline across a lake, a long causeway, a canal) would make it
-  quicker to answer a specific photograph. Each needs distances and heights with a source before it goes in.
+- Five sourced presets for well-known views are built: Chicago from two places, Toronto, and the Pyrenees from
+  two places near Marseille. The Bedford Level is a demonstration of its own. `docs/views.md` has the sources.
+- More views need sources before they can go in. The line of pylons across Lake Pontchartrain lacks a sourced
+  tower height and camera height. A lighthouse seen from a named far shore, and the long Alpine views, have not
+  been researched well enough.
+- A preset could carry what was actually seen (as the Allauch view does) and be scored like the user's own
+  observations.
 
 ## 4. Why pilots do not have to keep pushing the nose down to follow the curve
 

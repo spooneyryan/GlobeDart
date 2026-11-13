@@ -73,12 +73,18 @@
 
         <section class="hz-only">
           <h2>Over the horizon</h2>
+          <label class="row" id="hz-view-row">
+            <span>A well-known view <button type="button" class="info" data-info="hz.views" aria-label="How this is worked out: the well-known views">i</button></span>
+            <select id="hz-view"></select>
+          </label>
+          <div id="hz-view-note" hidden></div>
           <label class="row">
             <span>Looking at</span>
             <select id="hz-shape">
               <option value="ship">A cargo ship</option>
               <option value="building">A tall building</option>
               <option value="lighthouse">A lighthouse</option>
+              <option value="mountain">A mountain</option>
             </select>
           </label>
           <div class="stack qty">
@@ -460,6 +466,38 @@
             </div>
           </details>
           <div id="ob-list" class="own-list"></div>
+        </section>
+
+        <section class="hz-only" id="hz-sunsets">
+          <h2>Two sunsets <button type="button" class="info" data-info="hz.sunsets" aria-label="How this is worked out: timing two sunsets">i</button></h2>
+          <label class="row">
+            <span>Watch from</span>
+            <select id="ss-preset">
+              <option value="0.2,1.7">Lying down, then standing</option>
+              <option value="2,35">A beach, then a tenth floor</option>
+              <option value="2,555">The ground, then a very tall tower</option>
+              <option value="">Heights of my own</option>
+            </select>
+          </label>
+          <div class="row">
+            <label class="mini"><span>Low eye, <span class="unit-h"></span></span><input type="number" id="ss-low" min="0" step="any" /></label>
+            <label class="mini"><span>High eye, <span class="unit-h"></span></span><input type="number" id="ss-high" min="0" step="any" /></label>
+          </div>
+          <label class="row">
+            <span>Your latitude (south is minus)</span>
+            <input type="number" id="ss-lat" min="-89.9" max="89.9" step="0.1" />
+          </label>
+          <table id="ss-table" class="data">
+            <thead>
+              <tr><th></th><th class="globe">Globe</th><th class="flat">Flat</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <label class="row">
+            <span>Seconds you timed between them</span>
+            <input type="number" id="ss-seconds" min="0" step="0.1" />
+          </label>
+          <p class="hint" id="ss-result"></p>
         </section>
 
         <section class="hz-only">

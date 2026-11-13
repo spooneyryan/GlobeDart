@@ -50,6 +50,11 @@ import {
   horizonLineM,
   horizonScene,
   HORIZON_LIMITS,
+  TARGET_SHAPES,
+  dipDeg,
+  sunSinkDegPerHour,
+  secondSunsetSeconds,
+  radiusFromTwoSunsetsKm,
 } from './horizon.js';
 import {
   MAX_OBSERVATIONS,
@@ -73,6 +78,7 @@ import { FlightView } from './views/flightView.js';
 import { FLIGHT_LIMITS, flightScene, schulerMinutes } from './flight.js';
 import { earthUrl, buildKml } from './earth.js';
 import { makeAir, traceView } from './raytrace.js';
+import { VIEWS, viewSizes, viewById } from './presets.js';
 
 const $ = (id) => document.getElementById(id);
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
@@ -118,6 +124,10 @@ const state = {
   waterC: 15, // the surface under the light
   layerM: 10, // how deep the air warmed or chilled by the surface is
   lapse100: -0.65, // change of temperature for each 100 m of height above that
+  // Two sunsets: the eye heights the sun is watched from, and the seconds timed between its settings.
+  sunsetLowM: 0.2,
+  sunsetHighM: 1.7,
+  sunsetSeconds: null,
   // Level flight
   speedKmh: 900,
   altitudeM: 11000,
@@ -674,6 +684,31 @@ function renderHorizon(hz) {
   $('hz-flat-needs').innerHTML = needs;
 }
 
+// ---------- two sunsets ----------
+
+const seconds = (s) => (s < 90 ? `${s.toFixed(s < 20 ? 1 : 0)} s` : `${Math.floor(s / 60)} min ${Math.round(s % 60)} s`);
+
+function renderSunsets(hz) {
+  const { sunsetLowM: low, sunsetHighM: high, lat } = state;
+  const sunLat = subsolarPoint(state.date).lat;
+  const rate = sunSinkDegPerHour(lat, sunLat);
+  const wait = secondSunsetSeconds(low, high, lat, sunLat, hz.k);
+  $('ss-table').tBodies[0].innerHTML = `
+    <tr><td>Horizon below level, low eye</td><td>${deg(dipDeg(low, hz.k), 3)}</td><td>${deg(0, 3)}</td></tr>
+    <tr><td>Horizon below level, high eye</td><td>${deg(dipDeg(high, hz.k), 3)}</td><td>${deg(0, 3)}</td></tr>
+    <tr><td>The sun sinks each minute</td><td>${rate === null ? 'it does not set' : deg(rate / 60, 2)}</td><td class="dim">n/a</td></tr>
+    <tr><td>Second sunset comes after</td><td>${wait === null ? 'n/a' : seconds(Math.max(0, wait))}</td><td class="bad">never</td></tr>`;
+  const timed = state.sunsetSeconds;
+  const radius = timed === null ? null : radiusFromTwoSunsetsKm(low, high, timed, lat, sunLat, hz.k);
+  $('ss-result').textContent =
+    rate === null
+      ? `On ${isoDay(state.date)} the sun does not set at this latitude.`
+      : radius === null
+        ? `Sun's path for ${isoDay(state.date)}. Enter your timing to work out the size of the Earth from it.`
+        : `Your timing gives an Earth ${km(radius)} in radius. The accepted figure is ${km(6371)}. ` +
+          `A timing one second longer would give ${km(radiusFromTwoSunsetsKm(low, high, timed + 1, lat, sunLat, hz.k))}.`;
+}
+
 // ---------- level flight ----------
 
 // How far round its speeded-up lap the aircraft is, 0 to 1.
@@ -890,6 +925,61 @@ function bindEarthControls() {
     link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     toast('Saved globedart.kml');
+  });
+}
+
+function bindViewControls() {
+  $('hz-view-row').hidden = VIEWS.length === 0;
+  $('hz-view').innerHTML = '<option value="">Choose one</option>' + VIEWS.map((v) => `<option value="${v.id}">${esc(v.name)}</option>`).join('');
+  $('hz-view').addEventListener('change', (e) => {
+    const view = viewById(e.target.value);
+    if (!view) return;
+    const s = viewSizes(view);
+    Object.assign(state, {
+      shape: view.shape,
+      targetM: clamp(s.targetM, ...HZ_LIMITS.targetM),
+      targetKm: clamp(s.distanceKm, ...HZ_LIMITS.targetKm),
+      eyeM: clamp(s.eyeM, ...HZ_LIMITS.eyeM),
+      k: K_STANDARD,
+      layers: false,
+      sailing: false,
+    });
+    if (state.demo && DEMOS[state.demo].tool === 'horizon') state.demo = null;
+    requestUpdate();
+  });
+}
+
+function bindSunsetControls() {
+  $('ss-preset').addEventListener('change', (e) => {
+    const [low, high] = e.target.value.split(',').map(Number);
+    // A timing belongs to the heights it was made from, so it goes when they change.
+    if (e.target.value) Object.assign(state, { sunsetLowM: low, sunsetHighM: high, sunsetSeconds: null });
+    requestUpdate();
+  });
+  const feet = () => (imperial() ? FT : 1);
+  // The two heights must stay in order, the lower one below the higher.
+  $('ss-low').addEventListener('change', (e) => {
+    const v = Number(e.target.value) * feet();
+    if (e.target.value.trim() !== '' && v >= 0) Object.assign(state, { sunsetLowM: clamp(v, 0, state.sunsetHighM * 0.99), sunsetSeconds: null });
+    e.target.value = tidy(heightNumber(state.sunsetLowM));
+    requestUpdate();
+  });
+  $('ss-high').addEventListener('change', (e) => {
+    const v = Number(e.target.value) * feet();
+    if (e.target.value.trim() !== '' && v > 0) Object.assign(state, { sunsetHighM: clamp(v, state.sunsetLowM * 1.01 + 0.01, HZ_LIMITS.eyeM[1]), sunsetSeconds: null });
+    e.target.value = tidy(heightNumber(state.sunsetHighM));
+    requestUpdate();
+  });
+  $('ss-lat').addEventListener('change', (e) => {
+    const v = Number(e.target.value);
+    if (e.target.value.trim() !== '' && Number.isFinite(v)) state.lat = clamp(v, -89.9, 89.9);
+    e.target.value = state.lat.toFixed(1);
+    requestUpdate();
+  });
+  $('ss-seconds').addEventListener('input', (e) => {
+    const v = Number(e.target.value);
+    state.sunsetSeconds = e.target.value.trim() !== '' && v > 0 ? v : null;
+    requestUpdate();
   });
 }
 
@@ -1182,6 +1272,7 @@ function update() {
     for (const v of hzViews) v.update(hz);
     renderHorizon(hz);
     renderObservations();
+    renderSunsets(hz);
     renderDemo(hz);
     showWorkings(hz);
     syncInputs();
@@ -1759,6 +1850,25 @@ function syncInputs() {
   $('hz-k-label').textContent = `k = ${state.k.toFixed(2)}`;
   $('hz-k-note').textContent = airInWords(state.k);
   $('hz-sail').textContent = state.sailing ? 'Stop' : 'Send it away';
+  // The picker shows a view only while the sizes on show are still that view's.
+  const view = VIEWS.find((v) => {
+    const s = viewSizes(v);
+    return sameSize(s.distanceKm, state.targetKm) && sameSize(s.eyeM, state.eyeM) && sameSize(s.targetM, state.targetM);
+  });
+  $('hz-view').value = view?.id ?? '';
+  const noteHtml = view
+    ? `<p><b>${esc(view.to.name)}</b> from ${esc(view.from.name)}. ${esc(view.note)}</p>
+       <p>Sources: ${view.sources.map((s) => `<a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${esc(s.label)}</a>`).join(', ')}</p>`
+    : '';
+  const note = $('hz-view-note');
+  note.hidden = !view;
+  if (note.innerHTML !== noteHtml) note.innerHTML = noteHtml;
+  setIfIdle($('ss-low'), tidy(heightNumber(state.sunsetLowM)));
+  setIfIdle($('ss-high'), tidy(heightNumber(state.sunsetHighM)));
+  setIfIdle($('ss-lat'), state.lat.toFixed(1));
+  setIfIdle($('ss-seconds'), state.sunsetSeconds ?? '');
+  const pair = `${state.sunsetLowM},${state.sunsetHighM}`;
+  $('ss-preset').value = [...$('ss-preset').options].some((o) => o.value === pair) ? pair : '';
   $('hz-layers').checked = state.layers;
   $('hz-simple-air').hidden = state.layers;
   $('hz-layer-air').hidden = !state.layers;
@@ -1946,6 +2056,8 @@ function bindControls() {
   $('all-maths').addEventListener('toggle', requestUpdate);
   bindHorizonControls();
   bindFlightControls();
+  bindSunsetControls();
+  bindViewControls();
   bindEarthControls();
   bindObservationForm();
   bindMeasurementForm();
@@ -2235,6 +2347,11 @@ function writeHash() {
     p.set('td', Number(state.targetKm.toFixed(2)));
     p.set('eh', tidy(state.eyeM));
     p.set('k', state.k.toFixed(2));
+    if (state.sunsetLowM !== 0.2 || state.sunsetHighM !== 1.7 || state.sunsetSeconds !== null) {
+      p.set('s1', tidy(state.sunsetLowM));
+      p.set('s2', tidy(state.sunsetHighM));
+      if (state.sunsetSeconds !== null) p.set('s3', state.sunsetSeconds);
+    }
     if (state.layers) {
       p.set('ly', 1);
       p.set('at', state.airC);
@@ -2283,12 +2400,15 @@ function readHash() {
   state.speedKmh = num('fs', ...FLIGHT_LIMITS.speedKmh) ?? state.speedKmh;
   state.altitudeM = num('fa', ...FLIGHT_LIMITS.altitudeM) ?? state.altitudeM;
   state.flightMinutes = num('fm', ...FLIGHT_LIMITS.minutes) ?? state.flightMinutes;
-  if (['ship', 'building', 'lighthouse'].includes(p.get('tg'))) state.shape = p.get('tg');
+  if (TARGET_SHAPES.includes(p.get('tg'))) state.shape = p.get('tg');
   state.targetM = num('th', ...HZ_LIMITS.targetM) ?? state.targetM;
   state.targetKm = num('td', ...HZ_LIMITS.targetKm) ?? state.targetKm;
   state.eyeM = num('eh', ...HZ_LIMITS.eyeM) ?? state.eyeM;
   state.k = num('k', 0, 1) ?? state.k;
   state.layers = p.get('ly') === '1';
+  state.sunsetHighM = num('s2', 0.02, HZ_LIMITS.eyeM[1]) ?? state.sunsetHighM;
+  state.sunsetLowM = num('s1', 0, state.sunsetHighM * 0.99) ?? Math.min(state.sunsetLowM, state.sunsetHighM * 0.99);
+  state.sunsetSeconds = num('s3', 0.1, 36000);
   state.airC = num('at', -20, 40) ?? state.airC;
   state.waterC = num('wt', -2, 35) ?? state.waterC;
   state.layerM = num('lm', 1, 50) ?? state.layerM;

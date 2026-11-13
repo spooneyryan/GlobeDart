@@ -40,6 +40,7 @@ The empty `.nojekyll` file tells GitHub Pages to serve the files exactly as they
 | `js/stars.js` | A hand-entered table of 96 bright stars and the lines that join them into familiar figures |
 | `js/distances.js` | Distances under each model, and the non-stop flights used to test them |
 | `js/horizon.js` | What is hidden behind the horizon under each model, and how the air near the ground changes it |
+| `js/presets.js` | Well-known long views across water, each with the sources for its figures |
 | `js/raytrace.js` | Light followed step by step through air whose temperature changes with height, over curved or flat ground |
 | `js/rotation.js` | A turning globe: speed of the ground, the weight the turn takes off, and how a pendulum's swing turns |
 | `js/flight.js` | Level flight: how fast the nose comes down to follow a globe, and what flying dead straight would do |
@@ -62,6 +63,7 @@ The empty `.nojekyll` file tells GitHub Pages to serve the files exactly as they
 | `docs/refraction-plan.md` | Plan for modelling refraction properly. All four stages are built |
 | `docs/maths.md` | Every formula in one place: in words, in symbols, where it is in the code, and what checks it |
 | `docs/flight-times.md` | The timetable behind the flight times, with the source for each flight |
+| `docs/views.md` | The well-known views: every figure, where it was read, and where sources disagree |
 | `docs/future.md` | Ideas for later |
 
 ## Seeing the maths
@@ -187,6 +189,14 @@ chosen height, a chosen distance away, seen by an eye at a chosen height above t
   noted as the weather that produces it, and warmer water as weather that does not.
 - Observations are kept in the browser's local storage and are included in the link from "Copy link to this
   view".
+- "Two sunsets" is a second experiment. Watch the sun set from low down, get up, and time how long until it sets
+  again. The panel gives the gap the globe predicts for your two eye heights, latitude and date, and turns a
+  timing of your own into a radius for the Earth. On the flat model there is no second sunset.
+- "A well-known view" sets the tool up for a real place: Chicago from two spots on the Michigan shore, Toronto
+  from Fort Niagara, and the Pyrenees from Marseille and from Allauch. The distance is worked out from the two
+  positions, heights are taken from the surface of the water, and the sources are linked under the picker.
+  `docs/views.md` lists every figure and the views that were left out for want of a source.
+- Besides ships, buildings and lighthouses, the tool can draw a mountain.
 - Heights and distances can be shown in metres and kilometres or in feet and miles.
 
 ### Layers of air
@@ -243,7 +253,7 @@ showing another.
 ## The demonstrations
 
 The bar at the top lists the demonstrations under six headings: the sun, the moon, the stars, distances, the
-horizon and motion. Picking a heading shows its demonstrations beneath it. There are seventeen, each answering one
+horizon and motion. Picking a heading shows its demonstrations beneath it. There are nineteen, each answering one
 flat-earth claim, which is quoted above its explanation.
 
 ## Writing an argument

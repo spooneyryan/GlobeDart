@@ -159,7 +159,7 @@ Differences from the plan:
 - Nothing in this tool is a measurement. It shows two predictions to compare with what is seen. Stage 4 would add
   the user's own observations.
 - Heights and distances can be switched between metres and kilometres and feet and miles.
-- There are no presets for well-known observations. Each still needs sourced distances and heights.
+- Five presets for well-known views were added later, each with sourced positions and heights. See `docs/views.md`.
 
 ## Stage 3: tracing rays through layered air
 
@@ -234,7 +234,7 @@ Differences from the plan:
   temperature at several heights along the whole sight line.
 - An observation is recorded with the sizes set in the tool at the time, in the same way a sun measurement is
   recorded at the time and place on show.
-- The sunset-timing experiment is not built.
+- The sunset-timing experiment was built later, as "Two sunsets" in the same tool.
 
 ## What this will not be able to do
 
@@ -253,6 +253,7 @@ Differences from the plan:
 ## Decisions needed before starting
 
 - Settled: both metres and kilometres and feet and miles, with a switch.
-- Whether to include presets for well-known observations (a lake skyline, a long causeway, a canal). Each one needs
-  sourced distances and heights before it goes in; none are in the app today.
+- Settled: presets for well-known observations go in only with sourced positions and heights. Five are in. The
+  causeway and pylons of Lake Pontchartrain are left out until the tower and camera heights have a source. The
+  canal (the Bedford Level) is a demonstration instead.
 - Settled for now: Stage 1's "My conditions" is in the main panel, with its inputs hidden until it is chosen.

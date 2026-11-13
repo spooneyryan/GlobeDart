@@ -6,6 +6,7 @@ import * as Astronomy from '../vendor/astronomy.js';
 import { STANDARD_AIR, standardLift, lift, airFactor, apparentElevation, trueElevation } from '../js/refraction.js';
 import {
   K_STANDARD,
+  TARGET_SHAPES,
   K_SURVEY,
   STANDARD_GROUND_AIR,
   coefficientFromWeather,
@@ -17,9 +18,13 @@ import {
   dipDeg,
   flatNeeds,
   horizonScene,
+  sunSinkDegPerHour,
+  secondSunsetSeconds,
+  radiusFromTwoSunsetsKm,
 } from '../js/horizon.js';
 import { ARGUMENTS, GROUPS, TOOLS, TOUR } from '../js/arguments/index.js';
 import { earthUrl, buildKml } from '../js/earth.js';
+import { VIEWS, viewSizes } from '../js/presets.js';
 import { makeAir, traceRay, traceView, astronomicalBend } from '../js/raytrace.js';
 import {
   impliedCoefficient,
@@ -366,6 +371,52 @@ check('hidden height never exceeds the height of the target', horizonScene({ eye
 check('raising the eye brings the hull back', hiddenHeightM(30, 30, K_STANDARD) < 5 && hiddenHeightM(1.7, 30, K_STANDARD) > 40,
   `${f(hiddenHeightM(30, 30, K_STANDARD), 2)} m from 30 m up, ${f(hiddenHeightM(1.7, 30, K_STANDARD), 2)} m from 1.7 m`);
 
+// 12a. Two sunsets.
+check('the sun sinks more slowly at a slant: at 60 degrees on an equinox, half the rate at the equator', near(sunSinkDegPerHour(60, 0), 7.5, 1e-9));
+let worstRadius = 0;
+for (const [low, high, lat, sunLat] of [[0.2, 1.7, 0, 0], [0.2, 1.7, 51.5, -18], [2, 35, 34, 10], [2, 555, 25.2, 0]]) {
+  const t = secondSunsetSeconds(low, high, lat, sunLat, K_STANDARD);
+  worstRadius = Math.max(worstRadius, Math.abs(radiusFromTwoSunsetsKm(low, high, t, lat, sunLat, K_STANDARD) - EARTH_RADIUS_KM));
+}
+check("a timing of exactly the predicted gap gives back the Earth's radius", worstRadius < 1e-6, `worst ${worstRadius.toExponential(1)} km`);
+check('a longer gap means a smaller Earth', radiusFromTwoSunsetsKm(0.2, 1.7, 12, 0, 0) < radiusFromTwoSunsetsKm(0.2, 1.7, 6, 0, 0));
+check('in London in mid November, lying then standing gives about 11 seconds', near(secondSunsetSeconds(0.2, 1.7, 51.5, -18, K_STANDARD), 11.2, 0.4), f(secondSunsetSeconds(0.2, 1.7, 51.5, -18, K_STANDARD), 2));
+
+// 12b. The well-known views.
+const badViews = VIEWS.filter((v) => {
+  const s = viewSizes(v);
+  const numbers = [v.waterM, v.from.lat, v.from.lon, v.from.groundM, v.to.lat, v.to.lon, v.to.baseM, v.to.heightM];
+  return (
+    !numbers.every(Number.isFinite) ||
+    ![v.id, v.name, v.note, v.from.name, v.to.name, v.to.top].every((t) => typeof t === 'string' && t.length > 0) ||
+    !TARGET_SHAPES.includes(v.shape) ||
+    !(v.sources?.length >= 2) ||
+    !v.sources.every((src) => /^https?:\/\//.test(src.url) && src.label) ||
+    !(s.distanceKm >= 0.5 && s.distanceKm <= 500 && s.eyeM >= 0.1 && s.eyeM <= 12000 && s.targetM >= 1 && s.targetM <= 5000) ||
+    (v.statedKm !== undefined && Math.abs(s.distanceKm - v.statedKm) > Math.max(1.5, v.statedKm * 0.03))
+  );
+});
+check(`all ${VIEWS.length} well-known views have their figures, at least two sources, sizes the tool can show, and a distance within 3% of any published one`,
+  badViews.length === 0, badViews.map((v) => v.id).join(', '));
+check('no two well-known views share a name', new Set(VIEWS.map((v) => v.id)).size === VIEWS.length && new Set(VIEWS.map((v) => v.name)).size === VIEWS.length);
+check('no two well-known views are so alike that the picker could confuse them', VIEWS.every((a, i) => VIEWS.every((b, j) => i >= j ||
+  Math.abs(viewSizes(a).distanceKm - viewSizes(b).distanceKm) > 0.02 * viewSizes(a).distanceKm)));
+{
+  const hides = (id, k = K_STANDARD) => { const s = viewSizes(VIEWS.find((v) => v.id === id)); return hiddenHeightM(s.eyeM, s.distanceKm, k); };
+  const size = (id) => viewSizes(VIEWS.find((v) => v.id === id));
+  check('Chicago from the top of Warren Dunes: the globe hides the lower part of the Willis Tower and leaves the upper part',
+    hides('chicago-warren-dunes') > 150 && hides('chicago-warren-dunes') < 250, f(hides('chicago-warren-dunes'), 0) + ' m of ' + f(size('chicago-warren-dunes').targetM, 0));
+  check('Chicago from the shore at Grand Mere: in standard air the globe hides the tower to above its roof',
+    hides('chicago-grand-mere') > size('chicago-grand-mere').targetM, f(hides('chicago-grand-mere'), 0) + ' m of ' + f(size('chicago-grand-mere').targetM, 0));
+  check('Toronto from Fort Niagara: the globe hides the shore and leaves most of the CN Tower',
+    hides('toronto-fort-niagara') > 50 && hides('toronto-fort-niagara') < 0.25 * size('toronto-fort-niagara').targetM, f(hides('toronto-fort-niagara'), 0) + ' m');
+  check('the Canigou from Marseille: the globe leaves only the top of the mountain showing',
+    hides('canigou-marseille') > 0.9 * size('canigou-marseille').targetM && hides('canigou-marseille') < size('canigou-marseille').targetM, f(hides('canigou-marseille'), 0) + ' m');
+  const allauch = VIEWS.find((v) => v.id === 'canigou-allauch');
+  check('the Canigou from Allauch: what the globe hides in standard air is within 100 m of the lowest point photographed in 2005',
+    near(hides('canigou-allauch'), allauch.lowestSeenM, 100), f(hides('canigou-allauch'), 0) + ' m against ' + allauch.lowestSeenM);
+}
+
 // 13. The user's own horizon observations.
 const seen = (hiddenM, extra = {}) =>
   cleanObservation({ eyeM: 1.7, distanceKm: 30, targetM: 50, hiddenM, airC: null, waterC: null, label: '', ...extra });
@@ -611,7 +662,7 @@ check('every explanation has a button that opens it', unused.length === 0, unuse
 // Each explanation is worked through with real numbers and must come out whole.
 const plain = (n, d = 1) => n.toFixed(d);
 const stubApp = {
-  state: { lat: hereNow.lat, lon: hereNow.lon, sunHeightKm: 5000, moonHeightKm: 5000, refraction: 'custom', tempC: -5, pressureHpa: 1000, mode: 'sky' },
+  state: { date: now, sunsetLowM: 0.2, sunsetHighM: 1.7, lat: hereNow.lat, lon: hereNow.lon, sunHeightKm: 5000, moonHeightKm: 5000, refraction: 'custom', tempC: -5, pressureHpa: 1000, mode: 'sky' },
   percent: (x) => `${Math.round(x * 100)}%`,
   deg: (n, d = 1) => `${plain(n, d)}°`,
   km: (n) => `${Math.round(n)} km`,

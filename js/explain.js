@@ -16,7 +16,8 @@
 import { DEG, EARTH_RADIUS_KM, SUN_RADIUS_KM, MOON_RADIUS_KM, wrap180 } from './astro.js';
 import { skySeparation, globeAngleDeg } from './models.js';
 import { STANDARD_AIR, airFactor, standardLift } from './refraction.js';
-import { K_STANDARD, STANDARD_GROUND_AIR, OVERTURNING_LAPSE } from './horizon.js';
+import { K_STANDARD, STANDARD_GROUND_AIR, OVERTURNING_LAPSE, dipDeg, sunSinkDegPerHour, secondSunsetSeconds } from './horizon.js';
+import { subsolarPoint } from './astro.js';
 import { schulerMinutes } from './flight.js';
 
 const KM_PER_DEGREE = EARTH_RADIUS_KM * DEG; // along the ground, and on the flat map
@@ -518,6 +519,20 @@ export const EXPLAIN = {
 
   // ---------- over the horizon ----------
 
+  'hz.views': {
+    tool: 'horizon',
+    title: 'The well-known views',
+    code: [['presets.js', 'viewSizes'], ['distances.js', 'globeDistanceKm']],
+    body: () => `
+      <p>These are real places where people look a long way across water, and argue about what they see. Choosing
+      one sets the height, the distance and the height of your eye to match it.</p>
+      <p>Every figure has a source, listed under the picker. The distance is worked out from the two positions,
+      and the heights are measured from the surface of the water the line of sight crosses, not from sea level:
+      a tower beside a lake stands on ground above the lake, and both count.</p>
+      <p>The view is set up for a person standing at the water's edge in standard air. Change the height of your
+      eye or the air to match the day a particular photograph was taken.</p>`,
+  },
+
   'hz.eye': {
     tool: 'horizon',
     title: 'Heights',
@@ -717,6 +732,39 @@ export const EXPLAIN = {
       <p>Judging how much is hidden by eye is rough, and so are most distances and heights, so expect even the
       right model to be off by a few metres. The temperatures are used to check the explanation, not to work out
       the bending: that needs the temperature at several heights along the whole line of sight.</p>`,
+  },
+
+  'hz.sunsets': {
+    tool: 'horizon',
+    title: 'Timing two sunsets',
+    maths: true,
+    code: [['horizon.js', 'dipDeg', 'sunSinkDegPerHour', 'secondSunsetSeconds', 'radiusFromTwoSunsetsKm']],
+    body(hz, { state, deg, fmtH }) {
+      const sunLat = subsolarPoint(state.date).lat;
+      const rate = sunSinkDegPerHour(state.lat, sunLat);
+      const low = state.sunsetLowM;
+      const high = state.sunsetHighM;
+      const wait = secondSunsetSeconds(low, high, state.lat, sunLat, hz.k);
+      return `
+      <p>On a globe the horizon drops as you rise, so the sun sets a little later for a higher eye. Watch it set
+      from low down, get up quickly, and you can watch it set again. The gap between the two is a measurement of
+      the Earth, made with a stopwatch.</p>
+      ${steps(
+        step(`Horizon below eye level from ${fmtH(low)}`, '√(2 × h ÷ R′)', deg(dipDeg(low, hz.k), 3)),
+        step(`And from ${fmtH(high)}`, '√(2 × h ÷ R′)', deg(dipDeg(high, hz.k), 3)),
+        step('How fast the sun sinks as it sets, with φ your latitude and δ where the sun is overhead', '15° an hour × √(cos² φ − sin² δ)',
+          rate === null ? 'it does not set' : `${deg(rate / 60, 3)} a minute`),
+        step('Gap between the two sunsets', 'difference in drop ÷ rate of sinking', wait === null ? 'none' : `${wait.toFixed(1)} s`),
+      )}
+      <p>Turned round, a timing gives the Earth's radius. With θ the angle the sun sank in the time you measured:</p>
+      ${steps(
+        step('Radius as the bending of light makes it seem', 'R′ = 2 × (√high − √low)² ÷ θ²', ''),
+        step("The Earth's own radius", 'R′ × (1 − k)', ''),
+      )}
+      <p>Expect to be within a fifth or so. The hard part is judging the instant the last of the sun goes, and a
+      second's error matters when the whole gap is ten.</p>
+      <p>On the flat model the horizon is at eye level from every height, so getting up brings nothing back.</p>`;
+    },
   },
 
   // ---------- level flight ----------

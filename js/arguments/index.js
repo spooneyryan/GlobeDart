@@ -29,12 +29,14 @@ import eclipse from './eclipse.js';
 import icewall from './icewall.js';
 import ship from './ship.js';
 import waterlevel from './waterlevel.js';
+import twosunsets from './twosunsets.js';
+import bedford from './bedford.js';
 import spin from './spin.js';
 import eyelevel from './eyelevel.js';
 import looming from './looming.js';
 import pilots from './pilots.js';
 
-export const ARGUMENTS = [sunset, angles, sunrise, december, polaris, southern, phases, sameface, eclipse, flights, icewall, ship, eyelevel, looming, waterlevel, pilots, spin];
+export const ARGUMENTS = [sunset, angles, sunrise, december, polaris, southern, phases, sameface, eclipse, flights, icewall, ship, eyelevel, looming, waterlevel, bedford, twosunsets, pilots, spin];
 
 /** The headings the arguments are listed under, in order. */
 export const GROUPS = [

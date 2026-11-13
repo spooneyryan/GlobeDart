@@ -1,11 +1,10 @@
-import { EARTH_RADIUS_KM } from '../astro.js';
-import { K_STANDARD } from '../horizon.js';
+import { K_STANDARD, middleMarkRiseM } from '../horizon.js';
 
 /**
  * How far the surface of still water stands above a straight line joining two
  * points on it, at the middle, in metres: d² ÷ 8R for a stretch d across.
  */
-export const bulgeM = (distanceKm) => ((distanceKm * distanceKm) / (8 * EARTH_RADIUS_KM)) * 1000;
+export const bulgeM = (distanceKm) => middleMarkRiseM(distanceKm, 0);
 
 // Stretches of water to compare, in km, with something of that size.
 const STRETCHES = [

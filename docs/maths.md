@@ -273,6 +273,60 @@ That bending is then described by the air it takes: cooling with height, warming
 - Code: `js/observations.js`, `impliedCoefficient`, `scoreObservation`.
 - Checks: section 13.
 
+## 9a. Two sunsets
+
+The horizon is lower from a higher eye, so the sun sets later there. With φ the latitude and δ the latitude where
+the sun is overhead, the sun sinks as it sets at:
+
+```
+rate = 15° an hour × √(cos² φ − sin² δ)
+```
+
+The gap between the sun setting for a low eye and for a high one is the difference in the drop of the horizon
+(section 8) divided by that rate. Turned round, a timed gap gives the Earth's radius. With θ the angle the sun
+sank in that time, in radians:
+
+```
+R′ = 2 × (√high − √low)² ÷ θ²        and        R = R′ × (1 − k)
+```
+
+Lying down and then standing gives about 6 seconds on the equator and about 11 in London in November.
+
+- Code: `js/horizon.js`, `sunSinkDegPerHour`, `secondSunsetSeconds`, `radiusFromTwoSunsetsKm`.
+- Checks: section 12a, and section 14 (run from `js/arguments/twosunsets.js`).
+
+## 9b. Three marks in a row
+
+Put three marks the same height above still water, the middle one half way along a stretch d long. Seen from the
+first, the middle mark stands above the line to the last by:
+
+```
+rise = d² ÷ 8R′
+```
+
+It does not depend on how high the marks are, which is why Wallace used it on the Bedford Level in 1870: raising
+the line of sight takes it out of the strongly bending air next to the water without changing the answer. Over
+six miles it is 6 ft with no air and 5 ft in standard air. On flat water it is nothing.
+
+- Code: `js/horizon.js`, `middleMarkRiseM`; `js/arguments/bedford.js`.
+- Checks: section 14 (run from `js/arguments/bedford.js`).
+
+## 9c. The well-known views
+
+A view is two positions, three elevations above sea level (the water, the ground at the viewpoint, the foot of the
+target) and the target's height. From those:
+
+```
+distance = the globe distance between the two positions (section 7)
+eye      = ground at the viewpoint − water + 1.7 m
+height   = foot of the target − water + its height
+```
+
+Everything after that is section 8. The figures and their sources are in `docs/views.md`.
+
+- Code: `js/presets.js`, `viewSizes`.
+- Checks: section 12b.
+
 ## 10. Layers of air
 
 With one k the air is the same all the way up. Here it is described by its temperature at each height, and each
@@ -336,7 +390,8 @@ way in the south.
 the pole in section 3. At 60° south that is 20,015 km against 104,800 km. Code: `js/arguments/icewall.js`.
 
 **How far still water rises between two points.** The middle of a stretch d across stands `d² ÷ 8R` above a
-straight line joining its ends: 2 m over 10 km, 49 m over 50 km. Code: `js/arguments/waterlevel.js`.
+straight line joining its ends: 2 m over 10 km, 49 m over 50 km. It is section 9b with no air. Code:
+`js/arguments/waterlevel.js`.
 
 ## What keeps this honest
 

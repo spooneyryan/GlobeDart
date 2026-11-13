@@ -19,7 +19,7 @@ const INK = {
 };
 
 // How wide each target is compared with its height.
-const WIDTH = { ship: 3.6, building: 0.34, lighthouse: 0.3 };
+const WIDTH = { ship: 3.6, building: 0.34, lighthouse: 0.3, mountain: 2.6 };
 
 const CONTAINER_COLOURS = ['#c8553d', '#3d7ac8', '#d9a441', '#5aa469', '#8e6bbf', '#d0d6dd'];
 
@@ -60,6 +60,12 @@ function drawTarget(ctx, shape, x, base, size) {
     // The hull, with a red band along the waterline.
     shapeOf([[-half, 0.28], [-half * 0.94, 0], [half * 0.88, 0], [half, 0.28]], '#2b3038');
     shapeOf([[-half * 0.953, 0.07], [-half * 0.94, 0], [half * 0.88, 0], [half * 0.91, 0.07]], '#9b2d2d');
+  } else if (shape === 'mountain') {
+    // A ridge with one high peak: the lit side, the side in shade, then the snow.
+    const ridge = [[-1.3, 0], [-0.98, 0.26], [-0.72, 0.42], [-0.52, 0.37], [-0.28, 0.7], [-0.12, 0.84], [0, 1], [0.1, 0.86], [0.3, 0.62], [0.5, 0.5], [0.7, 0.55], [0.98, 0.28], [1.3, 0]];
+    shapeOf(ridge, '#6a7686');
+    shapeOf([[0, 1], [0.1, 0.86], [0.3, 0.62], [0.5, 0.5], [0.7, 0.55], [0.98, 0.28], [1.3, 0], [0.32, 0], [0.16, 0.4]], '#4c5766');
+    shapeOf([[-0.12, 0.84], [0, 1], [0.1, 0.86], [0.05, 0.8], [0, 0.87], [-0.05, 0.79]], '#e8eef4');
   } else if (shape === 'lighthouse') {
     const bands = 5;
     for (let i = 0; i < bands; i++) {

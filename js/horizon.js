@@ -12,6 +12,8 @@ import { DEG, EARTH_RADIUS_KM } from './astro.js';
 
 /** The range of sizes the tool works with, in metres and kilometres. */
 export const HORIZON_LIMITS = Object.freeze({ eyeM: [0.1, 12000], targetM: [1, 5000], distanceKm: [0.5, 500] });
+/** The things the tool can draw at the far end of the view. */
+export const TARGET_SHAPES = Object.freeze(['ship', 'building', 'lighthouse', 'mountain']);
 
 /** The standard atmosphere, cooling by 6.5 °C per kilometre of height, gives about this. */
 export const K_STANDARD = 0.17;
@@ -32,6 +34,17 @@ export function coefficientFromWeather({ tempC, pressureHpa, lapse }) {
 export function lapseForCoefficient(k, { tempC, pressureHpa } = STANDARD_GROUND_AIR) {
   const t = tempC + 273.15;
   return (k * t * t) / (503 * pressureHpa) + OVERTURNING_LAPSE;
+}
+
+/**
+ * Three marks the same height above still water, the middle one half way along.
+ * This is how far the middle mark stands above the straight line of sight from
+ * the first to the last, in metres: d² ÷ 8R′ for a stretch d long. It does not
+ * depend on how high the marks are.
+ */
+export function middleMarkRiseM(distanceKm, k = 0) {
+  const r = effectiveRadiusKm(k);
+  return Number.isFinite(r) ? ((distanceKm * distanceKm) / (8 * r)) * 1000 : 0;
 }
 
 /**
@@ -77,6 +90,48 @@ export function hiddenHeightM(eyeM, distanceKm, k = 0) {
  */
 export function flatNeeds(k, air = STANDARD_GROUND_AIR) {
   return { k: k - 1, lapse: lapseForCoefficient(k - 1, air) };
+}
+
+// ---------- two sunsets ----------
+//
+// The sun sets a little later for a higher eye, because the horizon is lower
+// from there. Timing the gap between the two sunsets measures the Earth.
+
+/**
+ * How fast the sun is sinking as it sets, in degrees an hour, for an observer
+ * at latitude φ when the sun is overhead at latitude δ:
+ *   15 × √(cos² φ − sin² δ)
+ * It sinks straight down at 15° an hour on the equator at an equinox, and
+ * more slowly, at a slant, everywhere else. Null where it does not set.
+ */
+export function sunSinkDegPerHour(lat, sunLat) {
+  const under = Math.cos(lat * DEG) ** 2 - Math.sin(sunLat * DEG) ** 2;
+  return under > 1e-9 ? 15 * Math.sqrt(under) : null;
+}
+
+/**
+ * Seconds between the sun setting for an eye at one height and setting again
+ * for a higher one: the extra drop of the horizon, over how fast the sun sinks.
+ */
+export function secondSunsetSeconds(lowM, highM, lat, sunLat, k = K_STANDARD) {
+  const rate = sunSinkDegPerHour(lat, sunLat);
+  if (rate === null) return null;
+  return ((dipDeg(highM, k) - dipDeg(lowM, k)) / rate) * 3600;
+}
+
+/**
+ * The Earth's radius, in km, that a timing of the two sunsets gives. With θ
+ * the angle the sun sank in that time, in radians, and the two eye heights:
+ *   R′ = 2 × (√high − √low)² ÷ θ²
+ * That is the radius as the bending of light makes it seem; the Earth's own is
+ * R′ × (1 − k).
+ */
+export function radiusFromTwoSunsetsKm(lowM, highM, seconds, lat, sunLat, k = K_STANDARD) {
+  const rate = sunSinkDegPerHour(lat, sunLat);
+  if (rate === null || !(seconds > 0) || !(highM > lowM)) return null;
+  const angle = ((rate * seconds) / 3600) * DEG;
+  const seeming = (2 * (Math.sqrt(highM / 1000) - Math.sqrt(lowM / 1000)) ** 2) / (angle * angle);
+  return seeming * (1 - k);
 }
 
 /** Everything the views and tables need for one arrangement of eye, target and air. */
