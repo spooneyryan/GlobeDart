@@ -574,6 +574,82 @@ body:not([data-mode='flight']) .fl-only {
   letter-spacing: 0.08em;
 }
 
+#views.waiting .view {
+  opacity: 0.3;
+  transition: opacity 0.2s;
+}
+
+#tour-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+#tour-step {
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.tour-buttons {
+  display: flex;
+  gap: 5px;
+}
+
+.tour-buttons button {
+  padding: 4px 11px;
+}
+
+.tour-buttons button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+#tour-ask {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--measured);
+  background: rgba(69, 214, 200, 0.07);
+  border-radius: 0 6px 6px 0;
+}
+
+#tour-ask span {
+  color: var(--measured);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+#tour-ask p {
+  margin: 0;
+  line-height: 1.4;
+  font-size: 14px;
+}
+
+#tour-ask button {
+  align-self: flex-start;
+}
+
+.tour-list {
+  margin: 0 0 8px;
+  padding-left: 20px;
+  line-height: 1.45;
+}
+
+.tour-list li {
+  margin-bottom: 6px;
+}
+
+#demo-body:empty {
+  display: none;
+}
+
 #demo-body p {
   margin: 0 0 8px;
   line-height: 1.45;

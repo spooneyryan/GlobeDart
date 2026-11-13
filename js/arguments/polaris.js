@@ -3,6 +3,8 @@ export default {
   label: 'Pole star',
   title: 'The pole star: one star, many latitudes',
   claim: 'Polaris sinks as you travel south because of perspective, not because the ground curves.',
+  ask: "If Polaris sinks only because of perspective, should it ever drop below the horizon altogether?",
+  check: "Measure the height of Polaris with a protractor and a weighted string. It matches your latitude.",
   tool: 'sky',
   pair: 'outside',
   apply({ state, city, setObserver, goToMidnight, STAR_DEMO }) {

@@ -174,10 +174,24 @@ is overhead, the followed star and the route.
 - Google Earth is drawn as a globe, so it is somewhere to look at the real ground, not evidence for either model.
 - Nothing is sent anywhere until the link is clicked. The app still loads nothing from the internet.
 
+## The tour
+
+"Take the tour" walks through six of the arguments in order, easiest first: sunset, sunrise direction, sun angles
+from many cities, southern stars, southern flights and a ship over the horizon. It is meant for one person
+showing another.
+
+- Each step opens with the claim and a question to ask before anything is shown. The views stay dimmed until
+  "Show what each model says" is pressed, so the other person can commit to an answer first.
+- The last step lists, for each argument, what anyone can go and check for themselves.
+- Picking a demonstration directly leaves the tour. The step and whether its answer is showing are kept in the
+  link.
+- The steps are the `TOUR` list in `js/arguments/index.js`. Each argument carries its own question (`ask`) and
+  self-check (`check`).
+
 ## Writing an argument
 
 Each demonstration is one file in `js/arguments/`, listed in `js/arguments/index.js`. A file exports the claim in
-the flat-earth side's own words, the tool it uses, a function that sets the scene, and a function that writes
+the flat-earth side's own words, a question to ask first, what to go and check, the tool it uses, a function that sets the scene, and a function that writes
 the explanation from the live numbers. It can also export `checks`, which `tools/check-maths.mjs` runs, so an
 argument's numbers are tested along with everything else. The top of `index.js` lists the fields.
 

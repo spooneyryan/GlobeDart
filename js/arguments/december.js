@@ -3,6 +3,8 @@ export default {
   label: 'December daylight',
   title: 'December: daylight where the flat sun cannot reach',
   claim: 'The sun is a spotlight that lights one patch of the flat earth at a time.',
+  ask: "In December, which parts of the flat map should be in daylight if the sun is a spotlight circling the middle?",
+  check: "Look up sunrise times, or live webcams, for southern Chile, South Africa and Antarctica in December.",
   tool: 'sky',
   pair: 'outside',
   apply({ state, city, setObserver, sunEvents, seasons, SUN_DEMO }) {

@@ -13,6 +13,8 @@ export default {
   label: 'Horizon at eye level',
   title: 'Does the horizon always rise to eye level?',
   claim: 'However high you climb, the horizon rises to meet your eye. On a ball it would drop away below you.',
+  ask: "From an airliner, is the horizon level with your eye, or below it? How far below would it have to be before you noticed?",
+  check: "From a window seat, hold something level against the horizon and see where the horizon sits.",
   tool: 'horizon',
   pair: 'outside',
   apply({ state }) {

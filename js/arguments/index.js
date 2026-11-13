@@ -5,6 +5,8 @@
 //   label   text of its button
 //   title   heading shown while it is running
 //   claim   the flat-earth claim it answers, in that side's own words
+//   ask     a question to put to someone before showing them the answer
+//   check   what anyone can go and look at for themselves
 //   tool    which tool it uses: 'sky', 'horizon' or 'flight'
 //   pair    which pair of views a phone shows first: 'outside' or 'sky'
 //   apply(app)        sets the scene by changing app.state
@@ -30,3 +32,6 @@ export const ARGUMENTS = [sunset, angles, sunrise, december, polaris, southern, 
 export const ARGUMENT_BY_ID = Object.fromEntries(ARGUMENTS.map((a) => [a.id, a]));
 
 export const TOOLS = ['sky', 'horizon', 'flight'];
+
+/** The guided tour: a few of the strongest arguments, easiest first. */
+export const TOUR = ['sunset', 'sunrise', 'angles', 'southern', 'flights', 'ship'];

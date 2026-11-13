@@ -3,6 +3,12 @@
 Ideas for GlobeDart, and what has become of each. The first four are built in a first version; what is left of
 each is listed under it.
 
+## Also built: a guided tour
+
+"Take the tour" walks through six arguments in order, each opening with a question to ask before the answer is
+shown, and ends with a list of things to go and check. Still to do: more than one tour (for example a short one
+for the horizon alone), and letting someone choose the steps.
+
 ## 1. Connect to Google Earth
 
 Let a place, a route or a sight line in GlobeDart be opened in Google Earth, and the other way round.

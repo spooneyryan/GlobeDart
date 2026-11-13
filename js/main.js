@@ -44,7 +44,7 @@ import { makeLandCanvas } from './scene-utils.js';
 import { GlobeView } from './views/globeView.js';
 import { FlatView } from './views/flatView.js';
 import { SkyView } from './views/skyView.js';
-import { ARGUMENTS, ARGUMENT_BY_ID, TOOLS } from './arguments/index.js';
+import { ARGUMENTS, ARGUMENT_BY_ID, TOOLS, TOUR } from './arguments/index.js';
 import { HorizonView } from './views/horizonView.js';
 import { FlightView } from './views/flightView.js';
 import { FLIGHT_LIMITS, flightScene, schulerMinutes } from './flight.js';
@@ -72,6 +72,7 @@ const state = {
   playing: false,
   speed: 10, // simulated minutes per real second
   demo: null,
+  tour: null, // the guided tour: null, or { step, shown } (which step, and whether its answer is on show)
   stars: false,
   star: 'Polaris',
   starHeightKm: 5000, // flat model only: how high its layer of stars sits
@@ -873,8 +874,8 @@ const INTRO = {
     same observer. Top row: the view from outside. Bottom row: what the observer should see in the sky.</p>
     <p>The <b class="m">teal ring</b> marks where the sun is actually measured to be. A model is right when its sun
     sits inside the ring.</p>
-    <p class="try">Pick a demonstration above, or change the time, the place and the flat-model settings
-    yourself. Drag any view to look around; scroll or pinch to zoom.</p>`,
+    <p class="try">Take the tour, pick a demonstration above, or change the time, the place and the flat-model
+    settings yourself. Drag any view to look around; scroll or pinch to zoom.</p>`,
 };
 
 const HORIZON_INTRO = {
@@ -897,6 +898,46 @@ const FLIGHT_INTRO = {
     ground round. On the flat model it never moves.</p>
     <p class="try">Press "Fly the lap", then change the speed and the length of the stretch.</p>`,
 };
+
+// ---------- the guided tour ----------
+
+const TOUR_END = {
+  title: 'What to go and check',
+  body: () => `
+    <p>None of that has to be taken on trust. Every step was something anyone can go and look at:</p>
+    <ol class="tour-list">${TOUR.map((id) => `<li><b>${esc(DEMOS[id].label)}.</b> ${esc(DEMOS[id].check)}</li>`).join('')}</ol>
+    <p class="try">The other demonstrations along the top cover the pole star, December daylight, the horizon from
+    an airliner, photographs taken from "too far away", and what pilots do. "Your own measurements" checks both
+    models against numbers of your own.</p>`,
+};
+
+/** Puts an argument on show: its scene, its tool, and the pair of views a phone starts with. */
+function showArgument(id) {
+  Object.assign(state, { demo: id, playing: false, sailing: false, flying: false });
+  DEMOS[id].apply(app);
+  setMode(DEMOS[id].tool);
+  setPair(DEMOS[id].pair);
+  requestUpdate();
+}
+
+/** Moves the tour to a step. The step opens on its question; the views are left as they were until it is answered. */
+function tourGo(step) {
+  state.tour = { step: clamp(step, 0, TOUR.length), shown: false };
+  Object.assign(state, { demo: null, playing: false, sailing: false, flying: false });
+  requestUpdate();
+}
+
+function tourShow() {
+  const id = state.tour && TOUR[state.tour.step];
+  if (!id) return;
+  state.tour.shown = true;
+  showArgument(id);
+}
+
+function tourLeave() {
+  state.tour = null;
+  requestUpdate();
+}
 
 // ---------- views ----------
 
@@ -1383,11 +1424,38 @@ function setMode(mode) {
 }
 
 function renderDemo(c) {
-  const demo = state.demo ? DEMOS[state.demo] : { sky: INTRO, horizon: HORIZON_INTRO, flight: FLIGHT_INTRO }[state.mode];
+  const tour = state.tour;
+  // If the scene has been changed away from the step on show, the step goes back to its question.
+  if (tour?.shown && state.demo !== TOUR[tour.step]) tour.shown = false;
+  const ended = !!tour && tour.step >= TOUR.length;
+  const asking = !!tour && !ended;
+  const demo = ended
+    ? TOUR_END
+    : asking
+      ? DEMOS[TOUR[tour.step]]
+      : state.demo
+        ? DEMOS[state.demo]
+        : { sky: INTRO, horizon: HORIZON_INTRO, flight: FLIGHT_INTRO }[state.mode];
+  $('tour-bar').hidden = !tour;
+  $('tour-end').hidden = !ended;
+  $('tour-ask').hidden = !asking;
+  if (tour) {
+    $('tour-step').textContent = ended ? 'Tour: the end' : `Tour: step ${tour.step + 1} of ${TOUR.length}`;
+    $('tour-back').disabled = tour.step === 0;
+    $('tour-next').hidden = ended;
+    $('tour-next').textContent = tour.step === TOUR.length - 1 ? 'Finish' : 'Next';
+  }
+  if (asking) {
+    $('tour-question').textContent = demo.ask;
+    $('tour-show').hidden = tour.shown;
+  }
+  // While a question is waiting, the views still hold the last scene, so they are dimmed.
+  $('views').classList.toggle('waiting', asking && !tour.shown);
   $('demo-title').textContent = demo.title;
   $('demo-claim').hidden = !demo.claim;
   $('demo-claim-text').textContent = demo.claim ?? '';
-  $('demo-body').innerHTML = demo.body(c, app);
+  // A step's explanation waits until its question has been answered.
+  $('demo-body').innerHTML = asking && !tour.shown ? '' : demo.body(c, app);
   for (const btn of document.querySelectorAll('#demos button')) {
     btn.classList.toggle('active', btn.dataset.demo === state.demo);
   }
@@ -1672,17 +1740,20 @@ function bindControls() {
     'beforeend',
     ARGUMENTS.map((a) => `<button data-demo="${a.id}" title="${esc(a.claim)}">${esc(a.label)}</button>`).join(''),
   );
-  for (const btn of document.querySelectorAll('#demos button')) {
+  for (const btn of document.querySelectorAll('#demos button[data-demo]')) {
     btn.addEventListener('click', () => {
-      state.demo = btn.dataset.demo;
-      state.playing = false;
-      state.sailing = false;
-      DEMOS[state.demo].apply(app);
-      setMode(DEMOS[state.demo].tool);
-      setPair(DEMOS[state.demo].pair);
-      requestUpdate();
+      // Picking a demonstration directly leaves the tour.
+      state.tour = null;
+      showArgument(btn.dataset.demo);
     });
   }
+  $('tour-start').addEventListener('click', () => tourGo(0));
+  $('tour-again').addEventListener('click', () => tourGo(0));
+  $('tour-back').addEventListener('click', () => tourGo(state.tour.step - 1));
+  $('tour-next').addEventListener('click', () => tourGo(state.tour.step + 1));
+  $('tour-show').addEventListener('click', tourShow);
+  $('tour-leave').addEventListener('click', tourLeave);
+  $('tour-explore').addEventListener('click', tourLeave);
 }
 
 function bindHorizonControls() {
@@ -1906,6 +1977,10 @@ function writeHash() {
     p.set('ph', state.pressureHpa);
   }
   if (state.demo) p.set('demo', state.demo);
+  if (state.tour) {
+    p.set('ts', state.tour.step + 1);
+    if (state.tour.shown) p.set('tv', 1);
+  }
   if (state.stars) {
     p.set('st', 1);
     p.set('star', state.star);
@@ -1959,6 +2034,9 @@ function readHash() {
   state.pressureHpa = num('ph', ...AIR_LIMITS.pressureHpa) ?? state.pressureHpa;
   if (p.get('fl') === 'observed' || p.get('fl') === 'model') state.flatLighting = p.get('fl');
   if (DEMOS[p.get('demo')]) state.demo = p.get('demo');
+  const tourStep = num('ts', 1, TOUR.length + 1);
+  state.tour = tourStep === null ? null : { step: Math.round(tourStep) - 1, shown: p.get('tv') === '1' };
+  if (state.tour && !state.tour.shown) state.demo = null;
   state.stars = p.get('st') === '1';
   state.trails = p.get('tr') === '1';
   if (starIndex(p.get('star')) >= 0) state.star = p.get('star');

@@ -3,6 +3,8 @@ export default {
   label: 'Sunset',
   title: 'Why does the sun set at all?',
   claim: 'The sun never goes below the horizon. It moves away until perspective makes it vanish.',
+  ask: "If the sun only moves away and never drops, how high above the horizon should it still be at the moment we call sunset?",
+  check: "Watch a sunset over the sea through binoculars or a zoom lens. The sun goes down behind the horizon, bottom first, at full size.",
   tool: 'sky',
   pair: 'sky',
   apply({ state, city, setObserver, sunEvents, SUN_DEMO }) {

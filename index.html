@@ -35,6 +35,7 @@
         <p>Same sun, same observer, two models. Which one matches what people actually see?</p>
       </div>
       <nav id="demos" aria-label="Demonstrations">
+        <button id="tour-start" class="primary">Take the tour</button>
         <span class="nav-label">Demonstrations</span>
       </nav>
     </header>
@@ -374,9 +375,26 @@
 
       <aside id="results">
         <section id="demo-card">
+          <div id="tour-bar" hidden>
+            <span id="tour-step"></span>
+            <span class="tour-buttons">
+              <button id="tour-back">Back</button>
+              <button id="tour-next" class="primary">Next</button>
+              <button id="tour-leave" title="Leave the tour" aria-label="Leave the tour">×</button>
+            </span>
+          </div>
           <h2 id="demo-title"></h2>
           <p id="demo-claim" hidden><span>The claim</span> <q id="demo-claim-text"></q></p>
+          <div id="tour-ask" hidden>
+            <span>Ask first</span>
+            <p id="tour-question"></p>
+            <button id="tour-show" class="primary">Show what each model says</button>
+          </div>
           <div id="demo-body"></div>
+          <div id="tour-end" class="buttons two" hidden>
+            <button id="tour-again">Start again</button>
+            <button id="tour-explore" class="primary">Explore on your own</button>
+          </div>
         </section>
 
         <section class="fl-only">

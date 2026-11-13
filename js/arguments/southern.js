@@ -3,6 +3,8 @@ export default {
   label: 'Southern stars',
   title: 'Southern stars: everyone looks south',
   claim: 'The stars turn in a single dome, centred above the north pole.',
+  ask: "People in Sydney, Cape Town and Santiago all face south to see the same stars. On the flat map, which way is each of them facing?",
+  check: "Ask someone in the southern hemisphere which way they face to watch the Southern Cross circle the sky.",
   tool: 'sky',
   pair: 'sky',
   apply({ state, city, setObserver, goToMidnight, STAR_DEMO }) {

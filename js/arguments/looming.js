@@ -9,6 +9,8 @@ export default {
   label: 'Seen from too far away',
   title: 'A skyline that "should" be hidden',
   claim: 'We can photograph things the curve should hide. So there is no curve.',
+  ask: "If a photograph shows a skyline that should be hidden, what would you want to know about the day it was taken?",
+  check: "Photograph the same far shore on a cold-water day and on an ordinary day, noting the air and water temperatures.",
   tool: 'horizon',
   pair: 'sky',
   apply({ state }) {

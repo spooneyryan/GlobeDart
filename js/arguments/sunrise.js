@@ -3,6 +3,8 @@ export default {
   label: 'Sunrise direction',
   title: 'Which way is sunrise?',
   claim: 'The sun circles above the flat earth. Sunrise is just the sun coming near enough to see.',
+  ask: "On the flat map, where is the sun at sunrise on the equator? Which way would you have to face to see it?",
+  check: "On an equinox, take a compass bearing to the rising sun. It is due east from anywhere on Earth.",
   tool: 'sky',
   pair: 'sky',
   apply({ state, city, setObserver, sunEvents, seasons, SUN_DEMO }) {

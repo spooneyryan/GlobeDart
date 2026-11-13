@@ -3,6 +3,8 @@ export default {
   label: 'Sun angles from many cities',
   title: 'Where is the sun? Ask many cities at once',
   claim: 'The sun is small and close, a few thousand kilometres up, circling above a flat earth.',
+  ask: "If the sun is a few thousand kilometres up, people in different cities should all work out the same height for it. Do they?",
+  check: "Measure a stick's shadow at an agreed moment with friends in other cities, and work out the sun's height from each.",
   tool: 'sky',
   pair: 'outside',
   apply({ state, city, setObserver, isoDay, SUN_DEMO }) {

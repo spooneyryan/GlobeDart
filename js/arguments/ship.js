@@ -5,6 +5,8 @@ export default {
   label: 'Ship over the horizon',
   title: 'A ship sailing over the horizon',
   claim: 'Ships do not go over a curve. They get too small to see, and a zoom lens brings them back.',
+  ask: "If a ship only gets too small to see, what should a telescope show when it is far away: all of it, or only the top?",
+  check: "Watch a ship or a far shore across water through binoculars, from the water's edge and then from higher up.",
   tool: 'horizon',
   pair: 'sky',
   apply({ state, nearKm }) {

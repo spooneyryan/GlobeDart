@@ -3,6 +3,8 @@ export default {
   label: 'Southern flights',
   title: 'Southern flights: how far is it really?',
   claim: 'The flat map shows the true distances between places.',
+  ask: "How long should a non-stop flight from Sydney to Santiago take, if the flat map's distances are right?",
+  check: "Look up the scheduled time of a southern non-stop flight, and divide each map's distance by it.",
   tool: 'sky',
   pair: 'outside',
   apply({ state, focusRoute, SUN_DEMO }) {
