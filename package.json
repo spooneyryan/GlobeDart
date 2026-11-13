@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Side-by-side globe and flat-earth models, scored against what observers actually see.",
+  "license": "SEE LICENSE IN LICENSE",
   "scripts": {
     "start": "node tools/serve.mjs",
     "test": "node tools/check-maths.mjs"

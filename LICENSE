@@ -1,0 +1,43 @@
+GlobeDart Licence
+
+Copyright (c) 2026 spooneyryan
+
+Permission is granted, free of charge, to anyone who obtains a copy of
+GlobeDart (the "Work") to use it, copy it, change it, build on it, and to
+publish or sell what they make from it, for any purpose, subject to the one
+condition below.
+
+No credit is required. You do not have to name the author, link back, or keep
+this notice in what you make.
+
+The one condition
+
+You may not redistribute the Work as a whole in unchanged or substantially
+unchanged form, whether free of charge or for payment. Renaming it,
+rebranding it, reformatting it, or making other trivial changes does not make
+it a different work.
+
+What that still allows
+
+- Linking to GlobeDart, embedding it from its own address, or telling people
+  where to find it.
+- Using any part of it in something else: the code, the maths, the drawings,
+  the wording of the explanations.
+- Publishing a version you have changed in substance, for example with tools,
+  arguments, models or data of your own.
+- Keeping private copies and forks for your own use or to prepare changes.
+
+Parts that are not the author's
+
+The files in the "vendor" folder (three.js and Astronomy Engine) and the map
+data in "data" (Natural Earth) come from other people and stay under their own
+terms, which are given in or beside those files. This licence does not change
+them. In particular the notices in the "vendor" files must stay with any copy
+of those files.
+
+No warranty
+
+The Work is provided "as is", without warranty of any kind, express or
+implied, including the warranties of merchantability, fitness for a
+particular purpose and non-infringement. The author is not liable for any
+claim, damages or other liability arising from the Work or from its use.

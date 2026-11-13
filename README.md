@@ -187,6 +187,14 @@ Below about 1180 px wide the page scrolls and the views stay pinned at the top. 
 is shown at a time, switched with the second pair of buttons above them. Sky views take a one-finger drag to look around and a
 two-finger pinch to zoom; the outside views use the usual one-finger orbit and two-finger zoom.
 
+## Licence
+
+Use it freely, for anything, with no credit needed. The one thing not allowed is redistributing the whole of
+GlobeDart unchanged or nearly unchanged. The full terms are in `LICENSE`.
+
+three.js and Astronomy Engine in `vendor/` are other people's work under the MIT licence, and the map data in
+`data/` is Natural Earth's, in the public domain. Those keep their own terms.
+
 ## Not built yet
 
 The moon, a full star catalogue, entering your own star measurements, and flat-model variants
