@@ -2,6 +2,7 @@ import { pitchRateDegPerMin, hoursRound, climbIfStraightM, schulerMinutes } from
 
 export default {
   id: 'pilots',
+  group: 'motion',
   label: 'Pilots and the nose',
   title: 'Do pilots have to keep pushing the nose down?',
   claim: 'On a ball, pilots would have to keep dipping the nose to follow the curve. They never do.',

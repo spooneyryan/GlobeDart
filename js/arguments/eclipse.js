@@ -1,5 +1,6 @@
 export default {
   id: 'eclipse',
+  group: 'moon',
   label: 'Lunar eclipse',
   title: 'What darkens the moon in an eclipse?',
   claim: 'Eclipses of the moon are caused by an unseen "shadow object", not by the Earth.',

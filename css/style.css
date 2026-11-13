@@ -61,9 +61,36 @@ header {
 
 #demos {
   display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+
+#demo-groups,
+#demo-list {
+  display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 6px;
+  max-width: 100%;
+}
+
+/* A group is a tab: the one that is open is outlined, not filled like a running demonstration. */
+#demo-groups button[data-group] {
+  background: transparent;
+  color: var(--muted);
+}
+
+#demo-groups button[data-group]:hover {
+  color: var(--text);
+}
+
+#demo-groups button[data-group].active {
+  background: var(--panel-2);
+  border-color: var(--globe);
+  color: var(--text);
 }
 
 .nav-label {
@@ -1334,9 +1361,14 @@ h4.flat {
     display: none;
   }
   #demos {
-    flex-wrap: nowrap;
-    overflow-x: auto;
+    align-items: stretch;
     max-width: 100%;
+  }
+  #demo-groups,
+  #demo-list {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
     padding-bottom: 2px;
     scrollbar-width: thin;
   }

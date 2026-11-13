@@ -6,6 +6,7 @@ const COLD_WATER = { tempC: 15, surfaceC: 9, layerM: 15 };
 
 export default {
   id: 'looming',
+  group: 'horizon',
   label: 'Seen from too far away',
   title: 'A skyline that "should" be hidden',
   claim: 'We can photograph things the curve should hide. So there is no curve.',

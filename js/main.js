@@ -65,7 +65,7 @@ import { makeLandCanvas } from './scene-utils.js';
 import { GlobeView } from './views/globeView.js';
 import { FlatView } from './views/flatView.js';
 import { SkyView } from './views/skyView.js';
-import { ARGUMENTS, ARGUMENT_BY_ID, TOOLS, TOUR } from './arguments/index.js';
+import { ARGUMENTS, ARGUMENT_BY_ID, GROUPS, TOOLS, TOUR } from './arguments/index.js';
 import { EXPLAIN } from './explain.js';
 import { initInfo, refreshInfo, infoButton, explainHtml } from './info.js';
 import { HorizonView } from './views/horizonView.js';
@@ -1085,8 +1085,13 @@ const TOUR_END = {
     models against numbers of your own.</p>`,
 };
 
+// Which group of demonstrations the bar is listing.
+let demoGroup = GROUPS[0].id;
+let shownGroup = null; // the group the bar last scrolled to
+
 /** Puts an argument on show: its scene, its tool, and the pair of views a phone starts with. */
 function showArgument(id) {
+  demoGroup = DEMOS[id].group;
   Object.assign(state, { demo: id, playing: false, sailing: false, flying: false });
   DEMOS[id].apply(app);
   setMode(DEMOS[id].tool);
@@ -1645,8 +1650,21 @@ function renderDemo(c) {
   $('demo-claim-text').textContent = demo.claim ?? '';
   // A step's explanation waits until its question has been answered.
   $('demo-body').innerHTML = asking && !tour.shown ? '' : demo.body(c, app);
-  for (const btn of document.querySelectorAll('#demos button')) {
+  for (const btn of document.querySelectorAll('#demo-list button')) {
     btn.classList.toggle('active', btn.dataset.demo === state.demo);
+    btn.hidden = btn.dataset.group !== demoGroup;
+  }
+  for (const btn of document.querySelectorAll('#demo-groups button[data-group]')) {
+    const open = btn.dataset.group === demoGroup;
+    btn.classList.toggle('active', open);
+    btn.setAttribute('aria-pressed', String(open));
+    // On a phone the row of headings scrolls sideways: bring the open one into it when it changes.
+    if (open && shownGroup !== demoGroup) {
+      const row = $('demo-groups');
+      const at = btn.getBoundingClientRect().left - row.getBoundingClientRect().left + row.scrollLeft;
+      row.scrollLeft = at - (row.clientWidth - btn.offsetWidth) / 2;
+      shownGroup = demoGroup;
+    }
   }
 }
 
@@ -1941,10 +1959,16 @@ function bindControls() {
     }
   });
 
-  $('demos').insertAdjacentHTML(
-    'beforeend',
-    ARGUMENTS.map((a) => `<button data-demo="${a.id}" title="${esc(a.claim)}">${esc(a.label)}</button>`).join(''),
-  );
+  $('demo-groups').insertAdjacentHTML('beforeend', GROUPS.map((g) => `<button data-group="${g.id}">${esc(g.label)}</button>`).join(''));
+  $('demo-list').innerHTML = ARGUMENTS.map(
+    (a) => `<button data-demo="${a.id}" data-group="${a.group}" title="${esc(a.claim)}">${esc(a.label)}</button>`,
+  ).join('');
+  for (const btn of document.querySelectorAll('#demo-groups button[data-group]')) {
+    btn.addEventListener('click', () => {
+      demoGroup = btn.dataset.group;
+      requestUpdate();
+    });
+  }
   for (const btn of document.querySelectorAll('#demos button[data-demo]')) {
     btn.addEventListener('click', () => {
       // Picking a demonstration directly leaves the tour.
@@ -2246,6 +2270,7 @@ function readHash() {
   const tourStep = num('ts', 1, TOUR.length + 1);
   state.tour = tourStep === null ? null : { step: Math.round(tourStep) - 1, shown: p.get('tv') === '1' };
   if (state.tour && !state.tour.shown) state.demo = null;
+  if (state.demo) demoGroup = DEMOS[state.demo].group;
   state.stars = p.get('st') === '1';
   state.moon = p.get('mo') === '1';
   state.moonHeightKm = num('mh', MIN_HEIGHT_KM, MAX_HEIGHT_KM) ?? state.moonHeightKm;

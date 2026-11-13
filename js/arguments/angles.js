@@ -1,5 +1,6 @@
 export default {
   id: 'angles',
+  group: 'sun',
   label: 'Sun angles from many cities',
   title: 'Where is the sun? Ask many cities at once',
   claim: 'The sun is small and close, a few thousand kilometres up, circling above a flat earth.',

@@ -312,6 +312,32 @@ On a flat earth the path is a straight line and all four are zero or meaningless
 - Code: `js/flight.js`, `pitchRateDegPerMin`, `hoursRound`, `climbIfStraightM`, `schulerMinutes`.
 - Checks: section 14 (run from `js/arguments/pilots.js`).
 
+## 12. A turning globe
+
+The sky is seen to turn once in a sidereal day, 23.93 hours: 15.04° an hour. If it is the Earth that turns, with
+ω that rate in radians a second and φ the latitude:
+
+```
+speed of the ground      = 2π × R × cos φ ÷ one sidereal day
+fraction of weight lost  = ω² × R × cos² φ ÷ g
+pendulum's swing turns   = 15.04° an hour × sin φ
+```
+
+At the equator the ground moves at 1,672 km/h and the turn takes a third of one percent off your weight. A
+pendulum's line of swing does not turn at the equator, turns at the full rate at the poles, and turns the other
+way in the south.
+
+- Code: `js/rotation.js`, `groundSpeedKmh`, `weightLost`, `pendulumDegPerHour`.
+- Checks: section 14 (run from `js/arguments/spin.js`).
+
+## 13. Two more that need no new maths
+
+**Once round a line of latitude.** On the globe, `2π × R × cos φ`. On the flat map, `2π` times the distance from
+the pole in section 3. At 60° south that is 20,015 km against 104,800 km. Code: `js/arguments/icewall.js`.
+
+**How far still water rises between two points.** The middle of a stretch d across stands `d² ÷ 8R` above a
+straight line joining its ends: 2 m over 10 km, 49 m over 50 km. Code: `js/arguments/waterlevel.js`.
+
 ## What keeps this honest
 
 - The numbers in the app's explanations are the ones the models produced. Nothing is worked out a second time

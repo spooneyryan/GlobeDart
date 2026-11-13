@@ -10,6 +10,7 @@ const HEIGHTS = [
 
 export default {
   id: 'eyelevel',
+  group: 'horizon',
   label: 'Horizon at eye level',
   title: 'Does the horizon always rise to eye level?',
   claim: 'However high you climb, the horizon rises to meet your eye. On a ball it would drop away below you.',

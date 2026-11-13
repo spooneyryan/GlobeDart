@@ -1,5 +1,6 @@
 export default {
   id: 'december',
+  group: 'sun',
   label: 'December daylight',
   title: 'December: daylight where the flat sun cannot reach',
   claim: 'The sun is a spotlight that lights one patch of the flat earth at a time.',

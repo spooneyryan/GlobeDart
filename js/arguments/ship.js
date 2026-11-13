@@ -2,6 +2,7 @@ import { K_STANDARD, horizonDistanceKm, hiddenHeightM } from '../horizon.js';
 
 export default {
   id: 'ship',
+  group: 'horizon',
   label: 'Ship over the horizon',
   title: 'A ship sailing over the horizon',
   claim: 'Ships do not go over a curve. They get too small to see, and a zoom lens brings them back.',

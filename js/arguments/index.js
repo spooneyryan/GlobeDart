@@ -2,6 +2,7 @@
 //
 // Each one is a file of its own that exports:
 //   id      short name, used in links
+//   group   which heading it is listed under: one of GROUPS below
 //   label   text of its button
 //   title   heading shown while it is running
 //   claim   the flat-earth claim it answers, in that side's own words
@@ -25,12 +26,25 @@ import flights from './flights.js';
 import phases from './phases.js';
 import sameface from './sameface.js';
 import eclipse from './eclipse.js';
+import icewall from './icewall.js';
 import ship from './ship.js';
+import waterlevel from './waterlevel.js';
+import spin from './spin.js';
 import eyelevel from './eyelevel.js';
 import looming from './looming.js';
 import pilots from './pilots.js';
 
-export const ARGUMENTS = [sunset, angles, sunrise, december, polaris, southern, phases, sameface, eclipse, flights, ship, eyelevel, looming, pilots];
+export const ARGUMENTS = [sunset, angles, sunrise, december, polaris, southern, phases, sameface, eclipse, flights, icewall, ship, eyelevel, looming, waterlevel, pilots, spin];
+
+/** The headings the arguments are listed under, in order. */
+export const GROUPS = [
+  { id: 'sun', label: 'The sun' },
+  { id: 'moon', label: 'The moon' },
+  { id: 'stars', label: 'The stars' },
+  { id: 'travel', label: 'Distances' },
+  { id: 'horizon', label: 'The horizon' },
+  { id: 'motion', label: 'Motion' },
+];
 
 export const ARGUMENT_BY_ID = Object.fromEntries(ARGUMENTS.map((a) => [a.id, a]));
 

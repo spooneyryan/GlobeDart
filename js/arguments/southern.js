@@ -1,5 +1,6 @@
 export default {
   id: 'southern',
+  group: 'stars',
   label: 'Southern stars',
   title: 'Southern stars: everyone looks south',
   claim: 'The stars turn in a single dome, centred above the north pole.',

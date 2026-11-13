@@ -163,6 +163,11 @@ function drawSide(ctx, w, h, model, s) {
   ctx.fillStyle = INK.sea;
   ctx.fill();
 
+  // How far the water stands above a straight line between the two, where that is enough to draw.
+  if (model === 'globe' && Y(0) - Y(crest) > 14) {
+    text(ctx, `water rises ${s.fmtH(crest)} here`, X(s.distanceKm / 2), Y(crest) + 28, '#9cc4e4', 'center');
+  }
+
   // The target: the part in view, and the part that is hidden.
   const tx = X(s.distanceKm);
   const hidden = model === 'globe' ? s.hiddenM : s.flatHiddenM;

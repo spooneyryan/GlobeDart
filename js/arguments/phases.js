@@ -1,5 +1,6 @@
 export default {
   id: 'phases',
+  group: 'moon',
   label: 'Moon phases',
   title: 'Why does everyone see the same phase?',
   claim: 'The moon is a small light circling above the flat earth, at about the height of the sun.',

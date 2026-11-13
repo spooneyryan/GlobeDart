@@ -1,5 +1,6 @@
 export default {
   id: 'polaris',
+  group: 'stars',
   label: 'Pole star',
   title: 'The pole star: one star, many latitudes',
   claim: 'Polaris sinks as you travel south because of perspective, not because the ground curves.',

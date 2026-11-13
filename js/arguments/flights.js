@@ -1,5 +1,6 @@
 export default {
   id: 'flights',
+  group: 'travel',
   label: 'Southern flights',
   title: 'Southern flights: how far is it really?',
   claim: 'The flat map shows the true distances between places.',

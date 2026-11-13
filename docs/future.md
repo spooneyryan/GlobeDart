@@ -42,8 +42,10 @@ Notes:
 - Still to do: letting an argument add controls of its own. Today it can only use the three tools that exist.
 - Added since: "the horizon always rises to eye level", "we can see things the curve should hide", and the pilots
   argument below.
-- Candidates still to write: "water always finds its level", "we would feel the spin", "the moon gives cold
-  light", "Antarctica is an ice wall".
+- Also added: "Antarctica is an ice wall", "we would feel the spin" and "water always finds its level". The
+  demonstrations are now listed under six headings.
+- Left out on purpose: "the moon gives cold light". Neither model predicts anything about it, so there is
+  nothing to compare.
 
 ## 3. A very easy, clear way to show a ship going over the horizon, or a building hidden from the bottom up
 

@@ -1,5 +1,6 @@
 export default {
   id: 'sunset',
+  group: 'sun',
   label: 'Sunset',
   title: 'Why does the sun set at all?',
   claim: 'The sun never goes below the horizon. It moves away until perspective makes it vanish.',

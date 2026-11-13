@@ -41,6 +41,7 @@ The empty `.nojekyll` file tells GitHub Pages to serve the files exactly as they
 | `js/distances.js` | Distances under each model, and the non-stop flights used to test them |
 | `js/horizon.js` | What is hidden behind the horizon under each model, and how the air near the ground changes it |
 | `js/raytrace.js` | Light followed step by step through air whose temperature changes with height, over curved or flat ground |
+| `js/rotation.js` | A turning globe: speed of the ground, the weight the turn takes off, and how a pendulum's swing turns |
 | `js/flight.js` | Level flight: how fast the nose comes down to follow a globe, and what flying dead straight would do |
 | `js/earth.js` | A link that opens Google Earth at a place, and a KML file of the view |
 | `js/arguments/` | The demonstrations, one file per flat-earth argument, and the list of them |
@@ -239,9 +240,15 @@ showing another.
 - The steps are the `TOUR` list in `js/arguments/index.js`. Each argument carries its own question (`ask`) and
   self-check (`check`).
 
+## The demonstrations
+
+The bar at the top lists the demonstrations under six headings: the sun, the moon, the stars, distances, the
+horizon and motion. Picking a heading shows its demonstrations beneath it. There are seventeen, each answering one
+flat-earth claim, which is quoted above its explanation.
+
 ## Writing an argument
 
-Each demonstration is one file in `js/arguments/`, listed in `js/arguments/index.js`. A file exports the claim in
+Each demonstration is one file in `js/arguments/`, listed in `js/arguments/index.js`. A file exports the heading it is listed under, the claim in
 the flat-earth side's own words, a question to ask first, what to go and check, the tool it uses, a function that sets the scene, and a function that writes
 the explanation from the live numbers. It can also export `checks`, which `tools/check-maths.mjs` runs, so an
 argument's numbers are tested along with everything else. The top of `index.js` lists the fields.

@@ -18,7 +18,7 @@ import {
   flatNeeds,
   horizonScene,
 } from '../js/horizon.js';
-import { ARGUMENTS, TOOLS, TOUR } from '../js/arguments/index.js';
+import { ARGUMENTS, GROUPS, TOOLS, TOUR } from '../js/arguments/index.js';
 import { earthUrl, buildKml } from '../js/earth.js';
 import { makeAir, traceRay, traceView, astronomicalBend } from '../js/raytrace.js';
 import {
@@ -418,6 +418,10 @@ const incomplete = ARGUMENTS.filter(
 );
 check(`all ${ARGUMENTS.length} arguments have a name, a claim, a question, a self-check, a tool and both functions`, incomplete.length === 0, incomplete.map((a) => a.id).join(', '));
 check('no two arguments share a name', new Set(ARGUMENTS.map((a) => a.id)).size === ARGUMENTS.length);
+const groupIds = GROUPS.map((g) => g.id);
+check('every argument is listed under a group that exists, and no group is empty',
+  ARGUMENTS.every((a) => groupIds.includes(a.group)) && groupIds.every((id) => ARGUMENTS.some((a) => a.group === id)),
+  ARGUMENTS.filter((a) => !groupIds.includes(a.group)).map((a) => a.id).join(', '));
 check('every step of the tour is an argument that exists, and none comes twice',
   TOUR.every((id) => ARGUMENTS.some((a) => a.id === id)) && new Set(TOUR).size === TOUR.length && TOUR.length >= 3);
 check('every question in the tour ends as a question', TOUR.every((id) => ARGUMENTS.find((a) => a.id === id).ask.trim().endsWith('?')));

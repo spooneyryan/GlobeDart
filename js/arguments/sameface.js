@@ -1,5 +1,6 @@
 export default {
   id: 'sameface',
+  group: 'moon',
   label: 'Same face of the moon',
   title: 'Everyone sees the same face of the moon',
   claim: 'The moon is close: a few thousand kilometres above the flat earth.',

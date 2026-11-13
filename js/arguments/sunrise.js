@@ -1,5 +1,6 @@
 export default {
   id: 'sunrise',
+  group: 'sun',
   label: 'Sunrise direction',
   title: 'Which way is sunrise?',
   claim: 'The sun circles above the flat earth. Sunrise is just the sun coming near enough to see.',
