@@ -2,6 +2,20 @@
 import * as Astronomy from '../vendor/astronomy.js';
 import { STANDARD_AIR, standardLift, lift, airFactor, apparentElevation, trueElevation } from '../js/refraction.js';
 import {
+  K_STANDARD,
+  K_SURVEY,
+  STANDARD_GROUND_AIR,
+  coefficientFromWeather,
+  lapseForCoefficient,
+  effectiveRadiusKm,
+  horizonDistanceKm,
+  hiddenHeightM,
+  horizonLineM,
+  dipDeg,
+  flatNeeds,
+  horizonScene,
+} from '../js/horizon.js';
+import {
   subsolarPoint,
   observedSun,
   sunEvents,
@@ -269,6 +283,42 @@ check('with refraction off a noted temperature changes nothing',
   scoreMeasurement(frosty, params, null).globe.el === scoreMeasurement({ ...frosty, tempC: null }, params, null).globe.el);
 check('of two copies of a measurement, the one with a temperature is kept',
   mergeMeasurements([{ ...frosty, tempC: null }], [frosty]).length === 1 && mergeMeasurements([{ ...frosty, tempC: null }], [frosty])[0].tempC === -20);
+
+// 12. Over the horizon.
+const near = (value, expected, tolerance) => Math.abs(value - expected) <= tolerance;
+check('eye at 1.7 m: horizon 4.65 km with no bending', near(horizonDistanceKm(1.7, 0), 4.65, 0.01), f(horizonDistanceKm(1.7, 0)));
+check("and 4.99 km with the surveyors' k = 0.13", near(horizonDistanceKm(1.7, K_SURVEY), 4.99, 0.01), f(horizonDistanceKm(1.7, K_SURVEY)));
+check('30 km away, eye at 1.7 m: 50.4 m hidden with no bending', near(hiddenHeightM(1.7, 30, 0), 50.4, 0.1), f(hiddenHeightM(1.7, 30, 0), 2));
+check('and 42.7 m with k = 0.13', near(hiddenHeightM(1.7, 30, K_SURVEY), 42.7, 0.1), f(hiddenHeightM(1.7, 30, K_SURVEY), 2));
+check('nothing is hidden this side of the horizon', hiddenHeightM(1.7, 4, 0) === 0 && hiddenHeightM(100, 30, 0) === 0);
+check('from 10,000 m the horizon dips 3.2 degrees with no bending', near(dipDeg(10000, 0), 3.2, 0.02), f(dipDeg(10000, 0)));
+check('and about 3.0 degrees with k = 0.13', near(dipDeg(10000, K_SURVEY), 3.0, 0.02), f(dipDeg(10000, K_SURVEY)));
+check('from 10,000 m the horizon is about 357 km away', near(horizonDistanceKm(10000, 0), 357, 1), f(horizonDistanceKm(10000, 0), 1));
+check('k = 1 puts the horizon infinitely far away and hides nothing',
+  effectiveRadiusKm(1) === Infinity && horizonDistanceKm(1.7, 1) === Infinity && hiddenHeightM(1.7, 300, 1) === 0 && dipDeg(1.7, 1) === 0);
+const kWeather = coefficientFromWeather(STANDARD_GROUND_AIR);
+check('the standard atmosphere gives k between 0.16 and 0.18', kWeather > 0.16 && kWeather < 0.18, f(kWeather, 4));
+check('and that is the value the app calls standard', near(kWeather, K_STANDARD, 0.005));
+check('weather to k and back returns the same change of temperature',
+  near(lapseForCoefficient(coefficientFromWeather({ tempC: 3, pressureHpa: 990, lapse: 0.02 }), { tempC: 3, pressureHpa: 990 }), 0.02, 1e-12));
+check('air of the same temperature all the way up gives k of about 0.21',
+  near(coefficientFromWeather({ ...STANDARD_GROUND_AIR, lapse: 0 }), 0.21, 0.005), f(coefficientFromWeather({ ...STANDARD_GROUND_AIR, lapse: 0 }), 4));
+check('light follows the curve when the air warms by about 13 C per 100 m', near(lapseForCoefficient(1) * 100, 12.9, 0.3), f(lapseForCoefficient(1) * 100, 2));
+const needs = flatNeeds(K_STANDARD);
+check('the flat model needs k of about -0.83', near(needs.k, -0.83, 0.001));
+check('which is air about 17 C colder for every 100 m of height', near(needs.lapse * 100, -17, 0.5), f(needs.lapse * 100, 2));
+check('and with no bending allowed for, about 0.2 C colder per metre', near(flatNeeds(0).lapse, -0.2, 0.005), f(flatNeeds(0).lapse, 4));
+// The line where the horizon crosses the target: sea behind it when near, sea in front when far.
+check('at the horizon itself the line sits on the waterline', near(horizonLineM(1.7, horizonDistanceKm(1.7, 0), 0), 0, 1e-9));
+check('with the target very close the line is at eye height', near(horizonLineM(1.7, 0.001, 0), 1.7, 0.01), f(horizonLineM(1.7, 0.001, 0), 4));
+check('on a flat surface the line is always at eye height', horizonLineM(1.7, 30, 1) === 1.7);
+const scene = horizonScene({ eyeM: 1.7, targetM: 50, distanceKm: 30, k: 0 });
+check('a 50 m ship 30 km off is entirely hidden with no bending, and 9.6 m shows in standard air',
+  scene.hiddenM === 50 && scene.visibleM === 0 && near(50 - scene.hiddenStandardM, 9.6, 0.1), f(50 - scene.hiddenStandardM, 2));
+check('it is fully out of sight beyond about 29.9 km', near(scene.goneKm, 29.9, 0.1), f(scene.goneKm, 2));
+check('hidden height never exceeds the height of the target', horizonScene({ eyeM: 1.7, targetM: 10, distanceKm: 200, k: 0 }).hiddenM === 10);
+check('raising the eye brings the hull back', hiddenHeightM(30, 30, K_STANDARD) < 5 && hiddenHeightM(1.7, 30, K_STANDARD) > 40,
+  `${f(hiddenHeightM(30, 30, K_STANDARD), 2)} m from 30 m up, ${f(hiddenHeightM(1.7, 30, K_STANDARD), 2)} m from 1.7 m`);
 
 console.log(failures ? `\n${failures} check(s) failed` : '\nAll checks passed');
 process.exit(failures ? 1 : 0);

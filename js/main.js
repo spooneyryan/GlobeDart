@@ -19,12 +19,23 @@ import {
   decodeMeasurements,
 } from './measurements.js';
 import { STANDARD_AIR, AIR_LIMITS, airFactor } from './refraction.js';
+import {
+  K_STANDARD,
+  STANDARD_GROUND_AIR,
+  OVERTURNING_LAPSE,
+  coefficientFromWeather,
+  lapseForCoefficient,
+  horizonDistanceKm,
+  horizonLineM,
+  horizonScene,
+} from './horizon.js';
 import { STARS, STAR_LINES, FEATURED_STARS, starIndex, SKY_TURN_DEG_PER_MIN } from './stars.js';
 import { ROUTES, CRUISE_KMH, SOUND_KMH, routeStats, greatCirclePath } from './distances.js';
 import { makeLandCanvas } from './scene-utils.js';
 import { GlobeView } from './views/globeView.js';
 import { FlatView } from './views/flatView.js';
 import { SkyView } from './views/skyView.js';
+import { HorizonView } from './views/horizonView.js';
 
 const $ = (id) => document.getElementById(id);
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
@@ -52,6 +63,15 @@ const state = {
   starHeightKm: 5000, // flat model only: how high its layer of stars sits
   trails: false,
   route: null, // { from, to } as place names, or null
+  // Over the horizon
+  mode: 'sky', // 'sky' (sun, stars and maps) or 'horizon'
+  shape: 'ship',
+  targetM: 50, // height of the thing being looked at
+  targetKm: 20, // how far away it is
+  eyeM: 1.7,
+  k: K_STANDARD, // how strongly the air bends light near the ground
+  units: 'metric', // or 'imperial'; used by the horizon tool only
+  sailing: false,
 };
 
 // ---------- formatting ----------
@@ -77,6 +97,18 @@ const hoursMinutes = (h) => {
   const m = Math.round(h * 60);
   return m % 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m / 60} h`;
 };
+
+// The horizon tool works in metres and kilometres and can show feet and miles.
+const FT = 0.3048;
+const MI = 1.609344;
+const imperial = () => state.units === 'imperial';
+const heightNumber = (m) => (imperial() ? m / FT : m);
+const distanceNumber = (k) => (imperial() ? k / MI : k);
+const tidy = (v) => Number(v.toFixed(v >= 100 ? 0 : v >= 10 ? 1 : 2));
+const fmtH = (m) => `${tidy(heightNumber(m)).toLocaleString('en-US')} ${imperial() ? 'ft' : 'm'}`;
+const fmtD = (k) => `${tidy(distanceNumber(k)).toLocaleString('en-US')} ${imperial() ? 'mi' : 'km'}`;
+// What can be set, in metres and kilometres.
+const HZ_LIMITS = { eyeM: [0.1, 12000], targetM: [1, 5000], targetKm: [0.5, 500] };
 
 const HTML_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 const esc = (text) => String(text).replace(/[&<>"']/g, (ch) => HTML_ESCAPES[ch]);
@@ -309,6 +341,83 @@ function getFit() {
   return fitCache;
 }
 
+// ---------- over the horizon ----------
+
+function computeHorizon() {
+  const { eyeM, targetM, targetKm, k } = state;
+  return {
+    ...horizonScene({ eyeM, targetM, distanceKm: targetKm, k }),
+    horizonLineM: horizonLineM(eyeM, targetKm, k),
+    shape: state.shape,
+    name: state.shape,
+    fmtH,
+    fmtD,
+    fmtScale: heightNumber,
+  };
+}
+
+/** How far the target is sent before it stops: a little past the point where the globe hides all of it. */
+function sailLimitKm() {
+  const gone = horizonDistanceKm(state.eyeM, state.k) + horizonDistanceKm(state.targetM, state.k);
+  return Number.isFinite(gone) ? Math.min(HZ_LIMITS.targetKm[1], gone * 1.06) : HZ_LIMITS.targetKm[1];
+}
+
+/** A distance this side of the horizon, where both models show the whole target. */
+function nearKm() {
+  const horizon = horizonDistanceKm(state.eyeM, state.k);
+  return clamp(Number.isFinite(horizon) ? horizon * 0.5 : 2, HZ_LIMITS.targetKm[0], 5);
+}
+
+const perHundred = (lapse) => `${Math.abs(lapse * 100).toFixed(Math.abs(lapse * 100) < 10 ? 2 : 1)} °C`;
+
+function airInWords(k) {
+  if (k <= 0) return 'No bending: light travels in straight lines.';
+  const lapse = lapseForCoefficient(k);
+  const air = `Air that gets ${perHundred(lapse)} ${lapse < 0 ? 'colder' : 'warmer'} for every 100 m of height.`;
+  if (k >= 0.995) return `${air} Light follows the curve of the sea, so nothing is ever hidden. Rare, and it does not last.`;
+  if (k > 0.22) return `${air} More bending than usual: warm air lying over colder, as over cold water on a still day.`;
+  if (k < 0.1) return `${air} Less bending than usual.`;
+  return `${air} ${Math.abs(k - K_STANDARD) < 0.006 ? 'This is the standard atmosphere.' : 'Close to the standard atmosphere.'}`;
+}
+
+function renderHorizon(hz) {
+  const some = hz.hiddenM > 0;
+  const all = hz.hiddenM >= hz.targetM;
+  const far = Number.isFinite(hz.horizonKm);
+  $('hz-table').tBodies[0].innerHTML = `
+    <tr><td>Hidden from the bottom up</td><td class="${some ? 'bad' : ''}">${some ? fmtH(hz.hiddenM) : 'none'}</td><td>none</td></tr>
+    <tr><td>In view</td><td>${all ? 'none' : fmtH(hz.visibleM)}</td><td>${fmtH(hz.targetM)}</td></tr>
+    <tr><td>Distance to the horizon</td><td>${far ? fmtD(hz.horizonKm) : 'no limit'}</td><td>no limit</td></tr>
+    <tr><td>Horizon below eye level</td><td>${deg(hz.dipDeg, 2)}</td><td>${deg(0, 2)}</td></tr>
+    <tr><td>All of it is hidden beyond</td><td>${Number.isFinite(hz.goneKm) ? fmtD(hz.goneKm) : 'never'}</td><td>never</td></tr>`;
+  $('hz-verdict').textContent = some
+    ? `The two models disagree by ${fmtH(hz.hiddenM)} here. Binoculars and a clear day are enough to tell which is right.`
+    : far
+      ? `This close, the two models agree: all of it is in view. They part company beyond ${fmtD(hz.horizonKm)}.`
+      : 'In air that bends light this strongly, the two models agree at every distance: nothing is hidden.';
+
+  const row = (label, hidden, cls = '') =>
+    `<tr class="${cls}"><td>${label}</td><td>${hidden > 0 ? fmtH(hidden) : 'none'}</td><td>none</td></tr>`;
+  $('hz-air').tBodies[0].innerHTML =
+    row('No bending', hz.hiddenNoneM) +
+    row('Standard air', hz.hiddenStandardM) +
+    row(`As set (k = ${hz.k.toFixed(2)})`, hz.hiddenM);
+
+  const need = hz.flat;
+  $('hz-flat-needs').innerHTML = some
+    ? `<p>For the flat model to hide the bottom <b class="f">${fmtH(hz.hiddenM)}</b>, light would have to curve
+        <em>upward</em>, away from the water, along the whole ${fmtD(hz.distanceKm)}. Ordinary air bends it the other
+        way.</p>
+      <p>That takes air that gets <b class="f">${perHundred(need.lapse)} colder for every 100 m</b> of height. The
+        standard atmosphere cools by ${perHundred(STANDARD_GROUND_AIR.lapse)} per 100 m. Air that cools faster than
+        ${perHundred(OVERTURNING_LAPSE)} per 100 m is heavier above than below, and turns over.</p>
+      <p class="hint">Gradients that steep exist only in the first metre or so above a hot surface, which is what
+        makes a road shimmer. They hide a thin strip, not ${fmtH(hz.hiddenM)}.</p>`
+    : far
+      ? `<p>Nothing, at this distance: neither model hides any of it. Send it further away.</p>`
+      : `<p>Nothing: in this air neither model hides anything.</p>`;
+}
+
 // ---------- demonstrations ----------
 
 const city = (name) => CITIES.find((c) => c.name === name);
@@ -488,6 +597,32 @@ const DEMOS = {
       the amber line is the shortest path the flat map allows.</p>`;
     },
   },
+  ship: {
+    title: 'A ship sailing over the horizon',
+    mode: 'horizon',
+    pair: 'sky',
+    apply() {
+      Object.assign(state, { shape: 'ship', targetM: 50, eyeM: 1.7, k: K_STANDARD });
+      state.targetKm = nearKm();
+      state.sailing = true;
+    },
+    body: (hz) => `
+      <p>A cargo ship ${fmtH(hz.targetM)} tall, watched from the water's edge with your eye ${fmtH(hz.eyeM)} up. It is
+      <b>${fmtD(hz.distanceKm)}</b> away.</p>
+      ${
+        Number.isFinite(hz.horizonKm)
+          ? `<p>On the globe your horizon is only <b class="g">${fmtD(hz.horizonKm)}</b> off. Past that the sea itself
+             is in the way and the ship goes from the bottom up: ${
+               hz.hiddenM > 0 ? `<b class="g">${fmtH(hz.hiddenM)}</b> hidden so far` : 'nothing hidden yet'
+             }, and all of it by ${fmtD(hz.goneKm)}.</p>`
+          : `<p>With the air bending light this strongly, the globe hides nothing either. Set the bending back to
+             standard air to carry on.</p>`
+      }
+      <p>On the flat model nothing is ever in the way. The ship only shrinks, and a telescope would bring all of
+      it back, hull included. It never does.</p>
+      <p class="try">Try: raise the height of your eye. On the globe, climbing a hill brings the hull back. On the
+      flat model it changes nothing. Then look at a tall building 60 km away.</p>`,
+  },
 };
 
 const STARS_OFF = '<p>Turn on "Show the stars" in the panel on the left to carry on with this demonstration.</p>';
@@ -503,12 +638,24 @@ const INTRO = {
     yourself. Drag any view to look around; scroll or pinch to zoom.</p>`,
 };
 
+const HORIZON_INTRO = {
+  title: 'Over the horizon',
+  body: (hz) => `
+    <p>Something ${fmtH(hz.targetM)} tall, ${fmtD(hz.distanceKm)} away, seen by an eye ${fmtH(hz.eyeM)} above the
+    water. Top row: the scene from the side. Bottom row: what you would see through a telescope.</p>
+    <p>The globe says the sea hides it from the bottom up. The flat model says nothing can hide it, however far
+    it goes.</p>
+    <p class="try">Press "Send it away", or drag the distance and the height of your eye. Then change the air and
+    see how much difference the weather can make.</p>`,
+};
+
 // ---------- views ----------
 
 let globeView;
 let flatView;
 let globeSky;
 let flatSky;
+let hzViews = [];
 let needsUpdate = true;
 let hashTimer = null;
 
@@ -547,6 +694,18 @@ function followLook(c) {
 }
 
 function update() {
+  $('views').dataset.mode = state.mode;
+  document.body.dataset.mode = state.mode;
+  if (state.mode === 'horizon') {
+    const hz = computeHorizon();
+    for (const v of hzViews) v.update(hz);
+    renderHorizon(hz);
+    renderDemo(hz);
+    syncInputs();
+    clearTimeout(hashTimer);
+    hashTimer = setTimeout(writeHash, 300);
+    return;
+  }
   const c = compute();
   globeView.update(state, c);
   flatView.update(state, c);
@@ -937,8 +1096,24 @@ function setPair(pair) {
   requestUpdate();
 }
 
+/** Switches between the sun-and-stars tool and the horizon tool. */
+function setMode(mode) {
+  state.mode = mode === 'horizon' ? 'horizon' : 'sky';
+  if (state.mode !== 'horizon') state.sailing = false;
+  // A demonstration belongs to one tool; leaving that tool ends it.
+  if (state.demo && (DEMOS[state.demo].mode ?? 'sky') !== state.mode) state.demo = null;
+  for (const btn of document.querySelectorAll('#mode-tabs button')) {
+    const on = btn.dataset.mode === state.mode;
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-pressed', String(on));
+  }
+  const names = state.mode === 'horizon' ? ['From the side', 'Through a telescope'] : ['From outside', "Observer's sky"];
+  document.querySelectorAll('#view-tabs button').forEach((btn, i) => (btn.textContent = names[i]));
+  requestUpdate();
+}
+
 function renderDemo(c) {
-  const demo = state.demo ? DEMOS[state.demo] : INTRO;
+  const demo = state.demo ? DEMOS[state.demo] : state.mode === 'horizon' ? HORIZON_INTRO : INTRO;
   $('demo-title').textContent = demo.title;
   $('demo-body').innerHTML = demo.body(c);
   for (const btn of document.querySelectorAll('#demos button')) {
@@ -950,6 +1125,15 @@ function renderDemo(c) {
 
 const heightToSlider = (h) => (1000 * Math.log10(h / MIN_HEIGHT_KM)) / Math.log10(MAX_HEIGHT_KM / MIN_HEIGHT_KM);
 const sliderToHeight = (v) => MIN_HEIGHT_KM * Math.pow(MAX_HEIGHT_KM / MIN_HEIGHT_KM, v / 1000);
+
+const toLogSlider = (value, [min, max]) => (1000 * Math.log(value / min)) / Math.log(max / min);
+const fromLogSlider = (v, [min, max]) => min * Math.pow(max / min, v / 1000);
+// The three sizes in the horizon tool, each with a slider and a box to type in.
+const HZ_QUANTITIES = [
+  { key: 'targetM', slider: 'hz-target', number: 'hz-target-n', show: heightNumber, unit: () => (imperial() ? FT : 1) },
+  { key: 'targetKm', slider: 'hz-distance', number: 'hz-distance-n', show: distanceNumber, unit: () => (imperial() ? MI : 1) },
+  { key: 'eyeM', slider: 'hz-eye', number: 'hz-eye-n', show: heightNumber, unit: () => (imperial() ? FT : 1) },
+];
 
 function setIfIdle(input, value) {
   if (document.activeElement !== input) input.value = value;
@@ -1009,6 +1193,19 @@ function syncInputs() {
           'Use the pressure where you stand: weather reports adjust it to sea level.'
         : 'Standard air, 10 °C and 1010 hPa. The same lift is applied to the measurement and to both models.';
   $('btn-play').textContent = state.playing ? 'Pause' : 'Play';
+  // Over the horizon
+  $('hz-shape').value = state.shape;
+  $('hz-units').value = state.units;
+  for (const q of HZ_QUANTITIES) {
+    $(q.slider).value = toLogSlider(state[q.key], HZ_LIMITS[q.key]);
+    setIfIdle($(q.number), tidy(q.show(state[q.key])));
+  }
+  for (const el of document.querySelectorAll('.unit-h')) el.textContent = imperial() ? 'ft' : 'm';
+  for (const el of document.querySelectorAll('.unit-d')) el.textContent = imperial() ? 'mi' : 'km';
+  $('hz-k').value = Math.round(state.k * 100);
+  $('hz-k-label').textContent = `k = ${state.k.toFixed(2)}`;
+  $('hz-k-note').textContent = airInWords(state.k);
+  $('hz-sail').textContent = state.sailing ? 'Stop' : 'Send it away';
   $('speed').value = String(state.speed);
 }
 
@@ -1153,6 +1350,7 @@ function bindControls() {
       requestUpdate();
     });
   }
+  bindHorizonControls();
   bindMeasurementForm();
   $('btn-share').addEventListener('click', async () => {
     writeHash();
@@ -1168,11 +1366,93 @@ function bindControls() {
     btn.addEventListener('click', () => {
       state.demo = btn.dataset.demo;
       state.playing = false;
+      state.sailing = false;
       DEMOS[state.demo].apply();
+      setMode(DEMOS[state.demo].mode ?? 'sky');
       setPair(DEMOS[state.demo].pair);
       requestUpdate();
     });
   }
+}
+
+function bindHorizonControls() {
+  for (const btn of document.querySelectorAll('#mode-tabs button')) {
+    btn.addEventListener('click', () => setMode(btn.dataset.mode));
+  }
+  const set = (key, value) => {
+    state[key] = clamp(value, ...HZ_LIMITS[key]);
+    // Moving the target by hand takes over from the animation.
+    if (key === 'targetKm') state.sailing = false;
+    requestUpdate();
+  };
+  for (const q of HZ_QUANTITIES) {
+    $(q.slider).addEventListener('input', (e) => set(q.key, fromLogSlider(Number(e.target.value), HZ_LIMITS[q.key])));
+    $(q.number).addEventListener('change', (e) => {
+      const v = Number(e.target.value);
+      if (e.target.value.trim() !== '' && Number.isFinite(v) && v > 0) set(q.key, v * q.unit());
+      e.target.value = tidy(q.show(state[q.key]));
+    });
+  }
+  $('hz-shape').addEventListener('change', (e) => {
+    state.shape = e.target.value;
+    // The ship demonstration talks about a ship.
+    if (state.shape !== 'ship' && state.demo === 'ship') state.demo = null;
+    requestUpdate();
+  });
+  $('hz-units').addEventListener('change', (e) => {
+    state.units = e.target.value === 'imperial' ? 'imperial' : 'metric';
+    requestUpdate();
+  });
+  $('hz-sail').addEventListener('click', () => {
+    state.sailing = !state.sailing;
+    // Already out of sight: start again from close in.
+    if (state.sailing && state.targetKm >= sailLimitKm() * 0.999) state.targetKm = nearKm();
+    requestUpdate();
+  });
+  $('hz-reset').addEventListener('click', () => {
+    state.sailing = false;
+    state.targetKm = nearKm();
+    requestUpdate();
+  });
+
+  const setK = (k) => {
+    state.k = clamp(k, 0, 1);
+    requestUpdate();
+  };
+  $('hz-k').addEventListener('input', (e) => setK(Number(e.target.value) / 100));
+  $('hz-k-none').addEventListener('click', () => setK(0));
+  $('hz-k-standard').addEventListener('click', () => setK(K_STANDARD));
+
+  // The weather calculator: three things a person can measure, turned into the bending.
+  const weather = () => {
+    const tempC = Number($('hz-w-temp').value);
+    const pressureHpa = Number($('hz-w-pressure').value);
+    const per100 = Number($('hz-w-lapse').value);
+    const ok =
+      [tempC, pressureHpa, per100].every(Number.isFinite) &&
+      ['hz-w-temp', 'hz-w-pressure', 'hz-w-lapse'].every((id) => $(id).value.trim() !== '') &&
+      tempC >= AIR_LIMITS.tempC[0] && tempC <= AIR_LIMITS.tempC[1] &&
+      pressureHpa >= AIR_LIMITS.pressureHpa[0] && pressureHpa <= AIR_LIMITS.pressureHpa[1];
+    return ok ? coefficientFromWeather({ tempC, pressureHpa, lapse: per100 / 100 }) : null;
+  };
+  const showWeather = () => {
+    const k = weather();
+    $('hz-w-use').disabled = k === null;
+    $('hz-w-result').textContent =
+      k === null
+        ? 'Enter a temperature, a pressure and the change in temperature.'
+        : k < 0
+          ? `That gives k = ${k.toFixed(2)}: light bends upward, as over hot ground. The slider stops at none.`
+          : k > 1
+            ? `That gives k = ${k.toFixed(2)}: light bends more sharply than the sea curves. The slider stops at 1.`
+            : `That gives k = ${k.toFixed(2)}.`;
+  };
+  for (const id of ['hz-w-temp', 'hz-w-pressure', 'hz-w-lapse']) $(id).addEventListener('input', showWeather);
+  $('hz-w-use').addEventListener('click', () => {
+    const k = weather();
+    if (k !== null) setK(k);
+  });
+  showWeather();
 }
 
 function bindMeasurementForm() {
@@ -1303,6 +1583,15 @@ function writeHash() {
     if (state.trails) p.set('tr', 1);
   }
   if (state.route) p.set('rt', `${state.route.from}~${state.route.to}`);
+  if (state.mode === 'horizon') {
+    p.set('v', 'h');
+    p.set('tg', state.shape);
+    p.set('th', tidy(state.targetM));
+    p.set('td', Number(state.targetKm.toFixed(2)));
+    p.set('eh', tidy(state.eyeM));
+    p.set('k', state.k.toFixed(2));
+    if (imperial()) p.set('u', 'i');
+  }
   if (measurements.length) p.set('m', encodeMeasurements(measurements));
   history.replaceState(null, '', `#${p}`);
 }
@@ -1331,6 +1620,14 @@ function readHash() {
   state.starHeightKm = num('sh', MIN_HEIGHT_KM, MAX_HEIGHT_KM) ?? state.starHeightKm;
   const [from, to] = (p.get('rt') ?? '').split('~');
   state.route = city(from) && city(to) && from !== to ? { from, to } : null;
+  state.mode = p.get('v') === 'h' ? 'horizon' : 'sky';
+  if (['ship', 'building', 'lighthouse'].includes(p.get('tg'))) state.shape = p.get('tg');
+  state.targetM = num('th', ...HZ_LIMITS.targetM) ?? state.targetM;
+  state.targetKm = num('td', ...HZ_LIMITS.targetKm) ?? state.targetKm;
+  state.eyeM = num('eh', ...HZ_LIMITS.eyeM) ?? state.eyeM;
+  state.k = num('k', 0, 1) ?? state.k;
+  if (p.has('u')) state.units = p.get('u') === 'i' ? 'imperial' : 'metric';
+  if (state.demo && (DEMOS[state.demo].mode ?? 'sky') !== state.mode) state.demo = null;
   // Measurements that came with the link are added to the ones already here.
   measurements = mergeMeasurements(measurements, decodeMeasurements(p.get('m')));
 }
@@ -1353,15 +1650,23 @@ async function start() {
   flatView = new FlatView($('flat-view'), land, landCanvas, REF_CITIES, { onPick });
   globeSky = new SkyView($('globe-sky'), { onLook });
   flatSky = new SkyView($('flat-sky'), { onLook });
+  hzViews = [
+    new HorizonView($('hz-globe-side'), 'side', 'globe'),
+    new HorizonView($('hz-flat-side'), 'side', 'flat'),
+    new HorizonView($('hz-globe-scope'), 'scope', 'globe'),
+    new HorizonView($('hz-flat-scope'), 'scope', 'flat'),
+  ];
   for (const v of [globeView, flatView, globeSky, flatSky]) v.resize();
   globeView.focus(state.lat, state.lon);
   flatView.focus(state.lat, state.lon);
   focusRoute();
+  setMode(state.mode);
   setPair(state.demo ? DEMOS[state.demo].pair : 'outside');
   window.addEventListener('resize', requestUpdate);
   // A link pasted into a tab that already has the app open changes only the hash.
   window.addEventListener('hashchange', () => {
     readHash();
+    setMode(state.mode);
     globeView.focus(state.lat, state.lon);
     flatView.focus(state.lat, state.lon);
     requestUpdate();
@@ -1375,6 +1680,13 @@ async function start() {
       state.date = new Date(state.date.getTime() + dt * state.speed * 60000);
       needsUpdate = true;
     }
+    if (state.sailing && state.mode === 'horizon') {
+      // The target moves off faster the further it has gone, so the whole trip takes a few seconds.
+      const limit = sailLimitKm();
+      state.targetKm = Math.min(limit, state.targetKm * Math.exp(dt * 0.3));
+      if (state.targetKm >= limit) state.sailing = false;
+      needsUpdate = true;
+    }
     if (needsUpdate) {
       needsUpdate = false;
       update();
@@ -1385,7 +1697,7 @@ async function start() {
   requestAnimationFrame(frame);
 
   // Handy for debugging and for scripted checks.
-  window.app = { state, compute, requestUpdate, measurements: () => measurements, views: { globeView, flatView, globeSky, flatSky } };
+  window.app = { state, compute, computeHorizon, requestUpdate, measurements: () => measurements, views: { globeView, flatView, globeSky, flatSky } };
 }
 
 start().catch((err) => {

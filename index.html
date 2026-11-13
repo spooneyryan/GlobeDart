@@ -28,7 +28,7 @@
       }
     </script>
   </head>
-  <body>
+  <body data-mode="sky">
     <header>
       <div class="brand">
         <h1>GlobeDart</h1>
@@ -43,12 +43,94 @@
         <button data-demo="polaris">Pole star</button>
         <button data-demo="southern">Southern stars</button>
         <button data-demo="flights">Southern flights</button>
+        <button data-demo="ship">Ship over the horizon</button>
       </nav>
     </header>
 
     <main>
       <aside id="controls">
-        <section>
+        <section class="hz-only">
+          <h2>Over the horizon</h2>
+          <label class="row">
+            <span>Looking at</span>
+            <select id="hz-shape">
+              <option value="ship">A cargo ship</option>
+              <option value="building">A tall building</option>
+              <option value="lighthouse">A lighthouse</option>
+            </select>
+          </label>
+          <div class="stack qty">
+            <span class="row">
+              <label for="hz-target-n">Its height</label>
+              <span class="num"><input type="number" id="hz-target-n" step="any" min="0" /><span class="unit-h"></span></span>
+            </span>
+            <input type="range" id="hz-target" min="0" max="1000" step="1" aria-label="Its height" />
+          </div>
+          <div class="stack qty">
+            <span class="row">
+              <label for="hz-distance-n">How far away it is</label>
+              <span class="num"><input type="number" id="hz-distance-n" step="any" min="0" /><span class="unit-d"></span></span>
+            </span>
+            <input type="range" id="hz-distance" min="0" max="1000" step="1" aria-label="How far away it is" />
+          </div>
+          <div class="stack qty">
+            <span class="row">
+              <label for="hz-eye-n">Height of your eye</label>
+              <span class="num"><input type="number" id="hz-eye-n" step="any" min="0" /><span class="unit-h"></span></span>
+            </span>
+            <input type="range" id="hz-eye" min="0" max="1000" step="1" aria-label="Height of your eye" />
+          </div>
+          <p class="hint">Heights are measured from the water. 1.7 m is a person standing at the water's edge.</p>
+          <div class="buttons two">
+            <button id="hz-sail" class="primary">Send it away</button>
+            <button id="hz-reset">Bring it back</button>
+          </div>
+          <label class="row">
+            <span>Units</span>
+            <select id="hz-units">
+              <option value="metric">Metres, kilometres</option>
+              <option value="imperial">Feet, miles</option>
+            </select>
+          </label>
+        </section>
+
+        <section class="hz-only">
+          <h2>The air</h2>
+          <p class="hint">
+            Air bends light toward the ground a little, so you see slightly further round a curve. The same air is
+            applied to both models.
+          </p>
+          <label class="stack">
+            <span class="row"><span>Bending</span><output id="hz-k-label"></output></span>
+            <input type="range" id="hz-k" min="0" max="100" step="1" />
+          </label>
+          <div class="buttons two">
+            <button id="hz-k-none">None</button>
+            <button id="hz-k-standard">Standard air</button>
+          </div>
+          <p class="hint" id="hz-k-note"></p>
+          <details id="hz-weather">
+            <summary>Work it out from the weather</summary>
+            <div class="form-body">
+              <label class="row">
+                <span>Air temperature (°C)</span>
+                <input type="number" id="hz-w-temp" min="-80" max="60" step="0.5" value="15" />
+              </label>
+              <label class="row">
+                <span>Pressure (hPa)</span>
+                <input type="number" id="hz-w-pressure" min="300" max="1100" step="1" value="1013" />
+              </label>
+              <label class="row">
+                <span>Change 100 m higher up (°C)</span>
+                <input type="number" id="hz-w-lapse" min="-20" max="20" step="0.05" value="-0.65" />
+              </label>
+              <p class="hint" id="hz-w-result"></p>
+              <button id="hz-w-use">Use this air</button>
+            </div>
+          </details>
+        </section>
+
+        <section class="sky-only">
           <h2>When</h2>
           <label class="row">
             <span>Date (UTC)</span>
@@ -76,7 +158,7 @@
           </div>
         </section>
 
-        <section>
+        <section class="sky-only">
           <h2>Observer</h2>
           <label class="row">
             <span>Place</span>
@@ -89,7 +171,7 @@
           <p class="hint">Or click or tap anywhere on the globe or the flat map.</p>
         </section>
 
-        <section>
+        <section class="sky-only">
           <h2>Flat-model settings</h2>
           <p class="hint">
             The flat model gets every adjustment its supporters propose. Tune them and watch whether any setting
@@ -113,7 +195,7 @@
           </label>
         </section>
 
-        <section>
+        <section class="sky-only">
           <h2>Stars</h2>
           <label class="check"><input type="checkbox" id="stars" /> Show the stars</label>
           <label class="row">
@@ -128,7 +210,7 @@
           <label class="check"><input type="checkbox" id="trails" /> Star trails (the last 6 hours)</label>
         </section>
 
-        <section>
+        <section class="sky-only">
           <h2>Display</h2>
           <label class="check"><input type="checkbox" id="sight-lines" /> Sight lines from <span class="ref-count"></span> cities</label>
           <label class="check"><input type="checkbox" id="follow" /> Keep the sun in view</label>
@@ -145,14 +227,23 @@
             <label class="mini"><span>Pressure hPa</span><input type="number" id="air-pressure" min="300" max="1100" step="1" /></label>
           </div>
           <p class="hint" id="air-note"></p>
+        </section>
+
+        <section>
           <button id="btn-share">Copy link to this view</button>
         </section>
       </aside>
 
-      <section id="views" data-pair="outside">
-        <div id="view-tabs" role="group" aria-label="Which views to show">
-          <button data-pair="outside" class="active" aria-pressed="true">From outside</button>
-          <button data-pair="sky" aria-pressed="false">Observer's sky</button>
+      <section id="views" data-pair="outside" data-mode="sky">
+        <div id="view-bar">
+          <div id="mode-tabs" role="group" aria-label="What to look at">
+            <button data-mode="sky" class="active" aria-pressed="true">Sun, stars and maps</button>
+            <button data-mode="horizon" aria-pressed="false">Over the horizon</button>
+          </div>
+          <div id="view-tabs" role="group" aria-label="Which views to show">
+            <button data-pair="outside" class="active" aria-pressed="true">From outside</button>
+            <button data-pair="sky" aria-pressed="false">Observer's sky</button>
+          </div>
         </div>
         <div class="view" id="globe-view">
           <div class="view-title globe">Globe model <small>sphere, sun 150 million km away</small></div>
@@ -179,6 +270,18 @@
         <div class="view sky" id="flat-sky">
           <div class="view-title flat">Observer's sky, flat model</div>
         </div>
+        <div class="view hz" id="hz-globe-side">
+          <div class="view-title globe">Globe model <small>from the side</small></div>
+        </div>
+        <div class="view hz" id="hz-flat-side">
+          <div class="view-title flat">Flat model <small>from the side</small></div>
+        </div>
+        <div class="view hz sky" id="hz-globe-scope">
+          <div class="view-title globe">Through a telescope, globe model</div>
+        </div>
+        <div class="view hz sky" id="hz-flat-scope">
+          <div class="view-title flat">Through a telescope, flat model</div>
+        </div>
       </section>
 
       <aside id="results">
@@ -187,7 +290,38 @@
           <div id="demo-body"></div>
         </section>
 
-        <section>
+        <section class="hz-only">
+          <h2>What should be in view</h2>
+          <table id="hz-table" class="data">
+            <thead>
+              <tr><th></th><th class="globe">Globe</th><th class="flat">Flat</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <p class="hint" id="hz-verdict"></p>
+        </section>
+
+        <section class="hz-only">
+          <h2>How much the air changes it</h2>
+          <table id="hz-air" class="data">
+            <thead>
+              <tr><th>Air</th><th class="globe">Hidden, globe</th><th class="flat">Hidden, flat</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <p class="hint">
+            The bending follows how the air's temperature changes with height, which shifts from hour to hour, most
+            of all over water. On a still day over cold water it can be several times the standard amount, and then
+            more is in view than the standard figure allows. The flat model's answer never changes with the weather.
+          </p>
+        </section>
+
+        <section class="hz-only">
+          <h2>What the flat model would need</h2>
+          <div id="hz-flat-needs"></div>
+        </section>
+
+        <section class="sky-only">
           <h2>At the observer</h2>
           <table id="compare" class="data">
             <thead>
@@ -228,7 +362,7 @@
           </table>
         </section>
 
-        <section id="own">
+        <section id="own" class="sky-only">
           <h2>Your own measurements</h2>
           <p class="hint">
             Do not take the published numbers on trust. Measure the sun yourself, enter it here, and both models are
@@ -295,7 +429,7 @@
           <div id="own-summary"></div>
         </section>
 
-        <section>
+        <section class="sky-only">
           <h2>How far off is each model?</h2>
           <p class="hint" id="fit-scope"></p>
           <div id="fit-bars"></div>
@@ -303,7 +437,7 @@
           <p class="hint" id="fit-note"></p>
         </section>
 
-        <section>
+        <section class="sky-only">
           <h2><span class="ref-count"></span> observers, right now</h2>
           <p class="hint">
             If the earth were flat, every observer's measured sun angle would point to the same sun height.
@@ -316,7 +450,7 @@
           </table>
         </section>
 
-        <section id="distances">
+        <section id="distances" class="sky-only">
           <h2>Distances and flight times</h2>
           <p class="hint">
             The two maps disagree about how far apart places are, most of all in the south. A timetable settles it:
@@ -380,6 +514,15 @@
               <b>Stars.</b> Each star is handled exactly like the sun: both models are told the place it is directly
               overhead. The globe model puts it immeasurably far away. The flat model puts every star at one
               adjustable height, turning about the point above the north pole once a day.
+            </p>
+            <p>
+              <b>Over the horizon.</b> On a globe of radius <code>R</code>, an eye at height <code>h</code> sees the
+              horizon at <code>√(2Rh)</code>, and something a distance <code>d</code> away has its bottom
+              <code>(d − √(2Rh))² / 2R</code> hidden. Air that bends light is allowed for by using a larger radius,
+              <code>R / (1 − k)</code>, where <code>k</code> is the Earth's radius divided by the radius of the
+              light's curve. From the weather, <code>k = 503 × (P / T²) × (0.0343 + dT/dh)</code>, with pressure in
+              hPa, temperature in kelvin and its change with height in kelvin per metre. On a flat surface nothing
+              is hidden unless light curves upward, which needs <code>k</code> near −1.
             </p>
             <p>
               <b>Distances.</b> On the globe the shortest path is a great circle. On the flat map it is a straight

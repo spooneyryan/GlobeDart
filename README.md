@@ -2,7 +2,7 @@
 
 A static, no-backend web app that shows the same moment and the same observer under two models,
 a globe and the usual flat-earth map, and scores each against what people actually measure:
-the sun, the stars, and how long real flights take.
+the sun, the stars, how long real flights take, and what disappears over the horizon.
 
 ## Run it
 
@@ -38,14 +38,17 @@ The empty `.nojekyll` file tells GitHub Pages to serve the files exactly as they
 | `js/refraction.js` | How much the air lifts what you see, for standard air or a given temperature and pressure. The measurement and both models all use it |
 | `js/stars.js` | A hand-entered table of 96 bright stars and the lines that join them into familiar figures |
 | `js/distances.js` | Distances under each model, and the non-stop flights used to test them |
+| `js/horizon.js` | What is hidden behind the horizon under each model, and how the air near the ground changes it |
 | `js/measurements.js` | Measurements the user enters themselves: stick-and-shadow conversion, scoring against both models, and the text form used in links |
 | `js/views/globeView.js`, `flatView.js` | Outside views of each model |
 | `js/views/skyView.js` | First-person sky view, used once per model with a shared look direction |
+| `js/views/horizonView.js` | The horizon drawings: the scene from the side and through a telescope, once per model |
 | `js/main.js` | State, controls, result panels, demonstrations, shareable URL |
 | `js/cities.js` | Preset places and the reference observers used for scoring |
 | `data/land-110m.json` | Natural Earth 1:110m land outlines (public domain) |
 | `vendor/` | three.js 0.187 and astronomy-engine 2.1.19, copied in unmodified (both MIT) |
-| `docs/refraction-plan.md` | Plan for modelling refraction properly, which the "hidden by the horizon" feature depends on. Stage 1 is built |
+| `docs/refraction-plan.md` | Plan for modelling refraction properly. Stages 1 and 2 are built |
+| `docs/future.md` | Ideas for later |
 
 ## Ground rules the code follows
 
@@ -103,13 +106,32 @@ aircraft would need.
   from the airlines directly. They move by a quarter of an hour or so with the season.
 - The flat distances are for the standard north-pole-centred map only.
 
+## Over the horizon
+
+The "Over the horizon" button above the views swaps the sun-and-stars tool for a second one: something of a
+chosen height, a chosen distance away, seen by an eye at a chosen height above the water.
+
+- Top row: the scene from the side, with heights stretched so the curve can be seen. Bottom row: the view
+  through a telescope, zoomed so the target always fills it.
+- The globe hides the target from the bottom up once it is past the horizon. The flat model hides nothing at any
+  distance. "Send it away" plays that out.
+- "The air" sets how strongly light is bent near the ground, as the surveyors' coefficient `k`, from none to light
+  that follows the curve. It can be worked out from a temperature, a pressure and how the temperature changes with
+  height. The same air is applied to both models.
+- The results say what air the flat model would need to hide the same amount, and compare it with air that can
+  exist.
+- There is no measured value in this tool: it shows what each model predicts, for you to compare with what you
+  see. Entering your own horizon observations is not built yet.
+- Heights and distances can be shown in metres and kilometres or in feet and miles.
+
 ## Phones and tablets
 
 Below about 1180 px wide the page scrolls and the views stay pinned at the top. On a phone only one pair of views
-is shown at a time, switched with the two buttons above them. Sky views take a one-finger drag to look around and a
+is shown at a time, switched with the second pair of buttons above them. Sky views take a one-finger drag to look around and a
 two-finger pinch to zoom; the outside views use the usual one-finger orbit and two-finger zoom.
 
 ## Not built yet
 
-The moon, objects hidden by the horizon (see `docs/refraction-plan.md`), a full star catalogue, entering your own
-star measurements, and flat-model variants beyond the standard map with adjustable heights and light range.
+The moon, entering your own horizon observations and tracing light through layered air (stages 4 and 3 of
+`docs/refraction-plan.md`), a full star catalogue, entering your own star measurements, and flat-model variants
+beyond the standard map with adjustable heights and light range. More ideas are in `docs/future.md`.

@@ -1,6 +1,6 @@
 # Plan: modelling refraction
 
-Status: Stage 1 is built. Stages 2 to 4 are still a proposal.
+Status: Stages 1 and 2 are built. Stages 3 and 4 are still a proposal.
 
 ## Why this needs doing
 
@@ -9,8 +9,8 @@ is hidden by the curve; a flat-earth supporter says it is refraction, perspectiv
 shows a skyline that "should be hidden"; a globe supporter says it is refraction. Whoever cannot put a number on
 refraction loses the exchange.
 
-GlobeDart cannot add the "objects hidden by the horizon" feature honestly until it can say how much the air bends
-light, how much that varies, and what each model predicts once the bending is included.
+GlobeDart could not add the "objects hidden by the horizon" feature honestly until it could say how much the air
+bends light, how much that varies, and what each model predicts once the bending is included.
 
 ## What the app does today
 
@@ -21,8 +21,10 @@ light, how much that varies, and what each model predicts once the bending is in
 - The same lift is added to the measured position, the globe prediction and the flat prediction. Neither model is
   favoured.
 - The "At the observer" table shows the lift the air gives next to the lift each model would need.
-- There is no bending of light between two points near the ground, and no dip of the horizon for a raised
-  observer.
+- A second tool, "Over the horizon", works out what is hidden behind the curve, the distance and dip of the
+  horizon, and how all three change with the bending of light near the ground.
+- Light is still bent by one coefficient for the whole sight line. There are no layers of air, so no looming and
+  no mirages.
 
 ## Three effects to keep apart
 
@@ -88,6 +90,9 @@ Differences from the plan:
 
 ## Stage 2: terrestrial refraction and the hidden-height feature
 
+Built, as the "Over the horizon" tool: `js/horizon.js` for the maths and `js/views/horizonView.js` for the
+drawings. What follows is the plan as written, with notes at the end on where the result differs.
+
 Medium. This is the "objects hidden by the horizon" feature.
 
 **Inputs:** observer's eye height, distance to the target, target height, and the state of the air.
@@ -135,6 +140,27 @@ Checks to add:
   dividing by zero.
 - The weather formula gives `k` between 0.16 and 0.18 for 15 °C, 1013 hPa and −6.5 °C per kilometre.
 
+All five are in `tools/check-maths.mjs`, section 12, with others.
+
+Differences from the plan:
+
+- There are two drawings per model, not one: the side-on cross-section, and a view through a telescope that shows
+  the target going from the bottom up. The second is the one that reads at a glance.
+- The slider for `k` runs from 0 to 1, not 0.5, so that light following the curve can be shown. It is labelled in
+  words, and with the change of temperature with height it stands for, so every position is something that could
+  be measured. Negative values (light bent upward over hot ground) can be worked out in the weather box but not
+  set.
+- "Standard" is 0.17, the standard atmosphere. The surveyors' 0.13 is used in the checks.
+- The range is shown as three rows (no bending, standard air, as set) and as dashed lines across the telescope
+  view, not as a shaded band. No row claims to be the most that ordinary air can do, because that depends on the
+  place and the hour.
+- The flat model's light is bent by the same air in the side-on drawing. In the telescope view the bending would
+  only shift the whole picture, so it is not drawn.
+- Nothing in this tool is a measurement. It shows two predictions to compare with what is seen. Stage 4 would add
+  the user's own observations.
+- Heights and distances can be switched between metres and kilometres and feet and miles.
+- There are no presets for well-known observations. Each still needs sourced distances and heights.
+
 ## Stage 3: tracing rays through layered air
 
 Large, and optional. It replaces the single coefficient with the real mechanism.
@@ -179,14 +205,14 @@ Follows the pattern of "Your own measurements".
 
 ## Suggested order
 
-1. Stage 1, because it is small and tidies up the two code paths that Stage 2 would otherwise inherit.
-2. Stage 2, which delivers the horizon feature.
+1. Stage 1, because it is small and tidies up the two code paths that Stage 2 would otherwise inherit. Done.
+2. Stage 2, which delivers the horizon feature. Done.
 3. Stage 4, once Stage 2 is in use.
 4. Stage 3 only if the single coefficient turns out to be too easy to dismiss in practice.
 
 ## Decisions needed before starting
 
-- Metres only, or feet and miles as well? Most horizon arguments online are in feet and miles.
+- Settled: both metres and kilometres and feet and miles, with a switch.
 - Whether to include presets for well-known observations (a lake skyline, a long causeway, a canal). Each one needs
   sourced distances and heights before it goes in; none are in the app today.
 - Settled for now: Stage 1's "My conditions" is in the main panel, with its inputs hidden until it is chosen.
