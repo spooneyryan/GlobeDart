@@ -105,28 +105,37 @@ function text(ctx, string, x, y, colour = INK.text, align = 'left', weight = 400
 /** The scene from the side, with heights stretched so that the curve can be seen. */
 function drawSide(ctx, w, h, model, s) {
   const compact = h < 230;
-  const pad = { l: 34, r: 30, t: compact ? 70 : 86, b: compact ? 34 : 44 };
-  const xMax = s.distanceKm * 1.14;
-  // The ground, and the path of the light, as heights in metres above the
-  // level plane through the foot of the observer. Light is bent by the same
-  // air in both models; only the ground differs.
+  // The observer and the target stand the same distance in from either side.
+  const side = Math.max(36, w * 0.1);
+  const pad = { l: side, r: side, t: compact ? 70 : 86, b: compact ? 34 : 44 };
+  const xMax = s.distanceKm;
+  const plotW = w - pad.l - pad.r;
+  const plotH = h - pad.t - pad.b;
+  const from = -(pad.l / plotW) * xMax; // the left and right edges of the panel, in km
+  const to = xMax + (pad.r / plotW) * xMax;
+  // Heights in metres above the straight line joining the foot of the observer
+  // to the foot of the target. Seen that way the two stand level with each
+  // other and the globe's surface rises between them in an even arc: the same
+  // circle whichever end it is looked at from. Light is bent by the same air
+  // in both models; only the ground differs.
   const bend = (x) => ((s.k * x * x) / (2 * EARTH_RADIUS_KM)) * 1000;
-  const curve = (x) => ((x * x) / (2 * EARTH_RADIUS_KM)) * 1000;
-  const globeGround = (x) => -curve(x);
-  const ground = model === 'globe' ? globeGround : () => 0;
-  const base = ground(s.distanceKm);
+  const arc = (x) => ((x * (s.distanceKm - x)) / (2 * EARTH_RADIUS_KM)) * 1000;
+  // What that change of baseline adds to a height measured from the observer's own level.
+  const tilt = (x) => (model === 'globe' ? ((x * s.distanceKm) / (2 * EARTH_RADIUS_KM)) * 1000 : 0);
+  const ground = model === 'globe' ? arc : () => 0;
+  const base = 0;
   // The light: grazing the horizon if the target is beyond it, otherwise aimed at the target's foot.
   const beyond = model === 'globe' && s.distanceKm > s.horizonKm;
   const slope = beyond
     ? -Math.sqrt((2 * s.eyeM) / 1000 / s.radiusKm) * 1000
-    : (base - s.eyeM + bend(s.distanceKm)) / s.distanceKm;
-  const ray = (x) => s.eyeM + slope * x - bend(x);
+    : (-tilt(s.distanceKm) - s.eyeM + bend(s.distanceKm)) / s.distanceKm;
+  const ray = (x) => s.eyeM + slope * x - bend(x) + tilt(x);
 
   // Both models share one scale, set by the globe, so the two drawings can be compared.
-  const top = Math.max(s.eyeM, globeGround(s.distanceKm) + s.targetM, s.targetM) * 1.08;
-  const bottom = Math.min(globeGround(xMax), 0) - (top - Math.min(globeGround(xMax), 0)) * 0.06;
-  const plotW = w - pad.l - pad.r;
-  const plotH = h - pad.t - pad.b;
+  const crest = ((s.distanceKm * s.distanceKm) / (8 * EARTH_RADIUS_KM)) * 1000;
+  const top = Math.max(s.eyeM, s.targetM, crest) * 1.08;
+  const lowest = Math.min(((from * (s.distanceKm - from)) / (2 * EARTH_RADIUS_KM)) * 1000, 0);
+  const bottom = lowest - (top - lowest) * 0.06;
   const X = (x) => pad.l + (x / xMax) * plotW;
   const Y = (y) => pad.t + ((top - y) / (top - bottom)) * plotH;
 
@@ -138,12 +147,10 @@ function drawSide(ctx, w, h, model, s) {
 
   // The ground, drawn right across the panel.
   const steps = 80;
-  const from = -(pad.l / plotW) * xMax;
-  const to = xMax + (pad.r / plotW) * xMax;
   ctx.beginPath();
   for (let i = 0; i <= steps; i++) {
     const x = from + ((to - from) * i) / steps;
-    const y = Y(ground(Math.max(0, x)) - (x < 0 && model === 'globe' ? curve(x) : 0));
+    const y = Y(ground(x));
     if (i) ctx.lineTo(X(x), y);
     else ctx.moveTo(X(x), y);
   }
@@ -479,7 +486,9 @@ export class HorizonView {
     if (this.kind === 'side') {
       const stretch = drawSide(ctx, w, h, this.model, s);
       this.readout.textContent = what;
-      this.note.textContent = `Heights stretched ${stretch >= 10 ? Math.round(stretch).toLocaleString('en-US') : stretch.toFixed(1)} times`;
+      const times = stretch >= 10 ? Math.round(stretch).toLocaleString('en-US') : stretch.toFixed(1);
+      this.note.textContent =
+        stretch >= 3 ? `Heights stretched ${times} times. Drawn to scale it would look flat` : `Heights stretched ${times} times`;
     } else {
       drawScope(ctx, w, h, this.model, s);
       this.readout.textContent = what;
