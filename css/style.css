@@ -605,8 +605,14 @@ td.dim {
   gap: 8px;
 }
 
-#own-form .fields[hidden] {
+#own-form .fields[hidden],
+#air-fields[hidden] {
   display: none;
+}
+
+#air-fields .mini {
+  flex-wrap: wrap;
+  gap: 2px 6px;
 }
 
 #own-form input,

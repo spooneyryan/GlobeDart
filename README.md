@@ -35,6 +35,7 @@ The empty `.nojekyll` file tells GitHub Pages to serve the files exactly as they
 |---|---|
 | `js/astro.js` | Wrapper round astronomy-engine: subsolar point, measured sun and star positions, sunrise/sunset, seasons |
 | `js/models.js` | The two models. Each takes the point an object is overhead plus the observer's position and predicts azimuth, elevation and apparent width. Also the scoring |
+| `js/refraction.js` | How much the air lifts what you see, for standard air or a given temperature and pressure. The measurement and both models all use it |
 | `js/stars.js` | A hand-entered table of 96 bright stars and the lines that join them into familiar figures |
 | `js/distances.js` | Distances under each model, and the non-stop flights used to test them |
 | `js/measurements.js` | Measurements the user enters themselves: stick-and-shadow conversion, scoring against both models, and the text form used in links |
@@ -44,7 +45,7 @@ The empty `.nojekyll` file tells GitHub Pages to serve the files exactly as they
 | `js/cities.js` | Preset places and the reference observers used for scoring |
 | `data/land-110m.json` | Natural Earth 1:110m land outlines (public domain) |
 | `vendor/` | three.js 0.187 and astronomy-engine 2.1.19, copied in unmodified (both MIT) |
-| `docs/refraction-plan.md` | Plan for modelling refraction properly, which the "hidden by the horizon" feature depends on |
+| `docs/refraction-plan.md` | Plan for modelling refraction properly, which the "hidden by the horizon" feature depends on. Stage 1 is built |
 
 ## Ground rules the code follows
 
@@ -62,8 +63,23 @@ currently on show and scored against both models.
 - With no bearing, only elevations are compared, and the sky views draw a line at that elevation instead of a marker.
 - A single elevation can always be matched by choosing a flat sun height. The panel says so, and shows the height
   each measurement implies so that two or more can be compared.
+- An air temperature can be noted with a measurement. It is optional and changes the result only slightly, near
+  the horizon.
 - Measurements are kept in the browser's local storage and are included in the link from "Copy link to this view".
   Opening a link adds its measurements to the ones already there.
+
+## Bending of light by the air
+
+"Bending of light by the air" in the Display section has three settings: off, standard air (10 °C, 1010 hPa), and
+your own temperature and pressure.
+
+- Every position is worked out as plain geometry and then lifted by one formula. The same lift goes on the
+  measurement and on both models, so the setting cannot favour either.
+- The last row of the "At the observer" table shows the lift the air really gives next to the lift each model would
+  need. At a sunset the air gives about 0.6°; the flat model needs about 24° the other way.
+- A temperature noted with one of your own measurements is used when that measurement is scored.
+- Temperature is in °C and pressure in hPa. Use the pressure where you are standing, not the sea-level figure from a
+  weather report.
 
 ## Stars
 

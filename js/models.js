@@ -2,7 +2,11 @@
 // Earth where the sun is overhead right now (an observable fact), and the
 // observer's latitude and longitude. Each predicts where the sun appears in
 // that observer's sky. Neither is given the answer.
-import { DEG, EARTH_RADIUS_KM, wrap360, refractionLift } from './astro.js';
+//
+// Each prediction is worked out as plain geometry (`trueEl`) and then lifted by
+// the same air as the measurement (`el`).
+import { DEG, EARTH_RADIUS_KM, wrap360 } from './astro.js';
+import { STANDARD_AIR, lift } from './refraction.js';
 
 /** Unit vector for a latitude/longitude on the globe (y = north pole). */
 export function globeVec(lat, lon) {
@@ -65,17 +69,16 @@ export function skySeparation(a, b) {
  * Globe model: a sphere with the sun so far away its rays arrive parallel.
  * The sun's elevation is 90 degrees minus the angle between you and the subsolar point.
  */
-export function globePredict(sub, lat, lon, refraction = true) {
+export function globePredict(sub, lat, lon, air = STANDARD_AIR) {
   const p = lat * DEG;
   const d = sub.lat * DEG;
   const h = (sub.lon - lon) * DEG; // positive when the sun is east of the observer
   const sinEl = Math.sin(p) * Math.sin(d) + Math.cos(p) * Math.cos(d) * Math.cos(h);
-  let el = Math.asin(Math.min(1, Math.max(-1, sinEl))) / DEG;
+  const trueEl = Math.asin(Math.min(1, Math.max(-1, sinEl))) / DEG;
   const east = Math.cos(d) * Math.sin(h);
   const north = Math.cos(p) * Math.sin(d) - Math.sin(p) * Math.cos(d) * Math.cos(h);
   const az = wrap360(Math.atan2(east, north) / DEG);
-  if (refraction) el += refractionLift(el);
-  return { az, el, sizeDeg: sub.sizeDeg };
+  return { az, el: trueEl + lift(trueEl, air), trueEl, sizeDeg: sub.sizeDeg };
 }
 
 /**
@@ -85,7 +88,7 @@ export function globePredict(sub, lat, lon, refraction = true) {
  * The sun's physical width is chosen so it looks the correct size when it is
  * directly overhead, which is the most generous choice available.
  */
-export function flatPredict(sub, lat, lon, params, refraction = true) {
+export function flatPredict(sub, lat, lon, params, air = STANDARD_AIR) {
   const heightKm = params.sunHeightKm;
   const o = flatVec(lat, lon);
   const s = flatVec(sub.lat, sub.lon);
@@ -95,15 +98,15 @@ export function flatPredict(sub, lat, lon, params, refraction = true) {
   const de = dx * f.east[0] + dz * f.east[2];
   const dn = dx * f.north[0] + dz * f.north[2];
   const groundKm = Math.hypot(de, dn) * EARTH_RADIUS_KM;
-  let el = Math.atan2(heightKm, groundKm) / DEG;
+  const trueEl = Math.atan2(heightKm, groundKm) / DEG;
   const az = wrap360(Math.atan2(de, dn) / DEG);
   const slantKm = Math.hypot(groundKm, heightKm);
   const sunWidthKm = 2 * heightKm * Math.tan((sub.sizeDeg / 2) * DEG);
   const sizeDeg = (2 * Math.atan(sunWidthKm / 2 / slantKm)) / DEG;
-  if (refraction) el += refractionLift(el);
   return {
     az,
-    el,
+    el: trueEl + lift(trueEl, air),
+    trueEl,
     sizeDeg,
     groundKm,
     slantKm,
@@ -142,13 +145,13 @@ export function rmsMiss(samples, predict) {
 }
 
 /** RMS miss of the flat model for a sweep of sun heights. Returns the curve and its minimum. */
-export function flatFitCurve(samples, params, refraction, minKm = 100, maxKm = 1e6, steps = 90) {
+export function flatFitCurve(samples, params, air, minKm = 100, maxKm = 1e6, steps = 90) {
   const curve = [];
   let best = null;
   for (let i = 0; i <= steps; i++) {
     const heightKm = minKm * Math.pow(maxKm / minKm, i / steps);
     const rms = rmsMiss(samples, (sub, lat, lon) =>
-      flatPredict(sub, lat, lon, { ...params, sunHeightKm: heightKm }, refraction),
+      flatPredict(sub, lat, lon, { ...params, sunHeightKm: heightKm }, air),
     );
     const point = { heightKm, rms };
     curve.push(point);

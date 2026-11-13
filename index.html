@@ -132,7 +132,19 @@
           <h2>Display</h2>
           <label class="check"><input type="checkbox" id="sight-lines" /> Sight lines from <span class="ref-count"></span> cities</label>
           <label class="check"><input type="checkbox" id="follow" /> Keep the sun in view</label>
-          <label class="check"><input type="checkbox" id="refraction" /> Atmospheric refraction</label>
+          <label class="row">
+            <span>Bending of light by the air</span>
+            <select id="refraction">
+              <option value="off">Off</option>
+              <option value="standard">Standard air</option>
+              <option value="custom">My conditions</option>
+            </select>
+          </label>
+          <div class="row" id="air-fields" hidden>
+            <label class="mini"><span>Temperature °C</span><input type="number" id="air-temp" min="-80" max="60" step="0.5" /></label>
+            <label class="mini"><span>Pressure hPa</span><input type="number" id="air-pressure" min="300" max="1100" step="1" /></label>
+          </div>
+          <p class="hint" id="air-note"></p>
           <button id="btn-share">Copy link to this view</button>
         </section>
       </aside>
@@ -186,6 +198,11 @@
           <p class="hint">
             "Measured" is the published ephemeris, which you can check yourself with a stick's shadow, a compass and a
             clock.
+          </p>
+          <p class="hint">
+            Last row: how far the air really lifts the sun at this height, then the lift each model would need for
+            its geometry to land on the measurement. Air lifts what you see by less than a degree, never pushes
+            it down, and cannot change a bearing.
           </p>
         </section>
 
@@ -263,6 +280,10 @@
               Bearings run clockwise from true north (east is 90). A magnetic compass can be several degrees out, so
               leave this blank if you are unsure.
             </p>
+            <label class="row">
+              <span>Air temperature (°C, optional)</span>
+              <input type="number" id="m-temp" min="-80" max="60" step="0.5" />
+            </label>
             <label class="row">
               <span>Name (optional)</span>
               <input type="text" id="m-label" maxlength="30" placeholder="e.g. back garden" />
@@ -347,6 +368,13 @@
               <b>Your own measurements.</b> A stick of height <code>h</code> casting a shadow of length
               <code>s</code> on level ground puts the sun at <code>atan(h / s)</code> above the horizon, in the
               direction opposite the shadow. If you did not measure a bearing, only the elevations are compared.
+            </p>
+            <p>
+              <b>Bending by the air.</b> Each position is worked out as plain geometry first, then lifted by
+              Sæmundsson's formula, <code>1.02′ / tan(h + 10.3 / (h + 5.11))</code> for a true elevation
+              <code>h</code> in degrees: 29′ for something geometrically on the horizon, 5′ at 10° up, 1′ at 45°. "My conditions" multiplies that
+              by <code>(P / 1010 hPa) × (283 K / T)</code>. The same lift goes on the measurement and on both
+              models.
             </p>
             <p>
               <b>Stars.</b> Each star is handled exactly like the sun: both models are told the place it is directly

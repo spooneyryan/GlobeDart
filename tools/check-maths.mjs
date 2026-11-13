@@ -1,4 +1,6 @@
 // Sanity checks for the sun and model maths: `node tools/check-maths.mjs`.
+import * as Astronomy from '../vendor/astronomy.js';
+import { STANDARD_AIR, standardLift, lift, airFactor, apparentElevation, trueElevation } from '../js/refraction.js';
 import {
   subsolarPoint,
   observedSun,
@@ -28,6 +30,7 @@ import {
   mergeMeasurements,
   encodeMeasurements,
   decodeMeasurements,
+  scoreMeasurement,
 } from '../js/measurements.js';
 
 let failures = 0;
@@ -49,7 +52,7 @@ check('December solstice subsolar latitude is -23.44', Math.abs(sol.lat + 23.44)
 // 2. The sun really is overhead at the subsolar point.
 const now = new Date('2026-11-12T15:30:00Z');
 const sub = subsolarPoint(now);
-const overhead = observedSun(now, sub.lat, sub.lon, false);
+const overhead = observedSun(now, sub.lat, sub.lon, null);
 check('sun is at the zenith over the subsolar point', overhead.el > 89.99, f(overhead.el, 4));
 check('sun angular size about 0.54 deg in November', Math.abs(sub.sizeDeg - 0.539) < 0.005, f(sub.sizeDeg, 4));
 
@@ -59,26 +62,26 @@ for (const c of REF_CITIES) {
   for (let h = 0; h < 24; h++) {
     const t = new Date(Date.UTC(2026, 10, 12, h));
     const sp = subsolarPoint(t);
-    const obs = observedSun(t, c.lat, c.lon, true);
-    worst = Math.max(worst, skySeparation(obs, globePredict(sp, c.lat, c.lon, true)));
+    const obs = observedSun(t, c.lat, c.lon);
+    worst = Math.max(worst, skySeparation(obs, globePredict(sp, c.lat, c.lon)));
   }
 }
 check('globe model matches ephemeris within 0.02 deg', worst < 0.02, `worst ${f(worst, 4)}`);
 
 // 4. Flat model geometry: observer under the sun sees it overhead; known triangle elsewhere.
 const params = { sunHeightKm: 5000, lightRangeKm: 10000 };
-const under = flatPredict(eq, eq.lat, eq.lon, params, false);
+const under = flatPredict(eq, eq.lat, eq.lon, params, null);
 check('flat: sun overhead at subsolar point', under.el > 89.99 && Math.abs(under.sizeDeg - eq.sizeDeg) < 1e-6);
-const pole = flatPredict(eq, 89.9999, 0, params, false);
+const pole = flatPredict(eq, 89.9999, 0, params, null);
 const expectPole = (Math.atan2(5000, (Math.PI / 2) * EARTH_RADIUS_KM) * 180) / Math.PI;
 check('flat: elevation at pole on equinox', Math.abs(pole.el - expectPole) < 0.01, `${f(pole.el)} vs ${f(expectPole)}`);
 // Observer on the equator, 90 degrees of longitude west of the sun: sun should bear north-east (45).
-const west = flatPredict(eq, 0, eq.lon - 90, params, false);
+const west = flatPredict(eq, 0, eq.lon - 90, params, null);
 check('flat: equinox sunrise bears 45 deg, not 90', Math.abs(west.az - 45) < 0.5, `az ${f(west.az)} el ${f(west.el)}`);
-const globeWest = globePredict(eq, 0, eq.lon - 90, false);
+const globeWest = globePredict(eq, 0, eq.lon - 90, null);
 check('globe: equinox sunrise bears 90 deg', Math.abs(globeWest.az - 90) < 0.5 && Math.abs(globeWest.el) < 0.1, `az ${f(globeWest.az)} el ${f(globeWest.el)}`);
 // East/west sanity: sun east of the observer in the morning on both models.
-const am = flatPredict(eq, 40, eq.lon - 45, params, false);
+const am = flatPredict(eq, 40, eq.lon - 45, params, null);
 check('flat: morning sun is in the eastern half of the sky', am.az > 0 && am.az < 180, f(am.az));
 
 // 5. Implied sun heights disagree between observers.
@@ -94,8 +97,8 @@ for (const c of REF_CITIES) {
     samples.push({ lat: c.lat, lon: c.lon, sub: subsolarPoint(t), obs: observedSun(t, c.lat, c.lon) });
   }
 }
-const globeRms = rmsMiss(samples, (sp, lat, lon) => globePredict(sp, lat, lon, true));
-const fit = flatFitCurve(samples, params, true);
+const globeRms = rmsMiss(samples, (sp, lat, lon) => globePredict(sp, lat, lon));
+const fit = flatFitCurve(samples, params, STANDARD_AIR);
 console.log(`globe rms ${f(globeRms, 4)} deg; flat best ${f(fit.best.rms, 2)} deg at ${Math.round(fit.best.heightKm)} km`);
 check('flat best fit is still off by more than 5 deg', fit.best.rms > 5);
 
@@ -177,7 +180,7 @@ const pts = starPoints(night, STARS);
 let worstStar = 0;
 for (const c of REF_CITIES) {
   pts.forEach((p) => {
-    worstStar = Math.max(worstStar, skySeparation(observedStar(night, c.lat, c.lon, p), globePredict(p, c.lat, c.lon, true)));
+    worstStar = Math.max(worstStar, skySeparation(observedStar(night, c.lat, c.lon, p), globePredict(p, c.lat, c.lon)));
   });
 }
 check('globe model matches every star from every city within 0.02 deg', worstStar < 0.02, `worst ${f(worstStar, 4)}`);
@@ -200,9 +203,72 @@ for (const name of ['Sydney', 'Santiago', 'Cape Town']) {
     Math.abs(o.az - 180) < 2 && Math.abs(o.el + c.lat) < 1.5, `az ${f(o.az, 1)} el ${f(o.el, 1)}; flat az ${f(fl.az, 1)} el ${f(fl.el, 1)}`);
 }
 const starSamples = REF_CITIES.flatMap((c) => pts.map((p) => ({ lat: c.lat, lon: c.lon, sub: p, obs: observedStar(night, c.lat, c.lon, p) })));
-const starFit = flatFitCurve(starSamples, domeParams, true);
+const starFit = flatFitCurve(starSamples, domeParams, STANDARD_AIR);
 console.log(`stars: flat best ${f(starFit.best.rms, 1)} deg at ${Math.round(starFit.best.heightKm)} km`);
 check('no star height brings the flat model within 10 deg', starFit.best.rms > 10);
+
+// 11. Bending of light by the air.
+const arcmin = (el) => standardLift(el) * 60;
+check('lift is 29 arcminutes for something geometrically on the horizon', Math.abs(arcmin(0) - 29) < 0.5, f(arcmin(0), 2));
+check('lift is 5.4 arcminutes at 10 degrees up', Math.abs(arcmin(10) - 5.4) < 0.1, f(arcmin(10), 2));
+check('lift is 1.0 arcminute at 45 degrees up', Math.abs(arcmin(45) - 1.0) < 0.05, f(arcmin(45), 2));
+const onHorizon = trueElevation(0);
+check('something seen exactly on the horizon is 34 arcminutes below it', Math.abs(onHorizon * 60 + 34) < 0.6, f(onHorizon * 60, 2));
+let worstRound = 0;
+for (let el = -0.9; el <= 90; el += 0.37) worstRound = Math.max(worstRound, Math.abs(trueElevation(apparentElevation(el)) - el));
+check('true to apparent and back returns the same elevation', worstRound < 1e-9, worstRound.toExponential(1));
+let worstFormula = 0;
+for (let el = -90; el <= 90; el += 0.05) worstFormula = Math.max(worstFormula, Math.abs(standardLift(el) - Astronomy.Refraction('normal', el)));
+check("the lift formula is the library's own, to the last digit", worstFormula < 1e-12, worstFormula.toExponential(1));
+// Before this module existed the measured position came from the library's own
+// refraction option. Standard air must still give those numbers.
+let worstSun = 0;
+let worstStarEl = 0;
+for (const c of REF_CITIES) {
+  const observer = new Astronomy.Observer(c.lat, c.lon, 0);
+  for (let h = 0; h < 24; h++) {
+    const t = new Date(Date.UTC(2026, 10, 12, h));
+    const time = Astronomy.MakeTime(t);
+    const e = Astronomy.Equator(Astronomy.Body.Sun, time, observer, true, true);
+    const old = Astronomy.Horizon(time, observer, e.ra, e.dec, 'normal');
+    const o = observedSun(t, c.lat, c.lon);
+    worstSun = Math.max(worstSun, Math.abs(o.el - old.altitude), Math.abs(o.az - old.azimuth));
+  }
+  for (const p of pts) {
+    const old = Astronomy.Horizon(Astronomy.MakeTime(night), observer, p.ra, p.dec, 'normal');
+    const o = observedStar(night, c.lat, c.lon, p);
+    worstStarEl = Math.max(worstStarEl, Math.abs(o.el - old.altitude), Math.abs(o.az - old.azimuth));
+  }
+}
+check('standard air gives the same measured sun as before', worstSun < 1e-9, worstSun.toExponential(1));
+check('standard air gives the same measured stars as before', worstStarEl < 1e-9, worstStarEl.toExponential(1));
+check('standard air scales the lift by exactly 1', airFactor(STANDARD_AIR) === 1);
+check('no air means no lift', lift(0, null) === 0 && observedSun(now, 51.51, -0.13, null).lift === 0);
+const cold = airFactor({ tempC: -20, pressureHpa: 1030 });
+check('at -20 C and 1030 hPa the lift is about 14% larger', Math.abs(cold - 1.14) < 0.005, f(cold, 4));
+const thin = airFactor({ tempC: 10, pressureHpa: 840 });
+check('at 840 hPa, about 1,600 m up, it is about 17% smaller', Math.abs(thin - 0.83) < 0.005, f(thin, 4));
+// The row in the app: what the flat model would need from the air at a London sunset.
+check('at a London sunset the air lifts the sun by about 0.6 of a degree', Math.abs(atSet.lift - 0.62) < 0.03, f(atSet.lift, 3));
+check('the flat sun would need bending more than 20 degrees the other way', flatAtSet.trueEl - atSet.el > 20,
+  f(flatAtSet.trueEl - atSet.el, 1));
+check('the globe needs exactly the lift the air gives',
+  Math.abs(atSet.el - globePredict(subsolarPoint(ev.set), 51.51, -0.13).trueEl - atSet.lift) < 0.01);
+// A temperature noted with a measurement.
+const frosty = cleanMeasurement({ t: ev.set.getTime(), lat: 51.51, lon: -0.13, el: 0.3, az: null, label: 'frost', tempC: '-20' });
+check('a measurement keeps the temperature noted with it', frosty.tempC === -20);
+check('and carries it through a link',
+  decodeMeasurements(encodeMeasurements([frosty]))[0].tempC === -20 && decodeMeasurements(encodeMeasurements(list))[0].tempC === null);
+check('links made before temperatures existed still open',
+  decodeMeasurements('2026-11-12T11:00:00Z,30.04,31.24,35.2,170,Cairo;2026-11-12T11:00:00Z,51.51,-0.13,20.1,,').length === 2);
+const mild = scoreMeasurement({ ...frosty, tempC: null }, params);
+const freezing = scoreMeasurement(frosty, params);
+check('colder air lifts the predicted sunset sun a little more', freezing.globe.el - mild.globe.el > 0.03 && freezing.globe.el - mild.globe.el < 0.12,
+  f(freezing.globe.el - mild.globe.el, 3));
+check('with refraction off a noted temperature changes nothing',
+  scoreMeasurement(frosty, params, null).globe.el === scoreMeasurement({ ...frosty, tempC: null }, params, null).globe.el);
+check('of two copies of a measurement, the one with a temperature is kept',
+  mergeMeasurements([{ ...frosty, tempC: null }], [frosty]).length === 1 && mergeMeasurements([{ ...frosty, tempC: null }], [frosty])[0].tempC === -20);
 
 console.log(failures ? `\n${failures} check(s) failed` : '\nAll checks passed');
 process.exit(failures ? 1 : 0);

@@ -1,6 +1,6 @@
 # Plan: modelling refraction
 
-Status: proposal. Nothing in this file is built yet.
+Status: Stage 1 is built. Stages 2 to 4 are still a proposal.
 
 ## Why this needs doing
 
@@ -14,14 +14,15 @@ light, how much that varies, and what each model predicts once the bending is in
 
 ## What the app does today
 
-- One checkbox, "Atmospheric refraction", on by default.
-- It applies one formula (Sæmundsson's, through astronomy-engine's `'normal'` setting) for a standard atmosphere of
-  10 °C and 1010 hPa. The formula lifts the apparent position of anything in the sky: about 0.48° for an object
-  geometrically on the horizon, 0.09° at 10° up, 0.02° at 45° up.
+- One setting, "Bending of light by the air": off, standard air, or the user's own temperature and pressure.
+- It applies one formula (Sæmundsson's, in `js/refraction.js`) for a standard atmosphere of 10 °C and 1010 hPa,
+  scaled for other conditions. The formula lifts the apparent position of anything in the sky: about 0.48° for an
+  object geometrically on the horizon, 0.09° at 10° up, 0.02° at 45° up.
 - The same lift is added to the measured position, the globe prediction and the flat prediction. Neither model is
   favoured.
-- There is no account of weather, no bending of light between two points near the ground, and no dip of the
-  horizon for a raised observer.
+- The "At the observer" table shows the lift the air gives next to the lift each model would need.
+- There is no bending of light between two points near the ground, and no dip of the horizon for a raised
+  observer.
 
 ## Three effects to keep apart
 
@@ -51,6 +52,8 @@ These carry over from the rest of the app.
 
 ## Stage 1: astronomical refraction that responds to weather
 
+Built. What follows is the plan as written, with notes on where the result differs.
+
 Small. No new views.
 
 - New pure module `js/refraction.js` holding the lift formula, so the measured, globe and flat values all call the
@@ -64,11 +67,24 @@ Small. No new views.
 
 Checks to add to `tools/check-maths.mjs`:
 
+All four are in `tools/check-maths.mjs`, section 11.
+
 - Lift is 0.48° (29′) at a true elevation of 0°, 5.4′ at 10° and 1.0′ at 45°.
 - An object seen exactly on the horizon is geometrically 0.57° (34′) below it. This is the same physics expressed
   in terms of apparent elevation, and needs the inverse function.
 - Standard conditions reproduce today's numbers exactly, so nothing else in the app moves.
 - At −20 °C and 1030 hPa the lift is about 14% larger than standard.
+
+Differences from the plan:
+
+- The new table row is labelled "Lift from the air" and has a value in every column: what the air gives, what the
+  globe needs, and what the flat model needs. The plan had it for the flat model only.
+- At the moment of sunset the sun's centre is geometrically 0.83° below the horizon, where the lift is 0.62°, not
+  the half a degree quoted above.
+- "My conditions" sits in the main panel, and its two inputs appear only when it is chosen.
+- A temperature noted with an own measurement replaces the temperature of the current setting when that
+  measurement is scored. With the setting off it is ignored.
+- The scaling uses 273 + °C, as Meeus gives it, so standard air comes out at exactly 1.
 
 ## Stage 2: terrestrial refraction and the hidden-height feature
 
@@ -173,5 +189,4 @@ Follows the pattern of "Your own measurements".
 - Metres only, or feet and miles as well? Most horizon arguments online are in feet and miles.
 - Whether to include presets for well-known observations (a lake skyline, a long causeway, a canal). Each one needs
   sourced distances and heights before it goes in; none are in the app today.
-- Whether Stage 1's "My conditions" belongs in the main panel or under an "advanced" fold, given how small the
-  effect is away from the horizon.
+- Settled for now: Stage 1's "My conditions" is in the main panel, with its inputs hidden until it is chosen.

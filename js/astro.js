@@ -2,6 +2,7 @@
 // "what you would actually measure": the published ephemeris that matches
 // real observations to a small fraction of a degree.
 import * as Astronomy from '../vendor/astronomy.js';
+import { STANDARD_AIR, lift } from './refraction.js';
 
 export const EARTH_RADIUS_KM = 6371.0088;
 export const SUN_RADIUS_KM = 695700;
@@ -32,16 +33,21 @@ export function subsolarPoint(date) {
   };
 }
 
-/** Sun position in the sky as measured by an observer (topocentric ephemeris). */
-export function observedSun(date, lat, lon, refraction = true) {
+/**
+ * Sun position in the sky as measured by an observer (topocentric ephemeris).
+ * `lift` is how much of the elevation is the air's doing.
+ */
+export function observedSun(date, lat, lon, air = STANDARD_AIR) {
   const time = Astronomy.MakeTime(date);
   const obs = new Astronomy.Observer(lat, lon, 0);
   const eq = Astronomy.Equator(SUN, time, obs, true, true);
-  const hor = Astronomy.Horizon(time, obs, eq.ra, eq.dec, refraction ? 'normal' : undefined);
+  const hor = Astronomy.Horizon(time, obs, eq.ra, eq.dec);
+  const bend = lift(hor.altitude, air);
   const distKm = eq.dist * Astronomy.KM_PER_AU;
   return {
     az: hor.azimuth,
-    el: hor.altitude,
+    el: hor.altitude + bend,
+    lift: bend,
     sizeDeg: (2 * Math.atan(SUN_RADIUS_KM / distKm)) / DEG,
   };
 }
@@ -66,25 +72,15 @@ export function starPoints(date, stars) {
 }
 
 /** A star's position in the sky as measured by an observer. `point` comes from starPoints. */
-export function observedStar(date, lat, lon, point, refraction = true) {
-  const hor = Astronomy.Horizon(
-    Astronomy.MakeTime(date),
-    new Astronomy.Observer(lat, lon, 0),
-    point.ra,
-    point.dec,
-    refraction ? 'normal' : undefined,
-  );
-  return { az: hor.azimuth, el: hor.altitude };
+export function observedStar(date, lat, lon, point, air = STANDARD_AIR) {
+  const hor = Astronomy.Horizon(Astronomy.MakeTime(date), new Astronomy.Observer(lat, lon, 0), point.ra, point.dec);
+  const bend = lift(hor.altitude, air);
+  return { az: hor.azimuth, el: hor.altitude + bend, lift: bend };
 }
 
 /** Name of the constellation containing a J2000 position, for checking the star table. */
 export function constellationAt(raHours, decDeg) {
   return Astronomy.Constellation(raHours, decDeg).symbol;
-}
-
-/** Standard atmospheric refraction lift (degrees) for a geometric elevation. */
-export function refractionLift(elDeg) {
-  return Astronomy.Refraction('normal', elDeg);
 }
 
 /** Sunrise, solar noon and sunset for the observer's local solar day containing `date`. */

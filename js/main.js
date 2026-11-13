@@ -18,6 +18,7 @@ import {
   encodeMeasurements,
   decodeMeasurements,
 } from './measurements.js';
+import { STANDARD_AIR, AIR_LIMITS, airFactor } from './refraction.js';
 import { STARS, STAR_LINES, FEATURED_STARS, starIndex, SKY_TURN_DEG_PER_MIN } from './stars.js';
 import { ROUTES, CRUISE_KMH, SOUND_KMH, routeStats, greatCirclePath } from './distances.js';
 import { makeLandCanvas } from './scene-utils.js';
@@ -37,7 +38,9 @@ const state = {
   lon: -0.13,
   sunHeightKm: 5000,
   lightRangeKm: 10000,
-  refraction: true,
+  refraction: 'standard', // 'off', 'standard', or 'custom' (the two values below)
+  tempC: STANDARD_AIR.tempC,
+  pressureHpa: STANDARD_AIR.pressureHpa,
   sightLines: false,
   flatLighting: 'model',
   follow: true,
@@ -129,15 +132,24 @@ const isShown = (m) => sameMoment(m, 60000) && samePlace(m);
 
 const flatParams = () => ({ sunHeightKm: state.sunHeightKm, lightRangeKm: state.lightRangeKm });
 
+// The air the measurement and both models are seen through: none, standard, or the user's own.
+function currentAir() {
+  if (state.refraction === 'off') return null;
+  if (state.refraction === 'custom') return { tempC: state.tempC, pressureHpa: state.pressureHpa };
+  return STANDARD_AIR;
+}
+const airKey = () => (state.refraction === 'custom' ? `${state.tempC}|${state.pressureHpa}` : state.refraction);
+
 function compute() {
-  const { date, lat, lon, refraction } = state;
+  const { date, lat, lon } = state;
+  const air = currentAir();
   const sub = subsolarPoint(date);
-  const obs = observedSun(date, lat, lon, refraction);
-  const globe = globePredict(sub, lat, lon, refraction);
-  const flat = flatPredict(sub, lat, lon, flatParams(), refraction);
+  const obs = observedSun(date, lat, lon, air);
+  const globe = globePredict(sub, lat, lon, air);
+  const flat = flatPredict(sub, lat, lon, flatParams(), air);
   const cities = REF_CITIES.map((city) => {
-    const o = observedSun(date, city.lat, city.lon, refraction);
-    const f = flatPredict(sub, city.lat, city.lon, flatParams(), refraction);
+    const o = observedSun(date, city.lat, city.lon, air);
+    const f = flatPredict(sub, city.lat, city.lon, flatParams(), air);
     return {
       ...city,
       obs: o,
@@ -182,7 +194,8 @@ const starDome = () => ({ sunHeightKm: state.starHeightKm, lightRangeKm: Infinit
 // Every star is treated exactly like the sun: both models are told the point on
 // Earth it is overhead, and each predicts where the observer should see it.
 function computeStars() {
-  const { date, lat, lon, refraction } = state;
+  const { date, lat, lon } = state;
+  const air = currentAir();
   const dome = starDome();
   const points = starPoints(date, STARS);
   const selected = Math.max(0, starIndex(state.star));
@@ -197,8 +210,8 @@ function computeStars() {
       for (let k = 0; k <= TRAIL_STEPS; k++) {
         // Earlier on, the star stood over a point further east.
         const then = { ...point, lon: point.lon + k * TRAIL_STEP_MIN * SKY_TURN_DEG_PER_MIN };
-        g.push(globePredict(then, lat, lon, refraction));
-        f.push(flatPredict(then, lat, lon, dome, refraction));
+        g.push(globePredict(then, lat, lon, air));
+        f.push(flatPredict(then, lat, lon, dome, air));
       }
       globeTrails.push(g);
       flatTrails.push(f);
@@ -211,14 +224,14 @@ function computeStars() {
     lines: STAR_LINES,
     selected,
     name: STARS[selected].name,
-    measured: points.map((pt) => observedStar(date, lat, lon, pt, refraction)),
-    globe: points.map((pt) => globePredict(pt, lat, lon, refraction)),
-    flat: points.map((pt) => flatPredict(pt, lat, lon, dome, refraction)),
+    measured: points.map((pt) => observedStar(date, lat, lon, pt, air)),
+    globe: points.map((pt) => globePredict(pt, lat, lon, air)),
+    flat: points.map((pt) => flatPredict(pt, lat, lon, dome, air)),
     globeTrails,
     flatTrails,
     cities: REF_CITIES.map((place) => {
-      const o = observedStar(date, place.lat, place.lon, chosen, refraction);
-      const f = flatPredict(chosen, place.lat, place.lon, dome, refraction);
+      const o = observedStar(date, place.lat, place.lon, chosen, air);
+      const f = flatPredict(chosen, place.lat, place.lon, dome, air);
       return {
         ...place,
         obs: o,
@@ -234,22 +247,23 @@ function computeStars() {
 // so the result barely depends on which moment is used.
 const starFitCache = { key: null };
 function getStarFit() {
-  const key = String(state.refraction);
+  const key = airKey();
   if (starFitCache.key !== key) {
+    const air = currentAir();
     const points = starPoints(state.date, STARS);
     const samples = REF_CITIES.flatMap((place) =>
       points.map((pt) => ({
         lat: place.lat,
         lon: place.lon,
         sub: pt,
-        obs: observedStar(state.date, place.lat, place.lon, pt, state.refraction),
+        obs: observedStar(state.date, place.lat, place.lon, pt, air),
       })),
     );
     Object.assign(starFitCache, {
       key,
       samples,
-      globeRms: rmsMiss(samples, (pt, lat, lon) => globePredict(pt, lat, lon, state.refraction)),
-      ...flatFitCurve(samples, starDome(), state.refraction, MIN_HEIGHT_KM, MAX_HEIGHT_KM, 60),
+      globeRms: rmsMiss(samples, (pt, lat, lon) => globePredict(pt, lat, lon, air)),
+      ...flatFitCurve(samples, starDome(), air, MIN_HEIGHT_KM, MAX_HEIGHT_KM, 60),
     });
   }
   return starFitCache;
@@ -273,22 +287,23 @@ function computeRoute() {
 // One day of hourly observations from every reference city, cached per date.
 const fitCache = { key: null };
 function getFit() {
-  const key = `${isoDay(state.date)}|${state.refraction}`;
+  const key = `${isoDay(state.date)}|${airKey()}`;
   if (fitCache.key !== key) {
+    const air = currentAir();
     const day = Date.parse(`${isoDay(state.date)}T00:00:00Z`);
     const samples = [];
     for (let h = 0; h < 24; h++) {
       const t = new Date(day + h * 3600000);
       const sub = subsolarPoint(t);
       for (const city of REF_CITIES) {
-        samples.push({ lat: city.lat, lon: city.lon, sub, obs: observedSun(t, city.lat, city.lon, state.refraction) });
+        samples.push({ lat: city.lat, lon: city.lon, sub, obs: observedSun(t, city.lat, city.lon, air) });
       }
     }
     Object.assign(fitCache, {
       key,
       samples,
-      globeRms: rmsMiss(samples, (s, lat, lon) => globePredict(s, lat, lon, state.refraction)),
-      ...flatFitCurve(samples, flatParams(), state.refraction, MIN_HEIGHT_KM, MAX_HEIGHT_KM),
+      globeRms: rmsMiss(samples, (s, lat, lon) => globePredict(s, lat, lon, air)),
+      ...flatFitCurve(samples, flatParams(), air, MIN_HEIGHT_KM, MAX_HEIGHT_KM),
     });
   }
   return fitCache;
@@ -324,6 +339,12 @@ const DEMOS = {
       <p>A sun ${km(state.sunHeightKm)} above a flat plane is still <b class="f">${deg(c.flat.el)}</b> up at this
       moment, and has shrunk to <b class="f">${Math.round((c.flat.sizeDeg / c.obs.sizeDeg) * 100)}%</b> of its
       noon width. It can never reach the horizon, let alone go below it.</p>
+      <p>"Refraction" is the usual reply. ${
+        c.obs.lift > 0
+          ? `The air here lifts the real sun by <b class="m">${deg(c.obs.lift, 2)}</b>`
+          : 'With the air switched on, it lifts the real sun by about 0.6°'
+      }. To hide the flat sun it would have to push it <b class="f">${deg(Math.max(0, c.flat.trueEl - c.obs.el))}</b>
+      the other way.</p>
       <p class="try">Try: drag the sun-height slider. No height puts the flat sun on the horizon. Press Play and
       watch the two round insets.</p>`,
   },
@@ -576,6 +597,23 @@ function update() {
 
 // ---------- result panels ----------
 
+// The lift the air really gives at this height, and the lift each model would
+// need for its plain geometry to land on the measurement.
+function bendingRow(obs, globe, flat) {
+  const show = (x, d) => (Math.abs(x) < 0.005 ? 'none' : `${deg(Math.abs(x), d)}${x < 0 ? ' down' : ''}`);
+  const fits = (x) => (Math.abs(x - obs.lift) <= 0.1 ? 'good' : 'bad');
+  // A model that needs more lift than the air gives has the direction spelled out.
+  const need = (x, d) => (fits(x) === 'bad' && x >= 0.005 ? `${show(x, d)} up` : show(x, d));
+  // Well below the horizon the ground is in the way and "lift" stops meaning anything.
+  const hidden = obs.el < -1;
+  const real = hidden ? '<td class="dim">n/a</td>' : `<td>${show(obs.lift, 2)}</td>`;
+  const globeNeed = obs.el - globe.trueEl;
+  const flatNeed = obs.el - flat.trueEl;
+  return `<tr><td>Lift from the air</td>${real}
+    ${hidden ? '<td class="dim">n/a</td>' : `<td class="${fits(globeNeed)}">${need(globeNeed, 2)}</td>`}
+    <td class="${fits(flatNeed)}">${need(flatNeed, 1)}</td></tr>`;
+}
+
 function renderCompare(c, flatMiss) {
   const globeMiss = skySeparation(c.obs, c.globe);
   const cls = (miss) => (miss > 1 ? 'bad' : 'good');
@@ -590,13 +628,14 @@ function renderCompare(c, flatMiss) {
     <tr><td>Sun visible?</td><td>${up ? 'yes' : 'no, set'}</td><td>${c.globe.el > -0.833 ? 'yes' : 'no, set'}</td>
       <td class="${up ? '' : 'bad'}">yes</td></tr>
     <tr><td>Miss</td><td class="dim">n/a</td><td class="${cls(globeMiss)}">${deg(globeMiss, 2)}</td>
-      <td class="${cls(flatMiss)}">${deg(flatMiss, 1)}</td></tr>`;
+      <td class="${cls(flatMiss)}">${deg(flatMiss, 1)}</td></tr>
+    ${bendingRow(c.obs, c.globe, c.flat)}`;
 }
 
 // Rebuilt only when its content changes, so the buttons in it stay clickable during playback.
 let ownHtml = null;
 function renderOwn() {
-  const sum = summariseMeasurements(measurements, flatParams(), state.refraction);
+  const sum = summariseMeasurements(measurements, flatParams(), currentAir());
   let list = '';
   let summary = '';
   if (sum) {
@@ -621,7 +660,7 @@ function renderOwn() {
         return `<div class="own-card ${isShown(m) ? 'shown' : ''}" data-i="${i}">
           <div class="own-head">
             <div>${m.label ? `<b>${esc(m.label)}</b>` : ''}<small>${whenUtc(m.t)}</small>
-              <small>${where(m.lat, m.lon)}</small></div>
+              <small>${where(m.lat, m.lon)}${m.tempC === null ? '' : `, air ${m.tempC} °C`}</small></div>
             <span class="own-actions">
               <button data-act="show" title="Show this time and place in the views">Show</button>
               <button data-act="remove" title="Remove this measurement" aria-label="Remove this measurement">×</button>
@@ -680,7 +719,8 @@ function bar(label, value, color, max = 60) {
 
 function renderFit() {
   const fit = getFit();
-  const current = rmsMiss(fit.samples, (s, lat, lon) => flatPredict(s, lat, lon, flatParams(), state.refraction));
+  const air = currentAir();
+  const current = rmsMiss(fit.samples, (s, lat, lon) => flatPredict(s, lat, lon, flatParams(), air));
   $('fit-scope').textContent =
     `Typical miss across ${REF_CITIES.length} cities, every hour of ${isoDay(state.date)} (UTC), ` +
     `counting daytime only.`;
@@ -802,10 +842,12 @@ function renderStars(c) {
     <tr><td>Above the horizon?</td><td>${up ? 'yes' : 'no'}</td><td>${g.el > 0 ? 'yes' : 'no'}</td>
       <td class="${up ? '' : 'bad'}">yes</td></tr>
     <tr><td>Miss</td><td class="dim">n/a</td><td class="${globeMiss > 1 ? 'bad' : 'good'}">${deg(globeMiss, 2)}</td>
-      <td class="${miss > 1 ? 'bad' : 'good'}">${deg(miss, 1)}</td></tr>`;
+      <td class="${miss > 1 ? 'bad' : 'good'}">${deg(miss, 1)}</td></tr>
+    ${bendingRow(obs, g, f)}`;
 
   const fit = getStarFit();
-  const current = rmsMiss(fit.samples, (pt, lat, lon) => flatPredict(pt, lat, lon, starDome(), state.refraction));
+  const air = currentAir();
+  const current = rmsMiss(fit.samples, (pt, lat, lon) => flatPredict(pt, lat, lon, starDome(), air));
   $('star-fit-bars').innerHTML =
     bar('Globe', fit.globeRms, 'var(--globe)', 90) +
     bar('Flat, as set', current, 'var(--flat)', 90) +
@@ -953,7 +995,19 @@ function syncInputs() {
   $('route-to').value = state.route?.to ?? '';
   $('sight-lines').checked = state.sightLines;
   $('follow').checked = state.follow;
-  $('refraction').checked = state.refraction;
+  $('refraction').value = state.refraction;
+  const custom = state.refraction === 'custom';
+  $('air-fields').hidden = !custom;
+  setIfIdle($('air-temp'), state.tempC);
+  setIfIdle($('air-pressure'), state.pressureHpa);
+  const change = Math.round((airFactor(currentAir()) - 1) * 100);
+  $('air-note').textContent =
+    state.refraction === 'off'
+      ? 'No bending: every position is plain geometry.'
+      : custom
+        ? `This air bends light ${change ? `${Math.abs(change)}% ${change > 0 ? 'more' : 'less'} than` : 'the same as'} standard air. ` +
+          'Use the pressure where you stand: weather reports adjust it to sea level.'
+        : 'Standard air, 10 °C and 1010 hPa. The same lift is applied to the measurement and to both models.';
   $('btn-play').textContent = state.playing ? 'Pause' : 'Play';
   $('speed').value = String(state.speed);
 }
@@ -1076,12 +1130,26 @@ function bindControls() {
   for (const [id, key] of [
     ['sight-lines', 'sightLines'],
     ['follow', 'follow'],
-    ['refraction', 'refraction'],
     ['stars', 'stars'],
     ['trails', 'trails'],
   ]) {
     $(id).addEventListener('change', (e) => {
       state[key] = e.target.checked;
+      requestUpdate();
+    });
+  }
+  $('refraction').addEventListener('change', (e) => {
+    state.refraction = e.target.value;
+    requestUpdate();
+  });
+  for (const [id, key] of [
+    ['air-temp', 'tempC'],
+    ['air-pressure', 'pressureHpa'],
+  ]) {
+    $(id).addEventListener('change', (e) => {
+      const v = Number(e.target.value);
+      if (e.target.value.trim() !== '' && Number.isFinite(v)) state[key] = clamp(v, ...AIR_LIMITS[key]);
+      e.target.value = state[key];
       requestUpdate();
     });
   }
@@ -1168,6 +1236,7 @@ function bindMeasurementForm() {
       el,
       az,
       label: $('m-label').value,
+      tempC: $('m-temp').value,
     });
     if (!m) return toast('That measurement could not be read');
     const before = measurements.length;
@@ -1176,7 +1245,7 @@ function bindMeasurementForm() {
     saveMeasurements();
     state.date = new Date(m.t);
     state.playing = false;
-    for (const id of ['m-el', 'm-shadow', 'm-az', 'm-label']) $(id).value = '';
+    for (const id of ['m-el', 'm-shadow', 'm-az', 'm-label', 'm-temp']) $(id).value = '';
     showShadowResult();
     toast('Measurement added');
     return requestUpdate();
@@ -1186,7 +1255,7 @@ function bindMeasurementForm() {
     const btn = e.target.closest('button[data-act]');
     if (!btn) return;
     if (btn.dataset.act === 'fit') {
-      const best = summariseMeasurements(measurements, flatParams(), state.refraction)?.best;
+      const best = summariseMeasurements(measurements, flatParams(), currentAir())?.best;
       if (!best) return;
       state.sunHeightKm = best.heightKm;
       toast(`Best fit to your measurements: ${km(best.heightKm)}, off by ${deg(best.rms)}`);
@@ -1220,8 +1289,12 @@ function writeHash() {
     r: Math.round(state.lightRangeKm),
     sl: state.sightLines ? 1 : 0,
     fl: state.flatLighting,
-    rf: state.refraction ? 1 : 0,
+    rf: { off: 0, standard: 1, custom: 2 }[state.refraction],
   });
+  if (state.refraction === 'custom') {
+    p.set('tc', state.tempC);
+    p.set('ph', state.pressureHpa);
+  }
   if (state.demo) p.set('demo', state.demo);
   if (state.stars) {
     p.set('st', 1);
@@ -1247,7 +1320,9 @@ function readHash() {
   state.sunHeightKm = num('h', MIN_HEIGHT_KM, MAX_HEIGHT_KM) ?? state.sunHeightKm;
   state.lightRangeKm = num('r', 1000, 20000) ?? state.lightRangeKm;
   if (p.has('sl')) state.sightLines = p.get('sl') === '1';
-  if (p.has('rf')) state.refraction = p.get('rf') !== '0';
+  if (p.has('rf')) state.refraction = { 0: 'off', 2: 'custom' }[p.get('rf')] ?? 'standard';
+  state.tempC = num('tc', ...AIR_LIMITS.tempC) ?? state.tempC;
+  state.pressureHpa = num('ph', ...AIR_LIMITS.pressureHpa) ?? state.pressureHpa;
   if (p.get('fl') === 'observed' || p.get('fl') === 'model') state.flatLighting = p.get('fl');
   if (DEMOS[p.get('demo')]) state.demo = p.get('demo');
   state.stars = p.get('st') === '1';
