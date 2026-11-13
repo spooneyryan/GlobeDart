@@ -626,27 +626,27 @@ td.dim {
 
 /* ---------- own measurements ---------- */
 
-#own-form {
+.own-form {
   background: var(--panel-2);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 8px 10px;
 }
 
-#own-form .form-body {
+.own-form .form-body {
   display: flex;
   flex-direction: column;
   gap: 8px;
   margin-top: 8px;
 }
 
-#own-form .fields {
+.own-form .fields {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-#own-form .fields[hidden],
+.own-form .fields[hidden],
 #air-fields[hidden] {
   display: none;
 }
@@ -656,39 +656,39 @@ td.dim {
   gap: 2px 6px;
 }
 
-#own-form input,
-#own-form select {
+.own-form input,
+.own-form select {
   background: var(--panel);
 }
 
-#own-form .row > input[type='number'] {
+.own-form .row > input[type='number'] {
   width: 84px;
   flex: none;
 }
 
-#own-form .row > input[type='text'] {
+.own-form .row > input[type='text'] {
   flex: 1;
   min-width: 0;
   max-width: 190px;
 }
 
-#own-form input[type='datetime-local'] {
+.own-form input[type='datetime-local'] {
   flex: 1;
   min-width: 0;
 }
 
-#own-form #m-zone {
+.own-form #m-zone {
   flex: none;
   max-width: 150px;
 }
 
-#own-list {
+.own-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-#own-list:empty {
+.own-list:empty {
   display: none;
 }
 
@@ -912,6 +912,18 @@ code {
 
 #hz-flat-needs p:last-child {
   margin-bottom: 0;
+}
+
+.own-card .verdict {
+  margin: 0;
+  line-height: 1.4;
+  font-size: 13px;
+}
+
+.own-card > button {
+  align-self: flex-start;
+  padding: 4px 9px;
+  font-size: 12.5px;
 }
 
 #hz-air th:first-child {

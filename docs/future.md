@@ -39,8 +39,8 @@ Notes:
 
 - This is Stage 2 of `docs/refraction-plan.md`, and a first version is built as the "Over the horizon" view: a
   side-on drawing and a through-the-telescope drawing for each model.
-- Still to do from that plan: letting people enter their own horizon observations (Stage 4), and tracing rays
-  through layered air to show looming and mirages (Stage 3).
+- People can also enter their own horizon observations and have both models checked against them (Stage 4).
+- Still to do from that plan: tracing rays through layered air to show looming and mirages (Stage 3).
 - Sourced presets for well-known observations (a skyline across a lake, a long causeway, a canal) would make it
   quicker to answer a specific photograph. Each needs distances and heights with a source before it goes in.
 

@@ -1,6 +1,6 @@
 # Plan: modelling refraction
 
-Status: Stages 1 and 2 are built. Stages 3 and 4 are still a proposal.
+Status: Stages 1, 2 and 4 are built. Stage 3 is still a proposal.
 
 ## Why this needs doing
 
@@ -187,6 +187,9 @@ exactly, so the check tolerances have to be honest about that.
 
 ## Stage 4: let people test it themselves
 
+Built, as "Your own observations" in the "Over the horizon" tool, with the maths in `js/observations.js`. What
+follows is the plan as written, with notes at the end on where the result differs.
+
 Follows the pattern of "Your own measurements".
 
 - Enter a horizon observation: eye height, distance, the target's true height, how much of it was visible, and the
@@ -195,6 +198,23 @@ Follows the pattern of "Your own measurements".
 - An observation that falls inside the band supports the globe; one that falls outside it is flagged as needing
   unusual air, with the gradient it implies.
 - Possible second experiment: timing a sunset lying down and again standing up, which measures the dip directly.
+
+Checks are in `tools/check-maths.mjs`, section 13.
+
+Differences from the plan:
+
+- There is no fixed band of "plausible" bending. Each observation is turned into the one bending that would make
+  the globe match it, and that is sorted by what the air would have to be doing: cooling with height (the usual
+  state by day), warming with height (an inversion), or bending light upward (a surface warmer than the air).
+  Only the first is called a plain fit.
+- Seeing all of something, or none of it, does not fix the bending. It only says "at least" or "at most", and
+  the wording follows.
+- The air and water temperatures are used to check the explanation, not to work out the bending. Water colder
+  than the air supports an inversion; warmer water counts against one. Working out the bending needs the
+  temperature at several heights along the whole sight line.
+- An observation is recorded with the sizes set in the tool at the time, in the same way a sun measurement is
+  recorded at the time and place on show.
+- The sunset-timing experiment is not built.
 
 ## What this will not be able to do
 
@@ -207,7 +227,7 @@ Follows the pattern of "Your own measurements".
 
 1. Stage 1, because it is small and tidies up the two code paths that Stage 2 would otherwise inherit. Done.
 2. Stage 2, which delivers the horizon feature. Done.
-3. Stage 4, once Stage 2 is in use.
+3. Stage 4, once Stage 2 is in use. Done.
 4. Stage 3 only if the single coefficient turns out to be too easy to dismiss in practice.
 
 ## Decisions needed before starting

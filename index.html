@@ -301,6 +301,52 @@
           <p class="hint" id="hz-verdict"></p>
         </section>
 
+        <section class="hz-only" id="hz-own">
+          <h2>Your own observations</h2>
+          <p class="hint">
+            Look at something across water yourself, enter what you saw, and both models are checked against
+            <b class="o">your</b> observation.
+          </p>
+          <details class="own-form" id="ob-form">
+            <summary>Add an observation</summary>
+            <div class="form-body">
+              <p class="hint" id="ob-sizes"></p>
+              <label class="row">
+                <span>What you saw</span>
+                <select id="ob-kind">
+                  <option value="hidden">The bottom was hidden</option>
+                  <option value="visible">Only the top showed</option>
+                  <option value="all">All of it, down to the water</option>
+                  <option value="none">None of it</option>
+                </select>
+              </label>
+              <label class="row" id="ob-amount-row">
+                <span><span id="ob-amount-label">How much was hidden</span> (<span class="unit-h"></span>)</span>
+                <input type="number" id="ob-amount" min="0" step="any" />
+              </label>
+              <label class="row">
+                <span>Air temperature (°C, optional)</span>
+                <input type="number" id="ob-air" min="-80" max="60" step="0.5" />
+              </label>
+              <label class="row">
+                <span>Water temperature (°C, optional)</span>
+                <input type="number" id="ob-water" min="-5" max="45" step="0.5" />
+              </label>
+              <label class="row">
+                <span>Name (optional)</span>
+                <input type="text" id="ob-label" maxlength="30" placeholder="e.g. ferry from the pier" />
+              </label>
+              <button id="ob-add" class="primary">Add this observation</button>
+            </div>
+          </details>
+          <div id="ob-list" class="own-list"></div>
+          <p class="hint" id="ob-note" hidden>
+            Judging how much is hidden by eye is rough, and so are most distances and heights, so expect even the
+            right model to be off by a few metres. The temperatures are noted and used to check the explanation, not
+            to work out the bending: that needs the temperature at several heights along the whole line of sight.
+          </p>
+        </section>
+
         <section class="hz-only">
           <h2>How much the air changes it</h2>
           <table id="hz-air" class="data">
@@ -368,7 +414,7 @@
             Do not take the published numbers on trust. Measure the sun yourself, enter it here, and both models are
             scored against <b class="o">your</b> number instead.
           </p>
-          <details id="own-form">
+          <details id="own-form" class="own-form">
             <summary>Add a measurement</summary>
             <div class="form-body">
             <label class="stack">
@@ -425,7 +471,7 @@
             <button id="m-add" class="primary">Add this measurement</button>
             </div>
           </details>
-          <div id="own-list"></div>
+          <div id="own-list" class="own-list"></div>
           <div id="own-summary"></div>
         </section>
 

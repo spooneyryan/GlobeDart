@@ -12,6 +12,7 @@ const INK = {
   muted: '#93a4b8',
   hidden: '#ff7d7d',
   sight: '#f2f6fa',
+  own: '#c79bff',
   eye: '#ff5d6c',
   sea: '#12385a',
   seaEdge: '#3f86bd',
@@ -204,6 +205,18 @@ function drawSide(ctx, w, h, model, s) {
     if (hx > X(0) + 70 && hx < tx - 70) text(ctx, `horizon, ${s.fmtD(s.horizonKm)}`, hx, hy + 14, INK.muted, 'center');
   }
 
+  // The user's own observations: a mark on the target where they saw it cut off.
+  for (const own of s.owns) {
+    const y = Y(base + own.hiddenM);
+    ctx.strokeStyle = INK.own;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(tx - 11, y);
+    ctx.lineTo(tx + 11, y);
+    ctx.stroke();
+  }
+  if (s.owns.length) text(ctx, 'you saw', tx + 14, Y(base + s.owns[0].hiddenM), INK.own, 'left', 600);
+
   text(ctx, `${s.fmtH(s.targetM)} tall`, tx - 9, Y(base + s.targetM) - 9, INK.text, 'right', 600);
   if (hidden > 0) {
     const label = hidden >= s.targetM ? 'all hidden' : `${s.fmtH(hidden)} hidden`;
@@ -313,6 +326,26 @@ function drawScope(ctx, w, h, model, s) {
       ctx.textBaseline = 'middle';
       ctx.fillText(label, w - 11, y);
     }
+  }
+  // The user's own observations: the line below which they could not see it.
+  for (const own of s.owns) {
+    const y = base - own.hiddenM * scale;
+    const label =
+      own.label || (own.hiddenM <= 0 ? 'you saw all of it' : own.hiddenM >= s.targetM ? 'you saw none of it' : 'you saw it cut off here');
+    ctx.strokeStyle = INK.own;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(rx, y);
+    ctx.lineTo(w, y);
+    ctx.stroke();
+    ctx.font = "600 11px system-ui, -apple-system, 'Segoe UI', sans-serif";
+    const wide = ctx.measureText(label).width + 10;
+    ctx.fillStyle = 'rgba(8, 13, 20, 0.85)';
+    ctx.fillRect(w - wide - 6, y + 4, wide, 18);
+    ctx.fillStyle = INK.own;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, w - 11, y + 13);
   }
   return null;
 }

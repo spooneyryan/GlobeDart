@@ -16,6 +16,14 @@ import {
   horizonScene,
 } from '../js/horizon.js';
 import {
+  impliedCoefficient,
+  scoreObservation,
+  cleanObservation,
+  mergeObservations,
+  encodeObservations,
+  decodeObservations,
+} from '../js/observations.js';
+import {
   subsolarPoint,
   observedSun,
   sunEvents,
@@ -319,6 +327,47 @@ check('it is fully out of sight beyond about 29.9 km', near(scene.goneKm, 29.9, 
 check('hidden height never exceeds the height of the target', horizonScene({ eyeM: 1.7, targetM: 10, distanceKm: 200, k: 0 }).hiddenM === 10);
 check('raising the eye brings the hull back', hiddenHeightM(30, 30, K_STANDARD) < 5 && hiddenHeightM(1.7, 30, K_STANDARD) > 40,
   `${f(hiddenHeightM(30, 30, K_STANDARD), 2)} m from 30 m up, ${f(hiddenHeightM(1.7, 30, K_STANDARD), 2)} m from 1.7 m`);
+
+// 13. The user's own horizon observations.
+const seen = (hiddenM, extra = {}) =>
+  cleanObservation({ eyeM: 1.7, distanceKm: 30, targetM: 50, hiddenM, airC: null, waterC: null, label: '', ...extra });
+let worstK = 0;
+for (const k of [0, 0.13, 0.17, 0.4, 0.8]) {
+  for (const [eye, km] of [[1.7, 30], [10, 60], [100, 120]]) {
+    worstK = Math.max(worstK, Math.abs(impliedCoefficient(eye, km, hiddenHeightM(eye, km, k)) - k));
+  }
+}
+check('the bending worked back from a hidden height is the bending that produced it', worstK < 1e-9, worstK.toExponential(1));
+check('no observation can imply light bent more sharply than the curve', impliedCoefficient(1.7, 30, 0) < 1 && impliedCoefficient(1.7, 500, 0) < 1);
+const ordinary = scoreObservation(seen(hiddenHeightM(1.7, 30, K_SURVEY)));
+check('42.7 m hidden at 30 km fits the globe in air that cools with height',
+  ordinary.air === 'cooling' && ordinary.bound === 'exact' && near(ordinary.k, K_SURVEY, 0.002) && !ordinary.flat.fits,
+  `k ${f(ordinary.k)}, ${f(ordinary.lapse * 100, 2)} C per 100 m`);
+check('and the flat model would need air about 18 C colder per 100 m', near(ordinary.flat.lapse * 100, -17.6, 0.5), f(ordinary.flat.lapse * 100, 2));
+const looming = scoreObservation(seen(20, { airC: 12, waterC: 4 }));
+check('20 m hidden at 30 km needs an inversion, and colder water than air is noted',
+  looming.air === 'inversion' && looming.lapse > 0 && looming.k > 0.21 && looming.waterMinusAir === -8,
+  `k ${f(looming.k)}, ${f(looming.lapse * 100, 2)} C per 100 m`);
+const tooMuch = scoreObservation(seen(49.9, { targetM: 80 }));
+check('49.9 m hidden, just under the 50.4 m that straight light gives, still fits air that cools with height',
+  tooMuch.air === 'cooling' && tooMuch.k > 0 && tooMuch.k < 0.02, f(tooMuch.k, 4));
+const upward = scoreObservation(seen(60, { targetM: 80 }));
+check('60 m hidden at 30 km is more than straight light gives, so light must bend upward', upward.air === 'upward' && upward.k < 0, f(upward.k));
+const allSeenNear = scoreObservation(seen(0, { distanceKm: 4 }));
+check('seeing all of something this side of the horizon fits both models', allSeenNear.air === 'either' && allSeenNear.flat.fits);
+const allSeenFar = scoreObservation(seen(0));
+check('seeing all of a ship 30 km off fits the flat model, and the globe only with extreme bending',
+  allSeenFar.flat.fits && allSeenFar.bound === 'atLeast' && allSeenFar.air === 'inversion' && allSeenFar.k > 0.95,
+  `k at least ${f(allSeenFar.k)}, ${f(allSeenFar.lapse * 100, 1)} C warmer per 100 m`);
+const noneSeen = scoreObservation(seen(50, { distanceKm: 40 }));
+check('seeing none of a 50 m ship 40 km off fits the globe in standard air', noneSeen.bound === 'atMost' && noneSeen.air === 'cooling' && noneSeen.k >= K_STANDARD, f(noneSeen.k));
+check('hidden is never recorded as more than the height', seen(80).hiddenM === 50);
+check('observations outside what the tool can show are dropped',
+  mergeObservations([{ eyeM: 0, distanceKm: 30, targetM: 50, hiddenM: 1 }, { eyeM: 2, distanceKm: 9000, targetM: 50, hiddenM: 1 }, { eyeM: 2, distanceKm: 30, targetM: 50, hiddenM: -3 }]).length === 0);
+const sightings = [seen(20, { airC: 12, waterC: 4, label: 'ferry' }), seen(0, { distanceKm: 4 })];
+check('observations survive a round trip through a link',
+  JSON.stringify(decodeObservations(encodeObservations(sightings))) === JSON.stringify(mergeObservations(sightings)));
+check('the same observation is not kept twice', mergeObservations(sightings, sightings).length === 2);
 
 console.log(failures ? `\n${failures} check(s) failed` : '\nAll checks passed');
 process.exit(failures ? 1 : 0);

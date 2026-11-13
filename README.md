@@ -39,6 +39,7 @@ The empty `.nojekyll` file tells GitHub Pages to serve the files exactly as they
 | `js/stars.js` | A hand-entered table of 96 bright stars and the lines that join them into familiar figures |
 | `js/distances.js` | Distances under each model, and the non-stop flights used to test them |
 | `js/horizon.js` | What is hidden behind the horizon under each model, and how the air near the ground changes it |
+| `js/observations.js` | Horizon observations the user enters themselves: what bending each one implies, how each model fares, and the text form used in links |
 | `js/measurements.js` | Measurements the user enters themselves: stick-and-shadow conversion, scoring against both models, and the text form used in links |
 | `js/views/globeView.js`, `flatView.js` | Outside views of each model |
 | `js/views/skyView.js` | First-person sky view, used once per model with a shared look direction |
@@ -47,7 +48,7 @@ The empty `.nojekyll` file tells GitHub Pages to serve the files exactly as they
 | `js/cities.js` | Preset places and the reference observers used for scoring |
 | `data/land-110m.json` | Natural Earth 1:110m land outlines (public domain) |
 | `vendor/` | three.js 0.187 and astronomy-engine 2.1.19, copied in unmodified (both MIT) |
-| `docs/refraction-plan.md` | Plan for modelling refraction properly. Stages 1 and 2 are built |
+| `docs/refraction-plan.md` | Plan for modelling refraction properly. Stages 1, 2 and 4 are built |
 | `docs/future.md` | Ideas for later |
 
 ## Ground rules the code follows
@@ -120,8 +121,15 @@ chosen height, a chosen distance away, seen by an eye at a chosen height above t
   height. The same air is applied to both models.
 - The results say what air the flat model would need to hide the same amount, and compare it with air that can
   exist.
-- There is no measured value in this tool: it shows what each model predicts, for you to compare with what you
-  see. Entering your own horizon observations is not built yet.
+- There is no published measurement in this tool: it shows what each model predicts, for you to compare with
+  what you see.
+- "Your own observations" records what you saw, with the sizes set at the time: how much was hidden, and the air
+  and water temperatures if you noted them. Each one is marked on the drawings and comes with the bending the
+  globe would need to match it, said as a change of temperature with height, and what the flat model would need.
+- An observation that needs an inversion is said to need one, not counted as a fit. Water colder than the air is
+  noted as the weather that produces it, and warmer water as weather that does not.
+- Observations are kept in the browser's local storage and are included in the link from "Copy link to this
+  view".
 - Heights and distances can be shown in metres and kilometres or in feet and miles.
 
 ## Phones and tablets
@@ -132,6 +140,5 @@ two-finger pinch to zoom; the outside views use the usual one-finger orbit and t
 
 ## Not built yet
 
-The moon, entering your own horizon observations and tracing light through layered air (stages 4 and 3 of
-`docs/refraction-plan.md`), a full star catalogue, entering your own star measurements, and flat-model variants
+The moon, tracing light through layered air (stage 3 of `docs/refraction-plan.md`), a full star catalogue, entering your own star measurements, and flat-model variants
 beyond the standard map with adjustable heights and light range. More ideas are in `docs/future.md`.

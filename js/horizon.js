@@ -10,6 +10,9 @@
 // size of the Earth.
 import { DEG, EARTH_RADIUS_KM } from './astro.js';
 
+/** The range of sizes the tool works with, in metres and kilometres. */
+export const HORIZON_LIMITS = Object.freeze({ eyeM: [0.1, 12000], targetM: [1, 5000], distanceKm: [0.5, 500] });
+
 /** The standard atmosphere, cooling by 6.5 °C per kilometre of height, gives about this. */
 export const K_STANDARD = 0.17;
 /** The value surveyors have used since Gauss, for daytime sights over land. */

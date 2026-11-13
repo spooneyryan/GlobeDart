@@ -28,7 +28,16 @@ import {
   horizonDistanceKm,
   horizonLineM,
   horizonScene,
+  HORIZON_LIMITS,
 } from './horizon.js';
+import {
+  MAX_OBSERVATIONS,
+  scoreObservation,
+  cleanObservation,
+  mergeObservations,
+  encodeObservations,
+  decodeObservations,
+} from './observations.js';
 import { STARS, STAR_LINES, FEATURED_STARS, starIndex, SKY_TURN_DEG_PER_MIN } from './stars.js';
 import { ROUTES, CRUISE_KMH, SOUND_KMH, routeStats, greatCirclePath } from './distances.js';
 import { makeLandCanvas } from './scene-utils.js';
@@ -108,7 +117,7 @@ const tidy = (v) => Number(v.toFixed(v >= 100 ? 0 : v >= 10 ? 1 : 2));
 const fmtH = (m) => `${tidy(heightNumber(m)).toLocaleString('en-US')} ${imperial() ? 'ft' : 'm'}`;
 const fmtD = (k) => `${tidy(distanceNumber(k)).toLocaleString('en-US')} ${imperial() ? 'mi' : 'km'}`;
 // What can be set, in metres and kilometres.
-const HZ_LIMITS = { eyeM: [0.1, 12000], targetM: [1, 5000], targetKm: [0.5, 500] };
+const HZ_LIMITS = { eyeM: HORIZON_LIMITS.eyeM, targetM: HORIZON_LIMITS.targetM, targetKm: HORIZON_LIMITS.distanceKm };
 
 const HTML_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 const esc = (text) => String(text).replace(/[&<>"']/g, (ch) => HTML_ESCAPES[ch]);
@@ -348,6 +357,8 @@ function computeHorizon() {
   return {
     ...horizonScene({ eyeM, targetM, distanceKm: targetKm, k }),
     horizonLineM: horizonLineM(eyeM, targetKm, k),
+    // The user's own observations of this same arrangement, if there are any.
+    owns: observations.filter(obShown),
     shape: state.shape,
     name: state.shape,
     fmtH,
@@ -416,6 +427,199 @@ function renderHorizon(hz) {
     : far
       ? `<p>Nothing, at this distance: neither model hides any of it. Send it further away.</p>`
       : `<p>Nothing: in this air neither model hides anything.</p>`;
+}
+
+// ---------- the user's own horizon observations ----------
+
+const OBS_KEY = 'globedart.horizon';
+let observations = [];
+
+function loadStoredObservations() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(OBS_KEY) ?? '[]');
+    return Array.isArray(stored) ? stored : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveObservations() {
+  try {
+    localStorage.setItem(OBS_KEY, JSON.stringify(observations));
+  } catch {
+    // Storage can be unavailable. The link still carries them.
+  }
+}
+
+const sameSize = (a, b) => Math.abs(a - b) <= 0.005 * Math.max(a, b);
+/** True when the drawings show the sizes this observation was made with. */
+function obShown(o) {
+  return sameSize(o.eyeM, state.eyeM) && sameSize(o.distanceKm, state.targetKm) && sameSize(o.targetM, state.targetM);
+}
+
+const gradient = (lapse) =>
+  Math.abs(lapse * 100) < 0.005
+    ? 'no colder or warmer for every 100 m of height'
+    : `${perHundred(lapse)} ${lapse < 0 ? 'colder' : 'warmer'} for every 100 m of height`;
+
+/** What each model makes of one observation, in words. */
+function observationWords(o, s) {
+  const checkSizes = ' Otherwise, check the distance and the heights.';
+  const w = s.waterMinusAir;
+  const waterNote = (helps) =>
+    w === null || Math.abs(w) < 1
+      ? ''
+      : helps(w)
+        ? ` Your water was ${Math.abs(w).toFixed(1)} °C ${w < 0 ? 'colder' : 'warmer'} than the air, which is the weather that does this.`
+        : ` But your water was ${Math.abs(w).toFixed(1)} °C ${w < 0 ? 'colder' : 'warmer'} than the air, which bends light the other way.`;
+  const kText = `k = ${s.k.toFixed(2)}`;
+  let globe;
+  let globeFits = true;
+  if (s.air === 'either') {
+    globe = `At this distance the globe hides nothing either, even with light travelling dead straight. Both models
+      fit, so this one cannot tell them apart. Try something further away, or get lower.`;
+  } else if (s.air === 'cooling' && s.bound === 'exact') {
+    globe = `Fits the globe in ordinary air: it needs air that gets ${gradient(s.lapse)} (${kText}). The standard
+      atmosphere gets ${perHundred(STANDARD_GROUND_AIR.lapse)} colder.`;
+  } else if (s.air === 'cooling' && s.bound === 'atLeast') {
+    globe = `Fits the globe in ordinary air: all of it shows as long as the air gets no more than
+      ${perHundred(s.lapse)} colder for every 100 m of height. The standard atmosphere gets
+      ${perHundred(STANDARD_GROUND_AIR.lapse)} colder.`;
+  } else if (s.air === 'cooling') {
+    // None of it was seen, and some ordinary air hides all of it.
+    if (s.k >= K_STANDARD) {
+      globe = `Fits the globe: all of it is hidden in standard air, and in any air that bends light less than ${kText}.`;
+    } else {
+      globeFits = false;
+      globe = `Fits the globe only if the air bent light less than usual (below ${kText}). In standard air the top
+        ${fmtH(o.targetM - s.globe.standardM)} would show.`;
+    }
+  } else if (s.air === 'inversion') {
+    globeFits = false;
+    globe = `Fits the globe if the air was warmer higher up than at the water: ${gradient(s.lapse)}${
+      s.bound === 'atLeast' ? ' or more' : ''
+    } (${kText}). That is an inversion, common over cold water and on still nights.${
+      s.lapse > 0.05 ? ' One this strong is unusual, and tends to come with stretched or stacked images.' : ''
+    }${waterNote((d) => d < 0)}`;
+  } else {
+    globeFits = false;
+    globe = `${
+      s.bound === 'atMost'
+        ? `With light travelling dead straight, the globe says the top ${fmtH(o.targetM - s.globe.straightM)} should show.`
+        : `More was hidden than the globe gives with light travelling dead straight (${fmtH(s.globe.straightM)}).`
+    } It fits only if light was bent upward, which takes air that gets ${gradient(s.lapse)} just above the surface,
+      as over water warmer than the air.${waterNote((d) => d > 0)}${checkSizes}`;
+  }
+  const flat = s.flat.fits
+    ? s.air === 'either'
+      ? 'Fits the flat model too.'
+      : 'Fits the flat model, which says all of it shows at any distance.'
+    : `Does not fit the flat model, which has nothing to hide the bottom ${fmtH(s.hiddenM)}. It would take air that
+      gets ${gradient(s.flat.lapse)} all the way along, and air that cools faster than
+      ${perHundred(OVERTURNING_LAPSE)} per 100 m turns over.`;
+  return { globe, flat, globeFits };
+}
+
+// Rebuilt only when its content changes, so the buttons in it stay clickable while the target moves.
+let obsHtml = null;
+function renderObservations() {
+  $('ob-sizes').textContent =
+    `It will be recorded with the sizes set now: ${fmtH(state.targetM)} tall, ${fmtD(state.targetKm)} away, your eye ` +
+    `${fmtH(state.eyeM)} up. Change them first if yours were different.`;
+  const kind = $('ob-kind').value;
+  $('ob-amount-row').hidden = kind === 'all' || kind === 'none';
+  $('ob-amount-label').textContent = kind === 'visible' ? 'How much of the top showed' : 'How much was hidden';
+  $('ob-note').hidden = !observations.length;
+
+  const html = observations
+    .map((o, i) => {
+      const s = scoreObservation(o);
+      const words = observationWords(o, s);
+      const saw = s.hiddenM <= 0 ? 'none' : s.hiddenM >= o.targetM ? 'all of it' : fmtH(s.hiddenM);
+      const temps = [o.airC === null ? '' : `air ${o.airC} °C`, o.waterC === null ? '' : `water ${o.waterC} °C`]
+        .filter(Boolean)
+        .join(', ');
+      const canSet = s.bound !== 'atMost' && s.k >= 0 && s.k <= 1;
+      return `<div class="own-card ${obShown(o) ? 'shown' : ''}" data-i="${i}">
+        <div class="own-head">
+          <div>${o.label ? `<b>${esc(o.label)}</b>` : ''}
+            <small>${fmtH(o.targetM)} tall, ${fmtD(o.distanceKm)} away, eye ${fmtH(o.eyeM)} up</small>
+            ${temps ? `<small>${temps}</small>` : ''}</div>
+          <span class="own-actions">
+            <button data-act="show" title="Show these sizes in the drawings">Show</button>
+            <button data-act="remove" title="Remove this observation" aria-label="Remove this observation">×</button>
+          </span>
+        </div>
+        <table class="data">
+          <thead><tr><th></th><th class="own">You</th><th class="globe">Globe</th><th class="flat">Flat</th></tr></thead>
+          <tbody>
+            <tr><td>Hidden</td><td>${saw}</td><td>${s.globe.standardM > 0 ? fmtH(s.globe.standardM) : 'none'}</td><td>none</td></tr>
+            <tr><td>Off by</td><td class="dim"></td>
+              <td class="${words.globeFits ? 'good' : ''}">${fmtH(s.globe.missM)}</td>
+              <td class="${s.flat.fits ? 'good' : 'bad'}">${fmtH(s.flat.missM)}</td></tr>
+          </tbody>
+        </table>
+        <p class="hint">The globe column is for standard air.</p>
+        <p class="verdict"><b class="g">Globe.</b> ${words.globe}</p>
+        <p class="verdict"><b class="f">Flat.</b> ${words.flat}</p>
+        ${canSet ? '<button data-act="air">Set the air the globe needs for this</button>' : ''}
+      </div>`;
+    })
+    .join('');
+  if (html === obsHtml) return;
+  obsHtml = html;
+  $('ob-list').innerHTML = html;
+}
+
+function bindObservationForm() {
+  $('ob-kind').addEventListener('change', requestUpdate);
+  const filled = (id) => $(id).value.trim() !== '';
+  $('ob-add').addEventListener('click', () => {
+    const kind = $('ob-kind').value;
+    let hiddenM = kind === 'all' ? 0 : state.targetM;
+    if (kind === 'hidden' || kind === 'visible') {
+      const amount = Number($('ob-amount').value) * (imperial() ? FT : 1);
+      if (!filled('ob-amount') || !Number.isFinite(amount) || amount <= 0 || amount > state.targetM * 1.001) {
+        return toast(`Enter an amount between 0 and ${fmtH(state.targetM)}`);
+      }
+      hiddenM = kind === 'hidden' ? amount : state.targetM - amount;
+    }
+    if (observations.length >= MAX_OBSERVATIONS) return toast(`Up to ${MAX_OBSERVATIONS} observations can be kept`);
+    const o = cleanObservation({
+      eyeM: state.eyeM,
+      distanceKm: state.targetKm,
+      targetM: state.targetM,
+      hiddenM,
+      airC: $('ob-air').value,
+      waterC: $('ob-water').value,
+      label: $('ob-label').value,
+    });
+    if (!o) return toast('That observation could not be read');
+    const before = observations.length;
+    observations = mergeObservations(observations, [o]);
+    if (observations.length === before) return toast('That observation is already in the list');
+    saveObservations();
+    state.sailing = false;
+    for (const id of ['ob-amount', 'ob-air', 'ob-water', 'ob-label']) $(id).value = '';
+    toast('Observation added');
+    return requestUpdate();
+  });
+
+  $('ob-list').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-act]');
+    const o = observations[Number(btn?.closest('.own-card')?.dataset.i)];
+    if (!o) return;
+    if (btn.dataset.act === 'remove') {
+      observations = observations.filter((x) => x !== o);
+      saveObservations();
+      toast('Observation removed');
+    } else {
+      // Both other buttons put the observation's sizes into the drawings.
+      Object.assign(state, { eyeM: o.eyeM, targetKm: o.distanceKm, targetM: o.targetM, sailing: false });
+      if (btn.dataset.act === 'air') state.k = clamp(scoreObservation(o).k, 0, 1);
+    }
+    requestUpdate();
+  });
 }
 
 // ---------- demonstrations ----------
@@ -700,6 +904,7 @@ function update() {
     const hz = computeHorizon();
     for (const v of hzViews) v.update(hz);
     renderHorizon(hz);
+    renderObservations();
     renderDemo(hz);
     syncInputs();
     clearTimeout(hashTimer);
@@ -1351,12 +1556,13 @@ function bindControls() {
     });
   }
   bindHorizonControls();
+  bindObservationForm();
   bindMeasurementForm();
   $('btn-share').addEventListener('click', async () => {
     writeHash();
     try {
       await navigator.clipboard.writeText(location.href);
-      toast(measurements.length ? 'Link copied, including your measurements' : 'Link copied');
+      toast(measurements.length || observations.length ? 'Link copied, including what you entered' : 'Link copied');
     } catch {
       toast('Copy the address from the address bar');
     }
@@ -1593,6 +1799,7 @@ function writeHash() {
     if (imperial()) p.set('u', 'i');
   }
   if (measurements.length) p.set('m', encodeMeasurements(measurements));
+  if (observations.length) p.set('o', encodeObservations(observations));
   history.replaceState(null, '', `#${p}`);
 }
 
@@ -1630,12 +1837,14 @@ function readHash() {
   if (state.demo && (DEMOS[state.demo].mode ?? 'sky') !== state.mode) state.demo = null;
   // Measurements that came with the link are added to the ones already here.
   measurements = mergeMeasurements(measurements, decodeMeasurements(p.get('m')));
+  observations = mergeObservations(observations, decodeObservations(p.get('o')));
 }
 
 // ---------- start ----------
 
 async function start() {
   measurements = mergeMeasurements(loadStoredMeasurements());
+  observations = mergeObservations(loadStoredObservations());
   readHash();
   bindControls();
   const land = await (await fetch('data/land-110m.json')).json();
@@ -1697,7 +1906,7 @@ async function start() {
   requestAnimationFrame(frame);
 
   // Handy for debugging and for scripted checks.
-  window.app = { state, compute, computeHorizon, requestUpdate, measurements: () => measurements, views: { globeView, flatView, globeSky, flatSky } };
+  window.app = { state, compute, computeHorizon, requestUpdate, measurements: () => measurements, observations: () => observations, views: { globeView, flatView, globeSky, flatSky } };
 }
 
 start().catch((err) => {
