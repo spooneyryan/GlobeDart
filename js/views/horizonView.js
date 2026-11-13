@@ -158,7 +158,7 @@ function drawSide(ctx, w, h, model, s) {
 
   // The target: the part in view, and the part that is hidden.
   const tx = X(s.distanceKm);
-  const hidden = model === 'globe' ? s.hiddenM : 0;
+  const hidden = model === 'globe' ? s.hiddenM : s.flatHiddenM;
   const bar = 9;
   ctx.fillStyle = '#e6edf5';
   ctx.fillRect(tx - bar / 2, Y(base + s.targetM), bar, Y(base + hidden) - Y(base + s.targetM));
@@ -167,18 +167,33 @@ function drawSide(ctx, w, h, model, s) {
     ctx.fillRect(tx - bar / 2, Y(base + hidden), bar, Y(base) - Y(base + hidden));
   }
 
-  // The line of sight.
-  ctx.beginPath();
-  for (let i = 0; i <= 60; i++) {
-    const x = (s.distanceKm * i) / 60;
-    if (i) ctx.lineTo(X(x), Y(ray(x)));
-    else ctx.moveTo(X(x), Y(ray(x)));
+  if (s.traced) {
+    // Rays followed through the layered air. The bright ones reach the target.
+    for (const one of s.traced[model].fan) {
+      ctx.beginPath();
+      one.points.forEach((p, i) => {
+        const y = Y(p.m + ground(p.km));
+        if (i) ctx.lineTo(X(p.km), y);
+        else ctx.moveTo(X(p.km), y);
+      });
+      ctx.strokeStyle = one.onTarget ? 'rgba(242, 246, 250, 0.9)' : 'rgba(147, 164, 184, 0.45)';
+      ctx.lineWidth = one.onTarget ? 1.5 : 1;
+      ctx.stroke();
+    }
+  } else {
+    // The line of sight.
+    ctx.beginPath();
+    for (let i = 0; i <= 60; i++) {
+      const x = (s.distanceKm * i) / 60;
+      if (i) ctx.lineTo(X(x), Y(ray(x)));
+      else ctx.moveTo(X(x), Y(ray(x)));
+    }
+    ctx.strokeStyle = INK.sight;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
-  ctx.strokeStyle = INK.sight;
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash([6, 4]);
-  ctx.stroke();
-  ctx.setLineDash([]);
 
   // The observer.
   ctx.strokeStyle = INK.eye;
@@ -194,7 +209,7 @@ function drawSide(ctx, w, h, model, s) {
   text(ctx, `eye, ${s.fmtH(s.eyeM)}`, X(0) + 8, Math.max(pad.t - 10, Y(s.eyeM) - 12), INK.eye, 'left', 600);
 
   // The horizon, where the line of sight touches the ground.
-  if (model === 'globe' && s.horizonKm < xMax) {
+  if (model === 'globe' && Number.isFinite(s.horizonKm) && s.horizonKm < xMax) {
     const hx = X(s.horizonKm);
     const hy = Y(ground(s.horizonKm));
     ctx.fillStyle = INK.sight;
@@ -228,8 +243,69 @@ function drawSide(ctx, w, h, model, s) {
   return stretch;
 }
 
+// The target drawn plainly, kept so it can be copied into the view a row at a time.
+const sprite = { key: '', canvas: null };
+function targetSprite(shape, size, dpr) {
+  const key = `${shape}|${size.toFixed(2)}|${dpr}`;
+  if (sprite.key !== key) {
+    const wide = Math.ceil(WIDTH[shape] * size) + 4;
+    const tall = Math.ceil(size);
+    const canvas = sprite.canvas ?? document.createElement('canvas');
+    canvas.width = Math.round(wide * dpr);
+    canvas.height = Math.round(tall * dpr);
+    const c = canvas.getContext('2d');
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.clearRect(0, 0, wide, tall);
+    drawTarget(c, shape, wide / 2, tall, size);
+    Object.assign(sprite, { key, canvas, wide, tall });
+  }
+  return sprite;
+}
+
+/**
+ * What the observer sees through layered air. Each row of the picture is one
+ * direction of looking: the ray in that direction was followed to the target,
+ * and the row shows whatever height on the target it arrived at.
+ */
+function drawTracedScope(ctx, w, h, model, s) {
+  const t = s.traced[model];
+  const size = Math.min(h * 0.46, (w * 0.64) / WIDTH[s.shape]);
+  const perRadian = size / t.size; // pixels per radian: the same magnification as the plain view
+  const anchor = Math.round(h * 0.8);
+  const yOf = (angle) => anchor - (angle - (t.bottom + t.size)) * perRadian;
+  const strip = ((t.top - t.bottom) / t.rows.length) * perRadian;
+  const seaTop = '#2f6f9f';
+  const seaLow = '#173f62';
+
+  const sky = ctx.createLinearGradient(0, 0, 0, h);
+  sky.addColorStop(0, '#5f9bd0');
+  sky.addColorStop(1, '#cfe2f1');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, w, h);
+  // Below everything that was traced, it is sea if the lowest ray met the sea.
+  if (t.rows[0].sea) {
+    ctx.fillStyle = seaLow;
+    ctx.fillRect(0, yOf(t.bottom) - 1, w, h);
+  }
+  const dpr = window.devicePixelRatio || 1;
+  const img = targetSprite(s.shape, size, dpr);
+  const left = w / 2 - img.wide / 2;
+  t.rows.forEach((row, i) => {
+    const y = yOf(t.bottom + ((t.top - t.bottom) * (i + 1)) / t.rows.length);
+    if (row.sea) {
+      ctx.fillStyle = i < t.rows.length * 0.12 ? seaLow : seaTop;
+      ctx.fillRect(0, y, w, strip + 0.6);
+    }
+    if (row.m !== null) {
+      const from = Math.min(img.tall - 1, Math.max(0, img.tall * (1 - row.m / s.targetM)));
+      ctx.drawImage(img.canvas, 0, from * dpr, img.wide * dpr, Math.max(1, dpr), left, y, img.wide, strip + 0.6);
+    }
+  });
+}
+
 /** What the observer sees, zoomed in until the target fills the view. */
 function drawScope(ctx, w, h, model, s) {
+  if (s.traced) return drawTracedScope(ctx, w, h, model, s);
   const size = Math.min(h * 0.46, (w * 0.64) / WIDTH[s.shape]);
   const scale = size / s.targetM; // pixels per metre at the target's distance
   const cx = w / 2;
@@ -275,7 +351,7 @@ function drawScope(ctx, w, h, model, s) {
 
   // A height scale beside the target.
   const rx = Math.max(46, cx - (WIDTH[s.shape] * size) / 2 - 22);
-  const hidden = model === 'globe' ? s.hiddenM : 0;
+  const hidden = model === 'globe' ? s.hiddenM : s.flatHiddenM;
   ctx.strokeStyle = 'rgba(8, 13, 20, 0.75)';
   ctx.lineWidth = 1.5;
   ctx.beginPath();
@@ -393,7 +469,7 @@ export class HorizonView {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
     const globe = this.model === 'globe';
-    const hidden = globe ? s.hiddenM : 0;
+    const hidden = globe ? s.hiddenM : s.flatHiddenM;
     const what =
       hidden <= 0
         ? `All ${s.fmtH(s.targetM)} of the ${s.name} is in view`
@@ -407,7 +483,10 @@ export class HorizonView {
     } else {
       drawScope(ctx, w, h, this.model, s);
       this.readout.textContent = what;
-      this.note.textContent = `Zoomed in: from here the ${s.name} looks ${angle(s.looksDeg)} tall`;
+      const t = s.traced?.[this.model];
+      this.note.textContent = t
+        ? `Light followed through layers of air${t.upsideDown ? '. Part of the image is upside down: a mirage' : ''}`
+        : `Zoomed in: from here the ${s.name} looks ${angle(s.looksDeg)} tall`;
     }
   }
 }

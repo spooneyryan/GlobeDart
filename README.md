@@ -2,7 +2,7 @@
 
 A static, no-backend web app that shows the same moment and the same observer under two models,
 a globe and the usual flat-earth map, and scores each against what people actually measure:
-the sun, the stars, how long real flights take, and what disappears over the horizon.
+the sun, the stars, how long real flights take, what disappears over the horizon, and what level flight takes.
 
 ## Run it
 
@@ -39,16 +39,21 @@ The empty `.nojekyll` file tells GitHub Pages to serve the files exactly as they
 | `js/stars.js` | A hand-entered table of 96 bright stars and the lines that join them into familiar figures |
 | `js/distances.js` | Distances under each model, and the non-stop flights used to test them |
 | `js/horizon.js` | What is hidden behind the horizon under each model, and how the air near the ground changes it |
+| `js/raytrace.js` | Light followed step by step through air whose temperature changes with height, over curved or flat ground |
+| `js/flight.js` | Level flight: how fast the nose comes down to follow a globe, and what flying dead straight would do |
+| `js/earth.js` | A link that opens Google Earth at a place, and a KML file of the view |
+| `js/arguments/` | The demonstrations, one file per flat-earth argument, and the list of them |
 | `js/observations.js` | Horizon observations the user enters themselves: what bending each one implies, how each model fares, and the text form used in links |
 | `js/measurements.js` | Measurements the user enters themselves: stick-and-shadow conversion, scoring against both models, and the text form used in links |
 | `js/views/globeView.js`, `flatView.js` | Outside views of each model |
 | `js/views/skyView.js` | First-person sky view, used once per model with a shared look direction |
 | `js/views/horizonView.js` | The horizon drawings: the scene from the side and through a telescope, once per model |
-| `js/main.js` | State, controls, result panels, demonstrations, shareable URL |
+| `js/views/flightView.js` | The level-flight drawings: one lap speeded up, and a stretch to true scale |
+| `js/main.js` | State, controls, result panels, shareable URL, and the helpers handed to each argument |
 | `js/cities.js` | Preset places and the reference observers used for scoring |
 | `data/land-110m.json` | Natural Earth 1:110m land outlines (public domain) |
 | `vendor/` | three.js 0.187 and astronomy-engine 2.1.19, copied in unmodified (both MIT) |
-| `docs/refraction-plan.md` | Plan for modelling refraction properly. Stages 1, 2 and 4 are built |
+| `docs/refraction-plan.md` | Plan for modelling refraction properly. All four stages are built |
 | `docs/future.md` | Ideas for later |
 
 ## Ground rules the code follows
@@ -109,7 +114,7 @@ aircraft would need.
 
 ## Over the horizon
 
-The "Over the horizon" button above the views swaps the sun-and-stars tool for a second one: something of a
+The "The horizon" button above the views swaps the sun-and-stars tool for a second one, "Over the horizon": something of a
 chosen height, a chosen distance away, seen by an eye at a chosen height above the water.
 
 - Top row: the scene from the side, with heights stretched so the curve can be seen. Bottom row: the view
@@ -132,6 +137,50 @@ chosen height, a chosen distance away, seen by an eye at a chosen height above t
   view".
 - Heights and distances can be shown in metres and kilometres or in feet and miles.
 
+### Layers of air
+
+"Follow light through layers of air" replaces the single bending with air described by four things that can be
+measured: the air temperature, the water temperature, how deep the layer of air the water affects is, and how the
+temperature changes above that. Each ray is then followed step by step, over curved ground for the globe and over
+flat ground for the flat model.
+
+- With water and air the same, it gives the same answers as the single bending, to within a tenth of a metre.
+- Water colder than the air bends light down along the sea, and brings into view what is usually hidden.
+- Water warmer than the air bends light upward near the surface. That hides the foot of distant things on
+  **both** models, and shows as a mirage. The results say how to tell it from the globe's hiding: it grows in
+  step with distance, it comes with an upside-down image, and it goes when the water is cooler than the air.
+- The telescope view is built a row at a time from the traced rays, so it shows the squashing, stretching and
+  upside-down images that real air produces. The exponential shape of the layer is a simplification: real air
+  over water changes fastest in the first few centimetres.
+
+## Level flight
+
+The "Level flight" button opens a third tool, for the claim that pilots would have to keep pushing the nose down.
+The top row is one whole lap speeded up; the bottom row is a stretch of flight drawn to true scale.
+
+- On the globe the nose comes down as fast as the aircraft goes round: about 0.13° a minute for an airliner. On
+  the flat model it never moves.
+- Both models say the pilot feels nothing and pushes nothing, so the tool says plainly that this argument cannot
+  tell them apart from the cockpit. It then names the instruments that do sense the turning.
+
+## Google Earth
+
+In the sun-and-stars tool, "Open this place in Google Earth" opens Google Earth looking down at the observer, or
+at the route if one is on show. "Save this view as a KML file" writes a file with the observer, the place the sun
+is overhead, the followed star and the route.
+
+- Google publishes no specification for links into Google Earth. The link uses the form Google Earth shows in its
+  own address bar, which could change. The KML file is a published standard.
+- Google Earth is drawn as a globe, so it is somewhere to look at the real ground, not evidence for either model.
+- Nothing is sent anywhere until the link is clicked. The app still loads nothing from the internet.
+
+## Writing an argument
+
+Each demonstration is one file in `js/arguments/`, listed in `js/arguments/index.js`. A file exports the claim in
+the flat-earth side's own words, the tool it uses, a function that sets the scene, and a function that writes
+the explanation from the live numbers. It can also export `checks`, which `tools/check-maths.mjs` runs, so an
+argument's numbers are tested along with everything else. The top of `index.js` lists the fields.
+
 ## Phones and tablets
 
 Below about 1180 px wide the page scrolls and the views stay pinned at the top. On a phone only one pair of views
@@ -140,5 +189,5 @@ two-finger pinch to zoom; the outside views use the usual one-finger orbit and t
 
 ## Not built yet
 
-The moon, tracing light through layered air (stage 3 of `docs/refraction-plan.md`), a full star catalogue, entering your own star measurements, and flat-model variants
+The moon, a full star catalogue, entering your own star measurements, and flat-model variants
 beyond the standard map with adjustable heights and light range. More ideas are in `docs/future.md`.

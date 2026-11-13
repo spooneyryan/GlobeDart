@@ -15,6 +15,9 @@ import {
   flatNeeds,
   horizonScene,
 } from '../js/horizon.js';
+import { ARGUMENTS, TOOLS } from '../js/arguments/index.js';
+import { earthUrl, buildKml } from '../js/earth.js';
+import { makeAir, traceRay, traceView, astronomicalBend } from '../js/raytrace.js';
 import {
   impliedCoefficient,
   scoreObservation,
@@ -368,6 +371,85 @@ const sightings = [seen(20, { airC: 12, waterC: 4, label: 'ferry' }), seen(0, { 
 check('observations survive a round trip through a link',
   JSON.stringify(decodeObservations(encodeObservations(sightings))) === JSON.stringify(mergeObservations(sightings)));
 check('the same observation is not kept twice', mergeObservations(sightings, sightings).length === 2);
+
+// 14. The arguments, each a file of its own in js/arguments/.
+const incomplete = ARGUMENTS.filter(
+  (a) =>
+    ![a.id, a.label, a.title, a.claim].every((v) => typeof v === 'string' && v.length > 0) ||
+    !TOOLS.includes(a.tool) ||
+    !['outside', 'sky'].includes(a.pair) ||
+    typeof a.apply !== 'function' ||
+    typeof a.body !== 'function',
+);
+check(`all ${ARGUMENTS.length} arguments have a name, a claim, a tool and both functions`, incomplete.length === 0, incomplete.map((a) => a.id).join(', '));
+check('no two arguments share a name', new Set(ARGUMENTS.map((a) => a.id)).size === ARGUMENTS.length);
+for (const a of ARGUMENTS) a.checks?.({ check, near, f });
+
+// 15. Google Earth.
+check('the Google Earth link carries the place and the viewing distance',
+  earthUrl(-33.87, 151.21, 1500) === 'https://earth.google.com/web/@-33.87,151.21,0a,1500000d,35y,0h,0t,0r', earthUrl(-33.87, 151.21, 1500));
+const kmlRoute = greatCirclePath(place('Sydney'), place('Santiago'), 24);
+const kml = buildKml({
+  title: 'Test & <check>',
+  observer: place('London'),
+  overhead: [{ name: 'Sun overhead', description: 'here', lat: sub.lat, lon: sub.lon }],
+  route: { name: 'Sydney to Santiago', description: 'x', from: place('Sydney'), to: place('Santiago'), path: kmlRoute, lengthKm: 11346 },
+});
+check('the KML file escapes its text', kml.includes('<name>Test &amp; &lt;check&gt;</name>') && !kml.includes('<check>'));
+check('the KML file has a point for the observer, the sun and both ends of the route', (kml.match(/<Point>/g) ?? []).length === 4);
+const kmlLine = kml.match(/<LineString>[\s\S]*?<coordinates>([^<]*)<\/coordinates>/)?.[1].split(' ') ?? [];
+check('the route in the KML file runs from Sydney to Santiago, longitude first',
+  kmlLine.length === 25 && kmlLine[0] === '151.21,-33.87,0' && kmlLine[24].startsWith('-70.6'), `${kmlLine.length} points, ${kmlLine[0]} to ${kmlLine[24]}`);
+check('every opening tag in the KML file is closed',
+  ['kml', 'Document', 'Placemark', 'Point', 'LineString', 'LookAt', 'coordinates', 'name'].every(
+    (tag) => (kml.match(new RegExp(`<${tag}[ >]`, 'g')) ?? []).length === (kml.match(new RegExp(`</${tag}>`, 'g')) ?? []).length));
+
+// 16. Light followed through layers of air.
+const RAD = Math.PI / 180;
+// The whole atmosphere, in the conditions the lift formula assumes, must reproduce that formula.
+const formulaAir = makeAir({ tempC: 10, pressureHpa: 1010 });
+let worstHigh = 0;
+for (const el of [2, 3, 5, 10, 20, 45]) {
+  const traced = (astronomicalBend(formulaAir, el * RAD) / RAD) * 60;
+  worstHigh = Math.max(worstHigh, Math.abs(traced - (el - trueElevation(el)) * 60));
+}
+check('traced through the whole atmosphere, the lift matches the formula within a quarter of an arcminute from 2 degrees up',
+  worstHigh < 0.25, `worst ${f(worstHigh, 2)} arcminutes`);
+const tracedHorizon = (astronomicalBend(formulaAir, 0) / RAD) * 60;
+check('and within an arcminute on the horizon itself', Math.abs(tracedHorizon - 34.4) < 1, `${f(tracedHorizon, 2)} against 34.4`);
+// Even air must give the same answers as the single bending coefficient.
+const evenAir = makeAir({});
+let worstHidden = 0;
+let worstFlat = 0;
+for (const [eyeM, distanceKm, targetM] of [[1.7, 30, 50], [1.7, 20, 50], [2, 60, 300], [10, 40, 100], [100, 80, 300]]) {
+  const globe = traceView(evenAir, { eyeM, distanceKm, targetM, curved: true });
+  worstHidden = Math.max(worstHidden, Math.abs(globe.hiddenM - Math.min(targetM, hiddenHeightM(eyeM, distanceKm, K_STANDARD))) / targetM);
+  worstFlat = Math.max(worstFlat, traceView(evenAir, { eyeM, distanceKm, targetM, curved: false }).hiddenM);
+}
+check('in even air the traced hidden height matches the single-coefficient one within half a percent of the height',
+  worstHidden < 0.005, `worst ${f(worstHidden * 100, 2)}%`);
+check('and on flat ground even air hides nothing', worstFlat === 0);
+const tracedShip = traceView(evenAir, { eyeM: 1.7, distanceKm: 20, targetM: 50, curved: true });
+check('the traced horizon is where the formula puts it, within 2%', near(tracedShip.horizonKm, horizonDistanceKm(1.7, K_STANDARD), 0.1), f(tracedShip.horizonKm));
+check('air of one temperature all the way up matches k = 0.21',
+  near(traceView(makeAir({ lapse: 0 }), { eyeM: 1.7, distanceKm: 30, targetM: 50, curved: true }).hiddenM,
+    hiddenHeightM(1.7, 30, coefficientFromWeather({ ...STANDARD_GROUND_AIR, lapse: 0 })), 0.3));
+check('a ray aimed at the ground reaches it, and one aimed at the sky leaves',
+  traceRay(evenAir, { eyeM: 2, angle: -0.01, maxKm: 50 }).end === 'ground' && traceRay(evenAir, { eyeM: 2, angle: 0.05, maxKm: 500 }).end === 'high');
+// Water colder or warmer than the air.
+const sizes = { eyeM: 1.7, distanceKm: 20, targetM: 50 };
+const coldAir = makeAir({ tempC: 15, surfaceC: 9, layerM: 15 });
+const warmAir = makeAir({ tempC: 12, surfaceC: 15, layerM: 2 });
+const coldGlobe = traceView(coldAir, { ...sizes, curved: true });
+const warmGlobe = traceView(warmAir, { ...sizes, curved: true });
+const warmFlat = traceView(warmAir, { ...sizes, curved: false });
+check('over cold water less is hidden on the globe than in even air', coldGlobe.hiddenM < tracedShip.hiddenM - 5, `${f(coldGlobe.hiddenM, 1)} m against ${f(tracedShip.hiddenM, 1)} m`);
+check('over warm water more is hidden on the globe', warmGlobe.hiddenM > tracedShip.hiddenM + 5, `${f(warmGlobe.hiddenM, 1)} m`);
+check('over warm water the flat model hides the foot too, but less than the globe',
+  warmFlat.hiddenM > 2 && warmFlat.hiddenM < warmGlobe.hiddenM, `flat ${f(warmFlat.hiddenM, 1)} m, globe ${f(warmGlobe.hiddenM, 1)} m`);
+check('and the flat model hides nothing over cold water', traceView(coldAir, { ...sizes, curved: false }).hiddenM === 0);
+const nearer = traceView(warmAir, { ...sizes, distanceKm: 10, curved: false }).hiddenM;
+check('on flat ground the warm-water hiding grows in step with distance', near(warmFlat.hiddenM / nearer, 2, 0.35), `${f(nearer, 1)} m at 10 km, ${f(warmFlat.hiddenM, 1)} m at 20 km`);
 
 console.log(failures ? `\n${failures} check(s) failed` : '\nAll checks passed');
 process.exit(failures ? 1 : 0);

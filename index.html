@@ -36,19 +36,38 @@
       </div>
       <nav id="demos" aria-label="Demonstrations">
         <span class="nav-label">Demonstrations</span>
-        <button data-demo="sunset">Sunset</button>
-        <button data-demo="angles">Sun angles from many cities</button>
-        <button data-demo="sunrise">Sunrise direction</button>
-        <button data-demo="december">December daylight</button>
-        <button data-demo="polaris">Pole star</button>
-        <button data-demo="southern">Southern stars</button>
-        <button data-demo="flights">Southern flights</button>
-        <button data-demo="ship">Ship over the horizon</button>
       </nav>
     </header>
 
     <main>
       <aside id="controls">
+        <section class="fl-only">
+          <h2>Level flight</h2>
+          <label class="stack">
+            <span class="row"><span>Speed over the ground</span><output id="fl-speed-label"></output></span>
+            <input type="range" id="fl-speed" min="100" max="3000" step="10" />
+          </label>
+          <label class="stack">
+            <span class="row"><span>Height</span><output id="fl-alt-label"></output></span>
+            <input type="range" id="fl-alt" min="0" max="20000" step="100" />
+          </label>
+          <label class="stack">
+            <span class="row"><span>Stretch of flight to draw</span><output id="fl-minutes-label"></output></span>
+            <input type="range" id="fl-minutes" min="1" max="120" step="1" />
+          </label>
+          <div class="buttons two">
+            <button id="fl-fly" class="primary">Fly the lap</button>
+            <button id="fl-airliner">An airliner</button>
+          </div>
+          <label class="row">
+            <span>Units</span>
+            <select id="fl-units">
+              <option value="metric">Metres, kilometres</option>
+              <option value="imperial">Feet, miles</option>
+            </select>
+          </label>
+        </section>
+
         <section class="hz-only">
           <h2>Over the horizon</h2>
           <label class="row">
@@ -100,6 +119,32 @@
             Air bends light toward the ground a little, so you see slightly further round a curve. The same air is
             applied to both models.
           </p>
+          <label class="check"><input type="checkbox" id="hz-layers" /> Follow light through layers of air</label>
+          <div class="group" id="hz-layer-air" hidden>
+            <label class="stack">
+              <span class="row"><span>Air temperature</span><output id="hz-airc-label"></output></span>
+              <input type="range" id="hz-airc" min="-20" max="40" step="0.5" />
+            </label>
+            <label class="stack">
+              <span class="row"><span>Water temperature</span><output id="hz-waterc-label"></output></span>
+              <input type="range" id="hz-waterc" min="-2" max="35" step="0.5" />
+            </label>
+            <label class="stack">
+              <span class="row"><span>Depth of air the water affects</span><output id="hz-layer-label"></output></span>
+              <input type="range" id="hz-layer" min="1" max="50" step="1" />
+            </label>
+            <label class="stack">
+              <span class="row"><span>Above that, each 100 m up is</span><output id="hz-lapse-label"></output></span>
+              <input type="range" id="hz-lapse" min="-1" max="2" step="0.05" />
+            </label>
+            <div class="buttons three">
+              <button id="hz-air-cold">Cold water</button>
+              <button id="hz-air-even">Even</button>
+              <button id="hz-air-warm">Warm water</button>
+            </div>
+            <p class="hint" id="hz-layer-note"></p>
+          </div>
+          <div class="group" id="hz-simple-air">
           <label class="stack">
             <span class="row"><span>Bending</span><output id="hz-k-label"></output></span>
             <input type="range" id="hz-k" min="0" max="100" step="1" />
@@ -128,6 +173,7 @@
               <button id="hz-w-use">Use this air</button>
             </div>
           </details>
+          </div>
         </section>
 
         <section class="sky-only">
@@ -229,6 +275,17 @@
           <p class="hint" id="air-note"></p>
         </section>
 
+        <section class="sky-only">
+          <h2>Google Earth</h2>
+          <a id="earth-link" class="button" target="_blank" rel="noopener noreferrer">Open this place in Google Earth</a>
+          <button id="earth-kml">Save this view as a KML file</button>
+          <p class="hint">
+            The file holds the observer, the place the sun is overhead, the star being followed and the route, if
+            there is one. Open it in Google Earth to see the real ground under them. Google Earth is drawn as a
+            globe, so it is somewhere to look, not a proof.
+          </p>
+        </section>
+
         <section>
           <button id="btn-share">Copy link to this view</button>
         </section>
@@ -237,8 +294,9 @@
       <section id="views" data-pair="outside" data-mode="sky">
         <div id="view-bar">
           <div id="mode-tabs" role="group" aria-label="What to look at">
-            <button data-mode="sky" class="active" aria-pressed="true">Sun, stars and maps</button>
-            <button data-mode="horizon" aria-pressed="false">Over the horizon</button>
+            <button data-mode="sky" class="active" aria-pressed="true">Sun, stars, maps</button>
+            <button data-mode="horizon" aria-pressed="false">The horizon</button>
+            <button data-mode="flight" aria-pressed="false">Level flight</button>
           </div>
           <div id="view-tabs" role="group" aria-label="Which views to show">
             <button data-pair="outside" class="active" aria-pressed="true">From outside</button>
@@ -282,12 +340,59 @@
         <div class="view hz sky" id="hz-flat-scope">
           <div class="view-title flat">Through a telescope, flat model</div>
         </div>
+        <div class="view fl" id="fl-globe-lap">
+          <div class="view-title globe">Globe model <small>one lap, speeded up</small></div>
+          <div class="legend">
+            <span><i class="sw nose"></i>where the nose points</span>
+            <span><i class="sw own"></i>where it pointed at the start</span>
+            <span><i class="sw terminator"></i>down</span>
+          </div>
+        </div>
+        <div class="view fl" id="fl-flat-lap">
+          <div class="view-title flat">Flat model <small>the same flight</small></div>
+          <div class="legend">
+            <span><i class="sw nose"></i>where the nose points</span>
+            <span><i class="sw own"></i>where it pointed at the start</span>
+            <span><i class="sw terminator"></i>down</span>
+          </div>
+        </div>
+        <div class="view fl sky" id="fl-globe-stretch">
+          <div class="view-title globe">To scale, globe model</div>
+          <div class="legend">
+            <span><i class="sw measured"></i>level flight</span>
+            <span><i class="sw own"></i>dead straight, nose fixed against the stars</span>
+          </div>
+        </div>
+        <div class="view fl sky" id="fl-flat-stretch">
+          <div class="view-title flat">To scale, flat model</div>
+          <div class="legend">
+            <span><i class="sw measured"></i>level flight</span>
+            <span><i class="sw own"></i>dead straight, nose fixed against the stars</span>
+          </div>
+        </div>
       </section>
 
       <aside id="results">
         <section id="demo-card">
           <h2 id="demo-title"></h2>
+          <p id="demo-claim" hidden><span>The claim</span> <q id="demo-claim-text"></q></p>
           <div id="demo-body"></div>
+        </section>
+
+        <section class="fl-only">
+          <h2>What level flight takes</h2>
+          <table id="fl-table" class="data">
+            <thead>
+              <tr><th></th><th class="globe">Globe</th><th class="flat">Flat</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <p class="hint" id="fl-verdict"></p>
+        </section>
+
+        <section class="fl-only">
+          <h2>Who does notice</h2>
+          <div id="fl-notice"></div>
         </section>
 
         <section class="hz-only">
@@ -569,6 +674,19 @@
               light's curve. From the weather, <code>k = 503 × (P / T²) × (0.0343 + dT/dh)</code>, with pressure in
               hPa, temperature in kelvin and its change with height in kelvin per metre. On a flat surface nothing
               is hidden unless light curves upward, which needs <code>k</code> near −1.
+            </p>
+            <p>
+              <b>Layers of air.</b> With "Follow light through layers of air" ticked, the air's temperature at
+              height <code>h</code> is <code>T + g·h + (T<sub>water</sub> − T)·e<sup>−h/L</sup></code>, its refractive
+              index is <code>1 + 7.9×10⁻⁵ × P / T</code>, and each ray is stepped along with its direction changing
+              at <code>1/(R + h) + dn/dh</code> per metre. On flat ground the <code>1/(R + h)</code> is left out and
+              nothing else changes. With even air this gives the same answers as the single <code>k</code>.
+            </p>
+            <p>
+              <b>Level flight.</b> An aircraft that holds its height above a globe of radius <code>R</code> at speed
+              <code>v</code> goes round it at <code>v / (R + h)</code> radians per unit of time, and its nose comes
+              down at the same rate. Flying dead straight for a distance <code>s</code> instead would raise it by
+              <code>√((R + h)² + s²) − (R + h)</code>, about <code>s² / 2R</code>.
             </p>
             <p>
               <b>Distances.</b> On the globe the shortest path is a great circle. On the flat map it is a straight

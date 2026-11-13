@@ -44,7 +44,12 @@ import { makeLandCanvas } from './scene-utils.js';
 import { GlobeView } from './views/globeView.js';
 import { FlatView } from './views/flatView.js';
 import { SkyView } from './views/skyView.js';
+import { ARGUMENTS, ARGUMENT_BY_ID, TOOLS } from './arguments/index.js';
 import { HorizonView } from './views/horizonView.js';
+import { FlightView } from './views/flightView.js';
+import { FLIGHT_LIMITS, flightScene, schulerMinutes } from './flight.js';
+import { earthUrl, buildKml } from './earth.js';
+import { makeAir, traceView } from './raytrace.js';
 
 const $ = (id) => document.getElementById(id);
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
@@ -73,7 +78,7 @@ const state = {
   trails: false,
   route: null, // { from, to } as place names, or null
   // Over the horizon
-  mode: 'sky', // 'sky' (sun, stars and maps) or 'horizon'
+  mode: 'sky', // which tool is showing: 'sky' (sun, stars and maps), 'horizon' or 'flight'
   shape: 'ship',
   targetM: 50, // height of the thing being looked at
   targetKm: 20, // how far away it is
@@ -81,6 +86,17 @@ const state = {
   k: K_STANDARD, // how strongly the air bends light near the ground
   units: 'metric', // or 'imperial'; used by the horizon tool only
   sailing: false,
+  // Layers of air: instead of one bending for the whole path, follow light through air described by its temperatures.
+  layers: false,
+  airC: 15,
+  waterC: 15, // the surface under the light
+  layerM: 10, // how deep the air warmed or chilled by the surface is
+  lapse100: -0.65, // change of temperature for each 100 m of height above that
+  // Level flight
+  speedKmh: 900,
+  altitudeM: 11000,
+  flightMinutes: 10, // the stretch drawn to scale
+  flying: false, // the speeded-up lap is running
 };
 
 // ---------- formatting ----------
@@ -116,6 +132,9 @@ const distanceNumber = (k) => (imperial() ? k / MI : k);
 const tidy = (v) => Number(v.toFixed(v >= 100 ? 0 : v >= 10 ? 1 : 2));
 const fmtH = (m) => `${tidy(heightNumber(m)).toLocaleString('en-US')} ${imperial() ? 'ft' : 'm'}`;
 const fmtD = (k) => `${tidy(distanceNumber(k)).toLocaleString('en-US')} ${imperial() ? 'mi' : 'km'}`;
+const fmtSpeed = (v) => (imperial() ? `${Math.round(v / MI).toLocaleString('en-US')} mph` : kmh(v));
+const fmtAngle = (a) => `${a.toFixed(a >= 10 ? 1 : a >= 1 ? 2 : 3)}°`;
+const fmtTime = (minutes) => (minutes < 1 ? 'under a minute' : minutes < 90 ? `${Math.round(minutes)} min` : hoursMinutes(minutes / 60));
 // What can be set, in metres and kilometres.
 const HZ_LIMITS = { eyeM: HORIZON_LIMITS.eyeM, targetM: HORIZON_LIMITS.targetM, targetKm: HORIZON_LIMITS.distanceKm };
 
@@ -352,11 +371,37 @@ function getFit() {
 
 // ---------- over the horizon ----------
 
+// Tracing is the slow part, so the last result is kept until something it depends on changes.
+const traceCache = { key: '', value: null };
+function tracedViews() {
+  const { eyeM, targetM, targetKm, airC, waterC, layerM, lapse100 } = state;
+  const key = [eyeM, targetM, targetKm, airC, waterC, layerM, lapse100].join('|');
+  if (traceCache.key !== key) {
+    const air = makeAir({
+      tempC: airC,
+      pressureHpa: STANDARD_GROUND_AIR.pressureHpa,
+      lapse: lapse100 / 100,
+      surfaceC: waterC,
+      layerM,
+    });
+    const sizes = { eyeM, targetM, distanceKm: targetKm };
+    traceCache.key = key;
+    traceCache.value = {
+      globe: traceView(air, { ...sizes, curved: true }),
+      flat: traceView(air, { ...sizes, curved: false }),
+    };
+  }
+  return traceCache.value;
+}
+
 function computeHorizon() {
   const { eyeM, targetM, targetKm, k } = state;
-  return {
+  const scene = {
     ...horizonScene({ eyeM, targetM, distanceKm: targetKm, k }),
     horizonLineM: horizonLineM(eyeM, targetKm, k),
+    // With one bending for the whole path, a flat surface hides nothing.
+    flatHiddenM: 0,
+    traced: null,
     // The user's own observations of this same arrangement, if there are any.
     owns: observations.filter(obShown),
     shape: state.shape,
@@ -365,6 +410,20 @@ function computeHorizon() {
     fmtD,
     fmtScale: heightNumber,
   };
+  if (state.layers) {
+    // Light followed ray by ray through layered air replaces the single-bending figures.
+    const traced = tracedViews();
+    Object.assign(scene, {
+      traced,
+      hiddenM: traced.globe.hiddenM,
+      visibleM: targetM - traced.globe.hiddenM,
+      flatHiddenM: traced.flat.hiddenM,
+      horizonKm: traced.globe.horizonKm ?? Infinity,
+      dipDeg: ((traced.globe.dipRad ?? 0) * 180) / Math.PI,
+      goneKm: null,
+    });
+  }
+  return scene;
 }
 
 /** How far the target is sent before it stops: a little past the point where the globe hides all of it. */
@@ -392,41 +451,114 @@ function airInWords(k) {
 }
 
 function renderHorizon(hz) {
+  const layered = !!hz.traced;
   const some = hz.hiddenM > 0;
   const all = hz.hiddenM >= hz.targetM;
   const far = Number.isFinite(hz.horizonKm);
+  const flatSome = hz.flatHiddenM > 0;
+  const amount = (m) => (m > 0 ? fmtH(m) : 'none');
+  const flatHorizon = layered && hz.traced.flat.horizonKm !== null ? fmtD(hz.traced.flat.horizonKm) : 'no limit';
+  const flatDip = layered ? ((hz.traced.flat.dipRad ?? 0) * 180) / Math.PI : 0;
   $('hz-table').tBodies[0].innerHTML = `
-    <tr><td>Hidden from the bottom up</td><td class="${some ? 'bad' : ''}">${some ? fmtH(hz.hiddenM) : 'none'}</td><td>none</td></tr>
-    <tr><td>In view</td><td>${all ? 'none' : fmtH(hz.visibleM)}</td><td>${fmtH(hz.targetM)}</td></tr>
-    <tr><td>Distance to the horizon</td><td>${far ? fmtD(hz.horizonKm) : 'no limit'}</td><td>no limit</td></tr>
-    <tr><td>Horizon below eye level</td><td>${deg(hz.dipDeg, 2)}</td><td>${deg(0, 2)}</td></tr>
-    <tr><td>All of it is hidden beyond</td><td>${Number.isFinite(hz.goneKm) ? fmtD(hz.goneKm) : 'never'}</td><td>never</td></tr>`;
-  $('hz-verdict').textContent = some
-    ? `The two models disagree by ${fmtH(hz.hiddenM)} here. Binoculars and a clear day are enough to tell which is right.`
-    : far
-      ? `This close, the two models agree: all of it is in view. They part company beyond ${fmtD(hz.horizonKm)}.`
-      : 'In air that bends light this strongly, the two models agree at every distance: nothing is hidden.';
+    <tr><td>Hidden from the bottom up</td><td class="${some ? 'bad' : ''}">${amount(hz.hiddenM)}</td>
+      <td class="${flatSome ? 'bad' : ''}">${amount(hz.flatHiddenM)}</td></tr>
+    <tr><td>In view</td><td>${all ? 'none' : fmtH(hz.visibleM)}</td><td>${amount(hz.targetM - hz.flatHiddenM)}</td></tr>
+    <tr><td>Distance to the horizon</td><td>${far ? fmtD(hz.horizonKm) : layered ? 'beyond it' : 'no limit'}</td><td>${flatHorizon}</td></tr>
+    <tr><td>Horizon below eye level</td><td>${layered && !far ? '<span class="dim">n/a</span>' : deg(hz.dipDeg, 2)}</td>
+      <td>${deg(flatDip, 2)}</td></tr>
+    ${
+      layered
+        ? ''
+        : `<tr><td>All of it is hidden beyond</td><td>${Number.isFinite(hz.goneKm) ? fmtD(hz.goneKm) : 'never'}</td><td>never</td></tr>`
+    }`;
+  $('hz-verdict').textContent = flatSome
+    ? `In this air the flat model hides ${fmtH(hz.flatHiddenM)} too, and the globe ${amount(hz.hiddenM)}. See below for how to tell the two apart.`
+    : some
+      ? `The two models disagree by ${fmtH(hz.hiddenM)} here. Binoculars and a clear day are enough to tell which is right.`
+      : layered
+        ? 'In this air, at this distance, the two models agree: all of it is in view.'
+        : far
+          ? `This close, the two models agree: all of it is in view. They part company beyond ${fmtD(hz.horizonKm)}.`
+          : 'In air that bends light this strongly, the two models agree at every distance: nothing is hidden.';
 
-  const row = (label, hidden, cls = '') =>
-    `<tr class="${cls}"><td>${label}</td><td>${hidden > 0 ? fmtH(hidden) : 'none'}</td><td>none</td></tr>`;
+  const row = (label, hidden, flatHidden = 0) =>
+    `<tr><td>${label}</td><td>${amount(hidden)}</td><td>${amount(flatHidden)}</td></tr>`;
   $('hz-air').tBodies[0].innerHTML =
     row('No bending', hz.hiddenNoneM) +
     row('Standard air', hz.hiddenStandardM) +
-    row(`As set (k = ${hz.k.toFixed(2)})`, hz.hiddenM);
+    row(layered ? 'As set (layers of air)' : `As set (k = ${hz.k.toFixed(2)})`, hz.hiddenM, hz.flatHiddenM);
 
   const need = hz.flat;
-  $('hz-flat-needs').innerHTML = some
-    ? `<p>For the flat model to hide the bottom <b class="f">${fmtH(hz.hiddenM)}</b>, light would have to curve
+  let needs;
+  if (layered && flatSome) {
+    needs = `<p>With the surface warmer than the air, light close to it curves upward, and the flat model does hide
+        the bottom <b class="f">${fmtH(hz.flatHiddenM)}</b>. Three things give that kind of hiding away.</p>
+      <p>It grows in step with distance, where the globe's grows faster and faster. It comes with a mirage: an
+        upside-down copy, or a shimmering strip, under what is left of the image. And it goes when the water is
+        cooler than the air, which is exactly when the globe's hiding is plainest.</p>
+      <p class="hint">Cool the water, or raise your eye, and compare the two columns again.</p>`;
+  } else if (layered) {
+    needs = some
+      ? `<p>In this air the flat model hides nothing and the globe hides the bottom <b class="g">${fmtH(hz.hiddenM)}</b>.
+          The only air that hides anything on a flat surface is air heated from below. Make the water warmer than
+          the air to see how much it can do, and what it looks like.</p>`
+      : `<p>Nothing, in this air and at this distance: neither model hides any of it.</p>`;
+  } else if (some) {
+    needs = `<p>For the flat model to hide the bottom <b class="f">${fmtH(hz.hiddenM)}</b>, light would have to curve
         <em>upward</em>, away from the water, along the whole ${fmtD(hz.distanceKm)}. Ordinary air bends it the other
         way.</p>
       <p>That takes air that gets <b class="f">${perHundred(need.lapse)} colder for every 100 m</b> of height. The
         standard atmosphere cools by ${perHundred(STANDARD_GROUND_AIR.lapse)} per 100 m. Air that cools faster than
         ${perHundred(OVERTURNING_LAPSE)} per 100 m is heavier above than below, and turns over.</p>
-      <p class="hint">Gradients that steep exist only in the first metre or so above a hot surface, which is what
-        makes a road shimmer. They hide a thin strip, not ${fmtH(hz.hiddenM)}.</p>`
-    : far
+      <p class="hint">Gradients that steep exist only in a thin layer just above a surface warmer than the air, never
+        through the whole depth the light crosses. Such a layer can hide the foot of distant things on either
+        model, and gives itself away with a mirage. Tick "Follow light through layers of air" and warm the water
+        to see it.</p>`;
+  } else {
+    needs = far
       ? `<p>Nothing, at this distance: neither model hides any of it. Send it further away.</p>`
       : `<p>Nothing: in this air neither model hides anything.</p>`;
+  }
+  $('hz-flat-needs').innerHTML = needs;
+}
+
+// ---------- level flight ----------
+
+// How far round its speeded-up lap the aircraft is, 0 to 1.
+let flightPhase = 0;
+const LAP_SECONDS = 24;
+
+function computeFlight() {
+  return {
+    ...flightScene({ speedKmh: state.speedKmh, altitudeM: state.altitudeM, minutes: state.flightMinutes }),
+    phase: flightPhase,
+    fmtH,
+    fmtD,
+    fmtTime,
+    fmtAngle,
+    fmtSpeed,
+  };
+}
+
+function renderFlight(fl) {
+  $('fl-table').tBodies[0].innerHTML = `
+    <tr><td>Nose comes down each minute</td><td>${fmtAngle(fl.rateDegPerMin)}</td><td>0°</td></tr>
+    <tr><td>Each hour</td><td>${fmtAngle(fl.rateDegPerMin * 60)}</td><td>0°</td></tr>
+    <tr><td>Over ${fmtTime(fl.minutes)}</td><td>${fmtAngle(fl.turnDeg)}</td><td>0°</td></tr>
+    <tr><td>Once right round takes</td><td>${fmtTime(fl.hoursRound * 60)}</td><td class="dim">no way round</td></tr>
+    <tr><td>Flying dead straight for ${fmtTime(fl.minutes)} gains</td><td>${fmtH(fl.climbM)}</td><td>nothing</td></tr>`;
+  $('fl-verdict').textContent =
+    'Either way the pilot pushes nothing and feels nothing: an aircraft trimmed to hold its height follows the ' +
+    'ground beneath it. So what pilots do, or do not do, with the nose cannot tell the two models apart.';
+  $('fl-notice').innerHTML = `
+    <p>An airliner's inertial navigation unit senses turning against the stars, not against the ground. Carried
+    round a globe at ${fmtSpeed(fl.speedKmh)} it has to allow for <b class="g">${fmtAngle(fl.rateDegPerMin * 60)} an
+    hour</b> of turning, worked out from the Earth's radius. Without that its idea of "down" would drift and its
+    position with it.</p>
+    <p>The same units are tuned to swing with a period of <b class="g">${schulerMinutes().toFixed(1)} minutes</b>,
+    the period of a pendulum as long as the Earth's radius. On a flat earth there is no such length, and no reason
+    for either setting.</p>
+    <p class="hint">Look up "transport rate" and "Schuler tuning" in any text on inertial navigation.</p>`;
 }
 
 // ---------- the user's own horizon observations ----------
@@ -571,6 +703,72 @@ function renderObservations() {
   $('ob-list').innerHTML = html;
 }
 
+/** The view on show, as a file Google Earth can open. */
+function currentKml() {
+  const c = compute();
+  const when = whenUtc(state.date.getTime());
+  const overhead = [
+    { name: 'Sun overhead', description: `The sun was directly overhead here at ${when}.`, lat: c.sub.lat, lon: c.sub.lon },
+  ];
+  if (c.stars) {
+    const p = c.stars.points[c.stars.selected];
+    overhead.push({ name: `${c.stars.name} overhead`, description: `${c.stars.name} was directly overhead here at ${when}.`, lat: p.lat, lon: p.lon });
+  }
+  const r = c.route;
+  return buildKml({
+    title: `GlobeDart: ${when}`,
+    observer: { lat: state.lat, lon: state.lon },
+    overhead,
+    route: r && {
+      name: `${r.a.name} to ${r.b.name}`,
+      description: `The shortest route on a globe, ${km(r.globeKm)}. A straight line on the flat map would be ${km(r.flatKm)}.`,
+      from: r.a,
+      to: r.b,
+      path: r.path,
+      lengthKm: r.globeKm,
+    },
+  });
+}
+
+function bindEarthControls() {
+  $('earth-kml').addEventListener('click', () => {
+    const url = URL.createObjectURL(new Blob([currentKml()], { type: 'application/vnd.google-earth.kml+xml' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'globedart.kml';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast('Saved globedart.kml');
+  });
+}
+
+function bindFlightControls() {
+  for (const [id, key, limits] of [
+    ['fl-speed', 'speedKmh', FLIGHT_LIMITS.speedKmh],
+    ['fl-alt', 'altitudeM', FLIGHT_LIMITS.altitudeM],
+    ['fl-minutes', 'flightMinutes', FLIGHT_LIMITS.minutes],
+  ]) {
+    $(id).addEventListener('input', (e) => {
+      state[key] = clamp(Number(e.target.value), ...limits);
+      requestUpdate();
+    });
+  }
+  $('fl-units').addEventListener('change', (e) => {
+    state.units = e.target.value === 'imperial' ? 'imperial' : 'metric';
+    requestUpdate();
+  });
+  $('fl-fly').addEventListener('click', () => {
+    state.flying = !state.flying;
+    requestUpdate();
+  });
+  $('fl-airliner').addEventListener('click', () => {
+    Object.assign(state, { speedKmh: 900, altitudeM: 11000 });
+    requestUpdate();
+  });
+}
+
 function bindObservationForm() {
   $('ob-kind').addEventListener('change', requestUpdate);
   const filled = (id) => $(id).value.trim() !== '';
@@ -636,200 +834,37 @@ function goToMidnight() {
   state.date = new Date(noon.getTime() + 12 * 3600000);
 }
 
-const DEMOS = {
-  sunset: {
-    title: 'Why does the sun set at all?',
-    pair: 'sky',
-    apply() {
-      setObserver(city('London'), true);
-      const ev = sunEvents(state.date, state.lat, state.lon);
-      if (ev.set) state.date = new Date(ev.set.getTime() - 150000);
-      Object.assign(state, SUN_DEMO);
-    },
-    body: (c) => `
-      <p>The sun is sinking into the horizon in London: measured elevation <b class="m">${deg(c.obs.el)}</b>,
-      bottom edge already hidden.</p>
-      <p>A sun ${km(state.sunHeightKm)} above a flat plane is still <b class="f">${deg(c.flat.el)}</b> up at this
-      moment, and has shrunk to <b class="f">${Math.round((c.flat.sizeDeg / c.obs.sizeDeg) * 100)}%</b> of its
-      noon width. It can never reach the horizon, let alone go below it.</p>
-      <p>"Refraction" is the usual reply. ${
-        c.obs.lift > 0
-          ? `The air here lifts the real sun by <b class="m">${deg(c.obs.lift, 2)}</b>`
-          : 'With the air switched on, it lifts the real sun by about 0.6°'
-      }. To hide the flat sun it would have to push it <b class="f">${deg(Math.max(0, c.flat.trueEl - c.obs.el))}</b>
-      the other way.</p>
-      <p class="try">Try: drag the sun-height slider. No height puts the flat sun on the horizon. Press Play and
-      watch the two round insets.</p>`,
-  },
-  angles: {
-    title: 'Where is the sun? Ask many cities at once',
-    pair: 'outside',
-    apply() {
-      setObserver(city('Cairo'), true);
-      state.date = new Date(Date.parse(`${isoDay(state.date)}T11:00:00Z`));
-      Object.assign(state, SUN_DEMO, { sightLines: true });
-    },
-    body: (c) => {
-      const heights = c.cities.map((x) => x.implied).filter((h) => h !== null);
-      const range = heights.length ? `${km(Math.min(...heights))} to ${km(Math.max(...heights))}` : 'nothing consistent';
-      return `
-      <p>Each teal line starts at a city and points to where people there measure the sun <em>right now</em>.</p>
-      <p>On the globe the lines are parallel, exactly as they must be for a source 150 million km away.</p>
-      <p>Draw the same measured angles on the flat map and they cross at heights from <b class="f">${range}</b>.
-      There is no single place the sun could be.</p>
-      <p class="try">Try: orbit the flat map to look along the lines, then compare the last column of the table
-      below.</p>`;
-    },
-  },
-  sunrise: {
-    title: 'Which way is sunrise?',
-    pair: 'sky',
-    apply() {
-      setObserver(city('Quito'), true);
-      const equinox = seasons(state.date.getUTCFullYear()).sepEquinox;
-      const ev = sunEvents(equinox, state.lat, state.lon);
-      state.date = ev.rise ? new Date(ev.rise.getTime() + 150000) : equinox;
-      Object.assign(state, SUN_DEMO);
-    },
-    body: (c) => `
-      <p>It is the September equinox and the sun is coming up in Quito, on the equator. Measured bearing:
-      <b class="m">${bearing(c.obs.az)}</b>. On this date the sun rises due east for everyone on Earth.</p>
-      <p>On the flat map the sun is a quarter-circle away around the equator ring, which puts it at
-      <b class="f">${bearing(c.flat.az)}</b> and <b class="f">${deg(c.flat.el)}</b> up. A compass at dawn is
-      enough to tell the two models apart.</p>
-      <p class="try">Try: pick any other place and press Sunrise. The measured bearing stays near 90°.</p>`,
-  },
-  december: {
-    title: 'December: daylight where the flat sun cannot reach',
-    pair: 'outside',
-    apply() {
-      setObserver(city('McMurdo Station'), true);
-      const solstice = seasons(state.date.getUTCFullYear()).decSolstice;
-      const noon = sunEvents(solstice, state.lat, state.lon).noon ?? solstice;
-      state.date = new Date(noon.getTime() + 12 * 3600000);
-      Object.assign(state, SUN_DEMO, { flatLighting: 'observed' });
-    },
-    body: (c) => `
-      <p>It is midnight at McMurdo Station, Antarctica, on the December solstice, and the sun is
-      <b class="m">${deg(c.obs.el)}</b> above the horizon. It stays up all day.</p>
-      <p>The flat map is shaded with the places that are <em>really</em> in daylight right now. Night is a blob
-      around the north pole and daylight wraps the entire rim. One spotlight circling the middle cannot light a
-      ring all the way round the outside.</p>
-      <p class="try">Try: switch "Flat map shading" to the model's spotlight and compare it with the orange
-      line, then press Play.</p>`,
-  },
-  polaris: {
-    title: 'The pole star: one star, many latitudes',
-    pair: 'outside',
-    apply() {
-      setObserver(city('London'), true);
-      goToMidnight();
-      Object.assign(state, STAR_DEMO, { star: 'Polaris' });
-    },
-    body: (c) => {
-      if (!c.stars) return STARS_OFF;
-      const i = c.stars.selected;
-      const south = c.stars.cities.filter((x) => x.obs.el < 0);
-      const heights = c.stars.cities.map((x) => x.implied).filter((h) => h !== null);
-      return `
-      <p>${c.stars.name} is measured <b class="m">${deg(c.stars.measured[i].el)}</b> above the horizon here, at
-      latitude ${deg(Math.abs(state.lat))}. Anywhere in the north, its height is your latitude to within a degree.
-      That is how sailors found their latitude for centuries.</p>
-      <p>The teal lines are the directions people in ${REF_CITIES.length} cities measure to it right now. On the globe
-      they are parallel. On the flat map they would put the star anywhere from
-      <b class="f">${heights.length ? `${km(Math.min(...heights))} to ${km(Math.max(...heights))}` : 'nowhere'}</b> up.</p>
-      <p>From ${south.length} of those cities it cannot be seen at all, because the ground is in the way. On a flat
-      earth nothing is in the way: in ${south[0]?.name ?? 'the south'} it would stand
-      <b class="f">${deg(south[0]?.flat.el ?? 0)}</b> up in plain view.</p>
-      <p class="try">Try: move the observer south, or change the height of the flat model's stars. Then pick
-      "Southern stars".</p>`;
-    },
-  },
-  southern: {
-    title: 'Southern stars: everyone looks south',
-    pair: 'sky',
-    apply() {
-      setObserver(city('Sydney'), true);
-      goToMidnight();
-      Object.assign(state, STAR_DEMO, { star: 'Sigma Octantis' });
-    },
-    body: (c) => {
-      if (!c.stars) return STARS_OFF;
-      const rows = ['Sydney', 'Cape Town', 'Santiago']
-        .map((name) => c.stars.cities.find((x) => x.name === name))
-        .map((x) => `<tr><td>${x.name}</td><td>${bearing(x.obs.az)}</td>
-          <td class="bad">${bearing(x.flat.az)}</td></tr>`)
-        .join('');
-      return `
-      <p>${c.stars.name} is a faint star that sits almost exactly over the south pole. The southern sky turns around
-      it: the trails in the globe's sky are circles centred due south.</p>
-      <p>At this moment, three cities on three continents measure it in the same direction:</p>
-      <table class="data"><thead><tr><th>City</th><th class="measured">Measured</th><th class="flat">Flat says</th></tr></thead>
-      <tbody>${rows}</tbody></table>
-      <p>On the flat map "south" means outwards, toward the rim, so these three are looking in three different
-      directions. One star cannot be in all of them. And the flat model has one hub for the sky, above the north
-      pole, so nothing in it can circle a point in the south.</p>
-      <p class="try">Try: press Play and watch both skies, or pick Acrux, the foot of the Southern Cross.</p>`;
-    },
-  },
-  flights: {
-    title: 'Southern flights: how far is it really?',
-    pair: 'outside',
-    apply() {
-      Object.assign(state, SUN_DEMO, { route: { from: 'Sydney', to: 'Santiago' } });
-      focusRoute();
-    },
-    body: (c) => {
-      const r = c.route;
-      if (!r || !r.preset) {
-        return `<p>Pick one of the flights listed under "Distances and flight times" to see it drawn on both
-        maps.</p>`;
-      }
-      return `
-      <p>${esc(r.preset.flights)} fly ${r.preset.from} to ${r.preset.to} non-stop in about
-      ${hoursMinutes(r.preset.there)}, and back in about ${hoursMinutes(r.preset.back)}.</p>
-      <p>On the globe the two are <b class="g">${km(r.globeKm)}</b> apart, so the plane averages
-      <b class="g">${kmh(r.globeKmh)}</b>: an ordinary airliner.</p>
-      <p>On the flat map they are <b class="f">${km(r.flatKm)}</b> apart in a straight line. The same flight would
-      have to average <b class="f">${kmh(r.flatKmh)}</b>${
-        r.flatKmh > SOUND_KMH
-          ? `, which is ${(r.flatKmh / SOUND_KMH).toFixed(1)} times the speed of sound. No airliner in service
-             can do that.`
-          : '. Here the two maps nearly agree, because the route runs mostly north and south.'
-      }</p>
-      <p class="try">Try: the other flights in the list on the right. The white line is the route really flown;
-      the amber line is the shortest path the flat map allows.</p>`;
-    },
-  },
-  ship: {
-    title: 'A ship sailing over the horizon',
-    mode: 'horizon',
-    pair: 'sky',
-    apply() {
-      Object.assign(state, { shape: 'ship', targetM: 50, eyeM: 1.7, k: K_STANDARD });
-      state.targetKm = nearKm();
-      state.sailing = true;
-    },
-    body: (hz) => `
-      <p>A cargo ship ${fmtH(hz.targetM)} tall, watched from the water's edge with your eye ${fmtH(hz.eyeM)} up. It is
-      <b>${fmtD(hz.distanceKm)}</b> away.</p>
-      ${
-        Number.isFinite(hz.horizonKm)
-          ? `<p>On the globe your horizon is only <b class="g">${fmtD(hz.horizonKm)}</b> off. Past that the sea itself
-             is in the way and the ship goes from the bottom up: ${
-               hz.hiddenM > 0 ? `<b class="g">${fmtH(hz.hiddenM)}</b> hidden so far` : 'nothing hidden yet'
-             }, and all of it by ${fmtD(hz.goneKm)}.</p>`
-          : `<p>With the air bending light this strongly, the globe hides nothing either. Set the bending back to
-             standard air to carry on.</p>`
-      }
-      <p>On the flat model nothing is ever in the way. The ship only shrinks, and a telescope would bring all of
-      it back, hull included. It never does.</p>
-      <p class="try">Try: raise the height of your eye. On the globe, climbing a hill brings the hull back. On the
-      flat model it changes nothing. Then look at a tall building 60 km away.</p>`,
-  },
-};
-
 const STARS_OFF = '<p>Turn on "Show the stars" in the panel on the left to carry on with this demonstration.</p>';
+
+// The arguments themselves live in js/arguments/, one file each. This is what they are handed.
+const DEMOS = ARGUMENT_BY_ID;
+const app = {
+  state,
+  city,
+  setObserver,
+  sunEvents,
+  seasons,
+  goToMidnight,
+  focusRoute,
+  nearKm,
+  isoDay,
+  deg,
+  km,
+  kmh,
+  bearing,
+  hoursMinutes,
+  esc,
+  fmtH,
+  fmtD,
+  fmtSpeed,
+  fmtAngle,
+  fmtTime,
+  REF_CITIES,
+  SOUND_KMH,
+  SUN_DEMO,
+  STAR_DEMO,
+  STARS_OFF,
+};
 
 const INTRO = {
   title: 'How to use this',
@@ -853,6 +888,16 @@ const HORIZON_INTRO = {
     see how much difference the weather can make.</p>`,
 };
 
+const FLIGHT_INTRO = {
+  title: 'Level flight',
+  body: (fl) => `
+    <p>An aircraft at ${fmtSpeed(fl.speedKmh)}, holding its height. Top row: one whole lap, speeded up. Bottom row:
+    the next ${fmtTime(fl.minutes)} of flight, drawn to true scale.</p>
+    <p>On the globe the nose comes down by ${fmtAngle(fl.rateDegPerMin)} a minute as the aircraft follows the
+    ground round. On the flat model it never moves.</p>
+    <p class="try">Press "Fly the lap", then change the speed and the length of the stretch.</p>`,
+};
+
 // ---------- views ----------
 
 let globeView;
@@ -860,6 +905,7 @@ let flatView;
 let globeSky;
 let flatSky;
 let hzViews = [];
+let flViews = [];
 let needsUpdate = true;
 let hashTimer = null;
 
@@ -900,6 +946,16 @@ function followLook(c) {
 function update() {
   $('views').dataset.mode = state.mode;
   document.body.dataset.mode = state.mode;
+  if (state.mode === 'flight') {
+    const fl = computeFlight();
+    for (const v of flViews) v.update(fl);
+    renderFlight(fl);
+    renderDemo(fl);
+    syncInputs();
+    clearTimeout(hashTimer);
+    hashTimer = setTimeout(writeHash, 300);
+    return;
+  }
   if (state.mode === 'horizon') {
     const hz = computeHorizon();
     for (const v of hzViews) v.update(hz);
@@ -948,6 +1004,10 @@ function update() {
   for (const el of document.querySelectorAll('.sight-name')) el.textContent = c.sight.name;
 
   renderCompare(c, flatMiss);
+  $('earth-link').href = c.route
+    ? earthUrl(c.route.path[c.route.path.length >> 1].lat, c.route.path[c.route.path.length >> 1].lon, c.route.globeKm * 1.6)
+    : earthUrl(state.lat, state.lon, 1500);
+  $('earth-link').textContent = c.route ? 'Open this route in Google Earth' : 'Open this place in Google Earth';
   renderOwn();
   renderFit();
   renderCities(c);
@@ -1303,24 +1363,31 @@ function setPair(pair) {
 
 /** Switches between the sun-and-stars tool and the horizon tool. */
 function setMode(mode) {
-  state.mode = mode === 'horizon' ? 'horizon' : 'sky';
+  state.mode = TOOLS.includes(mode) ? mode : 'sky';
   if (state.mode !== 'horizon') state.sailing = false;
+  if (state.mode !== 'flight') state.flying = false;
   // A demonstration belongs to one tool; leaving that tool ends it.
-  if (state.demo && (DEMOS[state.demo].mode ?? 'sky') !== state.mode) state.demo = null;
+  if (state.demo && DEMOS[state.demo].tool !== state.mode) state.demo = null;
   for (const btn of document.querySelectorAll('#mode-tabs button')) {
     const on = btn.dataset.mode === state.mode;
     btn.classList.toggle('active', on);
     btn.setAttribute('aria-pressed', String(on));
   }
-  const names = state.mode === 'horizon' ? ['From the side', 'Through a telescope'] : ['From outside', "Observer's sky"];
+  const names = {
+    sky: ['From outside', "Observer's sky"],
+    horizon: ['From the side', 'Through a telescope'],
+    flight: ['One lap, speeded up', 'To scale'],
+  }[state.mode];
   document.querySelectorAll('#view-tabs button').forEach((btn, i) => (btn.textContent = names[i]));
   requestUpdate();
 }
 
 function renderDemo(c) {
-  const demo = state.demo ? DEMOS[state.demo] : state.mode === 'horizon' ? HORIZON_INTRO : INTRO;
+  const demo = state.demo ? DEMOS[state.demo] : { sky: INTRO, horizon: HORIZON_INTRO, flight: FLIGHT_INTRO }[state.mode];
   $('demo-title').textContent = demo.title;
-  $('demo-body').innerHTML = demo.body(c);
+  $('demo-claim').hidden = !demo.claim;
+  $('demo-claim-text').textContent = demo.claim ?? '';
+  $('demo-body').innerHTML = demo.body(c, app);
   for (const btn of document.querySelectorAll('#demos button')) {
     btn.classList.toggle('active', btn.dataset.demo === state.demo);
   }
@@ -1331,6 +1398,14 @@ function renderDemo(c) {
 const heightToSlider = (h) => (1000 * Math.log10(h / MIN_HEIGHT_KM)) / Math.log10(MAX_HEIGHT_KM / MIN_HEIGHT_KM);
 const sliderToHeight = (v) => MIN_HEIGHT_KM * Math.pow(MAX_HEIGHT_KM / MIN_HEIGHT_KM, v / 1000);
 
+const celsius = (v) => `${v} °C`;
+// The sliders that describe layered air: element, state key, and how its value is shown.
+const LAYER_INPUTS = [
+  ['hz-airc', 'airC', celsius],
+  ['hz-waterc', 'waterC', celsius],
+  ['hz-layer', 'layerM', (v) => fmtH(v)],
+  ['hz-lapse', 'lapse100', (v) => (v === 0 ? 'the same' : `${Math.abs(v).toFixed(2)} °C ${v < 0 ? 'colder' : 'warmer'}`)],
+];
 const toLogSlider = (value, [min, max]) => (1000 * Math.log(value / min)) / Math.log(max / min);
 const fromLogSlider = (v, [min, max]) => min * Math.pow(max / min, v / 1000);
 // The three sizes in the horizon tool, each with a slider and a box to type in.
@@ -1411,6 +1486,29 @@ function syncInputs() {
   $('hz-k-label').textContent = `k = ${state.k.toFixed(2)}`;
   $('hz-k-note').textContent = airInWords(state.k);
   $('hz-sail').textContent = state.sailing ? 'Stop' : 'Send it away';
+  $('hz-layers').checked = state.layers;
+  $('hz-simple-air').hidden = state.layers;
+  $('hz-layer-air').hidden = !state.layers;
+  for (const [id, key, show] of LAYER_INPUTS) {
+    $(id).value = state[key];
+    $(`${id}-label`).textContent = show(state[key]);
+  }
+  const warmer = state.waterC - state.airC;
+  $('hz-layer-note').textContent =
+    warmer > 0.4
+      ? 'Water warmer than the air: the air next to it is heated from below and light near the surface curves upward. Expect more to be hidden, and a mirage.'
+      : warmer < -0.4
+        ? 'Water colder than the air: the air next to it is chilled, and light near the surface curves down with the sea. Expect to see further.'
+        : 'Water and air the same: only the steady change with height bends the light.';
+  // Level flight
+  $('fl-speed').value = state.speedKmh;
+  $('fl-speed-label').textContent = fmtSpeed(state.speedKmh);
+  $('fl-alt').value = state.altitudeM;
+  $('fl-alt-label').textContent = fmtH(state.altitudeM);
+  $('fl-minutes').value = state.flightMinutes;
+  $('fl-minutes-label').textContent = fmtTime(state.flightMinutes);
+  $('fl-units').value = state.units;
+  $('fl-fly').textContent = state.flying ? 'Stop' : 'Fly the lap';
   $('speed').value = String(state.speed);
 }
 
@@ -1556,6 +1654,8 @@ function bindControls() {
     });
   }
   bindHorizonControls();
+  bindFlightControls();
+  bindEarthControls();
   bindObservationForm();
   bindMeasurementForm();
   $('btn-share').addEventListener('click', async () => {
@@ -1568,13 +1668,17 @@ function bindControls() {
     }
   });
 
+  $('demos').insertAdjacentHTML(
+    'beforeend',
+    ARGUMENTS.map((a) => `<button data-demo="${a.id}" title="${esc(a.claim)}">${esc(a.label)}</button>`).join(''),
+  );
   for (const btn of document.querySelectorAll('#demos button')) {
     btn.addEventListener('click', () => {
       state.demo = btn.dataset.demo;
       state.playing = false;
       state.sailing = false;
-      DEMOS[state.demo].apply();
-      setMode(DEMOS[state.demo].mode ?? 'sky');
+      DEMOS[state.demo].apply(app);
+      setMode(DEMOS[state.demo].tool);
       setPair(DEMOS[state.demo].pair);
       requestUpdate();
     });
@@ -1626,6 +1730,26 @@ function bindHorizonControls() {
     requestUpdate();
   };
   $('hz-k').addEventListener('input', (e) => setK(Number(e.target.value) / 100));
+  $('hz-layers').addEventListener('change', (e) => {
+    state.layers = e.target.checked;
+    requestUpdate();
+  });
+  for (const [id, key] of LAYER_INPUTS) {
+    $(id).addEventListener('input', (e) => {
+      state[key] = Number(e.target.value);
+      requestUpdate();
+    });
+  }
+  for (const [id, air] of [
+    ['hz-air-cold', { airC: 15, waterC: 9, layerM: 15, lapse100: -0.65 }],
+    ['hz-air-even', { airC: 15, waterC: 15, layerM: 10, lapse100: -0.65 }],
+    ['hz-air-warm', { airC: 12, waterC: 15, layerM: 2, lapse100: -0.65 }],
+  ]) {
+    $(id).addEventListener('click', () => {
+      Object.assign(state, air, { layers: true });
+      requestUpdate();
+    });
+  }
   $('hz-k-none').addEventListener('click', () => setK(0));
   $('hz-k-standard').addEventListener('click', () => setK(K_STANDARD));
 
@@ -1789,6 +1913,13 @@ function writeHash() {
     if (state.trails) p.set('tr', 1);
   }
   if (state.route) p.set('rt', `${state.route.from}~${state.route.to}`);
+  if (state.mode === 'flight') {
+    p.set('v', 'f');
+    p.set('fs', Math.round(state.speedKmh));
+    p.set('fa', Math.round(state.altitudeM));
+    p.set('fm', Math.round(state.flightMinutes));
+    if (imperial()) p.set('u', 'i');
+  }
   if (state.mode === 'horizon') {
     p.set('v', 'h');
     p.set('tg', state.shape);
@@ -1796,6 +1927,13 @@ function writeHash() {
     p.set('td', Number(state.targetKm.toFixed(2)));
     p.set('eh', tidy(state.eyeM));
     p.set('k', state.k.toFixed(2));
+    if (state.layers) {
+      p.set('ly', 1);
+      p.set('at', state.airC);
+      p.set('wt', state.waterC);
+      p.set('lm', state.layerM);
+      p.set('lg', state.lapse100);
+    }
     if (imperial()) p.set('u', 'i');
   }
   if (measurements.length) p.set('m', encodeMeasurements(measurements));
@@ -1827,14 +1965,22 @@ function readHash() {
   state.starHeightKm = num('sh', MIN_HEIGHT_KM, MAX_HEIGHT_KM) ?? state.starHeightKm;
   const [from, to] = (p.get('rt') ?? '').split('~');
   state.route = city(from) && city(to) && from !== to ? { from, to } : null;
-  state.mode = p.get('v') === 'h' ? 'horizon' : 'sky';
+  state.mode = { h: 'horizon', f: 'flight' }[p.get('v')] ?? 'sky';
+  state.speedKmh = num('fs', ...FLIGHT_LIMITS.speedKmh) ?? state.speedKmh;
+  state.altitudeM = num('fa', ...FLIGHT_LIMITS.altitudeM) ?? state.altitudeM;
+  state.flightMinutes = num('fm', ...FLIGHT_LIMITS.minutes) ?? state.flightMinutes;
   if (['ship', 'building', 'lighthouse'].includes(p.get('tg'))) state.shape = p.get('tg');
   state.targetM = num('th', ...HZ_LIMITS.targetM) ?? state.targetM;
   state.targetKm = num('td', ...HZ_LIMITS.targetKm) ?? state.targetKm;
   state.eyeM = num('eh', ...HZ_LIMITS.eyeM) ?? state.eyeM;
   state.k = num('k', 0, 1) ?? state.k;
+  state.layers = p.get('ly') === '1';
+  state.airC = num('at', -20, 40) ?? state.airC;
+  state.waterC = num('wt', -2, 35) ?? state.waterC;
+  state.layerM = num('lm', 1, 50) ?? state.layerM;
+  state.lapse100 = num('lg', -1, 2) ?? state.lapse100;
   if (p.has('u')) state.units = p.get('u') === 'i' ? 'imperial' : 'metric';
-  if (state.demo && (DEMOS[state.demo].mode ?? 'sky') !== state.mode) state.demo = null;
+  if (state.demo && DEMOS[state.demo].tool !== state.mode) state.demo = null;
   // Measurements that came with the link are added to the ones already here.
   measurements = mergeMeasurements(measurements, decodeMeasurements(p.get('m')));
   observations = mergeObservations(observations, decodeObservations(p.get('o')));
@@ -1865,6 +2011,12 @@ async function start() {
     new HorizonView($('hz-globe-scope'), 'scope', 'globe'),
     new HorizonView($('hz-flat-scope'), 'scope', 'flat'),
   ];
+  flViews = [
+    new FlightView($('fl-globe-lap'), 'lap', 'globe'),
+    new FlightView($('fl-flat-lap'), 'lap', 'flat'),
+    new FlightView($('fl-globe-stretch'), 'stretch', 'globe'),
+    new FlightView($('fl-flat-stretch'), 'stretch', 'flat'),
+  ];
   for (const v of [globeView, flatView, globeSky, flatSky]) v.resize();
   globeView.focus(state.lat, state.lon);
   flatView.focus(state.lat, state.lon);
@@ -1889,6 +2041,10 @@ async function start() {
       state.date = new Date(state.date.getTime() + dt * state.speed * 60000);
       needsUpdate = true;
     }
+    if (state.flying && state.mode === 'flight') {
+      flightPhase = (flightPhase + dt / LAP_SECONDS) % 1;
+      needsUpdate = true;
+    }
     if (state.sailing && state.mode === 'horizon') {
       // The target moves off faster the further it has gone, so the whole trip takes a few seconds.
       const limit = sailLimitKm();
@@ -1906,7 +2062,7 @@ async function start() {
   requestAnimationFrame(frame);
 
   // Handy for debugging and for scripted checks.
-  window.app = { state, compute, computeHorizon, requestUpdate, measurements: () => measurements, observations: () => observations, views: { globeView, flatView, globeSky, flatSky } };
+  window.app = { currentKml, state, compute, computeHorizon, computeFlight, requestUpdate, measurements: () => measurements, observations: () => observations, views: { globeView, flatView, globeSky, flatSky } };
 }
 
 start().catch((err) => {

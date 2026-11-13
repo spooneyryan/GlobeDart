@@ -1,6 +1,6 @@
 # Plan: modelling refraction
 
-Status: Stages 1, 2 and 4 are built. Stage 3 is still a proposal.
+Status: all four stages are built.
 
 ## Why this needs doing
 
@@ -23,8 +23,8 @@ bends light, how much that varies, and what each model predicts once the bending
 - The "At the observer" table shows the lift the air gives next to the lift each model would need.
 - A second tool, "Over the horizon", works out what is hidden behind the curve, the distance and dip of the
   horizon, and how all three change with the bending of light near the ground.
-- Light is still bent by one coefficient for the whole sight line. There are no layers of air, so no looming and
-  no mirages.
+- Light can also be followed ray by ray through air described by its temperatures, which shows looming and
+  mirages.
 
 ## Three effects to keep apart
 
@@ -163,6 +163,9 @@ Differences from the plan:
 
 ## Stage 3: tracing rays through layered air
 
+Built, in `js/raytrace.js`, and switched on with "Follow light through layers of air". What follows is the plan
+as written, with notes at the end on where the result differs.
+
 Large, and optional. It replaces the single coefficient with the real mechanism.
 
 - Describe the air by a temperature profile: surface temperature, a rate of change with height, and optionally a
@@ -180,6 +183,23 @@ What this buys:
 - The flattened shape of the setting sun, which comes from the bottom edge being lifted more than the top.
 - A direct display of what air would be needed to make a flat-earth sunset: a ray diagram is harder to argue with
   than a number.
+
+Checks are in `tools/check-maths.mjs`, section 16. Followed through the whole atmosphere, the tracer matches the
+lift formula within 0.2 arcminutes from 2° up and within half an arcminute on the horizon. In even air it matches
+the single coefficient within a tenth of a metre.
+
+Differences from the plan:
+
+- The air is described by the air temperature, the water temperature, the depth of the layer the water affects,
+  and the change above that. There is no separate "warm layer at some height": an inversion is made by cooling
+  the water or by setting the change with height to a warming.
+- Warm water turned out to matter as much as cold. It makes the flat model hide the foot of distant things too,
+  which the plan did not expect. The app says so, and says how that hiding differs from the globe's.
+- The flattened setting sun is not drawn. The sun-and-stars tool still uses the lift formula.
+- Rays are followed by the exact equation for a round Earth, with no small-angle shortcut, so the same routine
+  serves for the whole atmosphere and for a ship on the horizon.
+- The layer near the water is given a simple exponential shape. Real air over water changes fastest in the first
+  few centimetres, so the depth setting is a stand-in, not a measurement.
 
 Risks: rays close to horizontal need small steps and care at the turning point; ducted rays never leave the layer
 and must be detected, not followed forever; and the last half-degree above the horizon will never match a formula
@@ -228,7 +248,7 @@ Differences from the plan:
 1. Stage 1, because it is small and tidies up the two code paths that Stage 2 would otherwise inherit. Done.
 2. Stage 2, which delivers the horizon feature. Done.
 3. Stage 4, once Stage 2 is in use. Done.
-4. Stage 3 only if the single coefficient turns out to be too easy to dismiss in practice.
+4. Stage 3 only if the single coefficient turns out to be too easy to dismiss in practice. Done.
 
 ## Decisions needed before starting
 
