@@ -69,7 +69,19 @@ import {
   encodeObservations,
   decodeObservations,
 } from './observations.js';
-import { STARS, STAR_LINES, FEATURED_STARS, starIndex, SKY_TURN_DEG_PER_MIN } from './stars.js';
+import {
+  STARS,
+  PLANETS,
+  SKY_BODIES,
+  STAR_LINES,
+  FEATURED_STARS,
+  starIndex,
+  SKY_TURN_DEG_PER_MIN,
+  MAX_CATALOGUE_STARS,
+  addCatalogueStar,
+  catalogueName,
+  catalogueNamesIn,
+} from './stars.js';
 import { ROUTES, CRUISE_KMH, SOUND_KMH, routeStats, greatCirclePath, globeDistanceKm } from './distances.js';
 import { makeLandCanvas } from './scene-utils.js';
 import { GlobeView } from './views/globeView.js';
@@ -82,7 +94,7 @@ import { initInfo, refreshInfo, infoButton, explainHtml } from './info.js';
 import { HorizonView } from './views/horizonView.js';
 import { FlightView } from './views/flightView.js';
 import { FLIGHT_LIMITS, flightScene, schulerMinutes } from './flight.js';
-import { earthUrl, buildKml, buildSightKml, parseKml, KML_LIMITS } from './earth.js';
+import { earthUrl, buildKml, buildSightKml, parseKml, kmlText, KML_LIMITS } from './earth.js';
 import { makeAir, traceView } from './raytrace.js';
 import { VIEWS, viewSizes, viewById } from './presets.js';
 
@@ -441,7 +453,6 @@ function renderMoon(c) {
 
 // ---------- stars ----------
 
-const STAR_MAGS = STARS.map((star) => star.mag);
 const TRAIL_STEPS = 36;
 const TRAIL_STEP_MIN = 10;
 const starDome = () => ({ sunHeightKm: state.starHeightKm, lightRangeKm: Infinity, bendPerKm: flatBend() });
@@ -453,10 +464,12 @@ const starDome = () => ({ sunHeightKm: state.starHeightKm, lightRangeKm: Infinit
 // Every star the eye can see: the Bright Star Catalogue, read from data/ the first time the stars are shown.
 // Each model is told where a star is overhead, as for the named stars, and places it in the sky from that.
 let starField = null;
-let starFieldAsked = false;
-async function loadStarField() {
-  if (starFieldAsked) return;
-  starFieldAsked = true;
+let starFieldLoading = null;
+function loadStarField() {
+  starFieldLoading ??= readStarField();
+  return starFieldLoading;
+}
+async function readStarField() {
   try {
     const d = await (await fetch('data/bright-stars.json')).json();
     const named = STARS.map((s) => ({ ra: s.ra * 15, dec: s.dec }));
@@ -464,14 +477,71 @@ async function loadStarField() {
     const isNamed = (ra, dec) =>
       named.some((n) => Math.abs(n.dec - dec) < 0.05 && Math.abs(wrap180(n.ra - ra)) * Math.cos((dec * Math.PI) / 180) < 0.05);
     const stars = [];
+    const byNumber = new Map();
     for (let i = 0; i < d.count; i++) {
-      if (!isNamed(d.ra[i], d.dec[i])) stars.push({ ra: d.ra[i] / 15, dec: d.dec[i], mag: d.mag[i] });
+      const star = { hr: d.hr[i], ra: d.ra[i] / 15, dec: d.dec[i], mag: d.mag[i] };
+      byNumber.set(star.hr, star);
+      if (!isNamed(d.ra[i], d.dec[i])) stars.push(star);
     }
-    starField = { stars, mags: stars.map((s) => s.mag), day: null, ofDate: null };
+    starField = { stars, byNumber, mags: stars.map((s) => s.mag), day: null, ofDate: null };
     requestUpdate();
   } catch {
     // Without the file the named stars are still there.
   }
+}
+
+/** Makes a star from the catalogue one that can be followed and measured. Returns its name, or null. */
+function followable(star) {
+  const name = addCatalogueStar({ hr: star.hr, raDeg: star.ra * 15, decDeg: star.dec, mag: star.mag });
+  if (name) fillStarPickers();
+  return name;
+}
+
+/**
+ * A link or a stored measurement may name a star from the catalogue ("HR 1234").
+ * Those have to be known before the link or the measurement is read, so the
+ * catalogue is loaded first whenever some text mentions one.
+ */
+async function knowCatalogueStarsIn(...texts) {
+  const names = texts.flatMap(catalogueNamesIn).filter((name) => starIndex(name) < 0);
+  if (!names.length) return;
+  await loadStarField();
+  for (const name of names) {
+    const star = starField?.byNumber.get(Number(name.slice(3)));
+    if (star) followable(star);
+  }
+}
+
+// What the two skies last showed, so that a click on one can be matched to a star.
+let lastStars = null;
+
+/** A click on one of the skies: follow the star or planet nearest to it, if one is near. */
+function pickStar(key, dir, fov) {
+  const s = lastStars;
+  if (!s) return;
+  const reach = Math.max(0.8, fov / 35); // how near counts, in degrees: wider when zoomed out
+  const nearest = (list) => {
+    let best = { i: -1, apart: Infinity };
+    for (let i = 0; i < list.length; i++) {
+      if (Math.abs(list[i].el - dir.el) > reach) continue;
+      const apart = skySeparation(dir, list[i]);
+      if (apart < best.apart) best = { i, apart };
+    }
+    return best;
+  };
+  const named = nearest(s[key]);
+  const faint = s.field ? nearest(s.field[key]) : { i: -1, apart: Infinity };
+  let name = null;
+  // A named star or a planet wins unless a catalogue star is clearly nearer the click.
+  if (named.apart <= reach && named.apart <= faint.apart + reach / 3) name = SKY_BODIES[named.i].name;
+  else if (faint.apart <= reach) {
+    name = followable(starField.stars[faint.i]);
+    if (!name) return toast(`Up to ${MAX_CATALOGUE_STARS} stars from the catalogue can be followed at once`);
+  }
+  if (!name) return;
+  Object.assign(state, { star: name, follow: true });
+  toast(`Following ${name}`);
+  requestUpdate();
 }
 
 /** Where each model puts every background star, for the time and place on show. */
@@ -504,7 +574,8 @@ function computeStars() {
   const { date, lat, lon } = state;
   const air = currentAir();
   const dome = starDome();
-  const points = starPoints(date, STARS);
+  // The named stars and then the planets, which are placed in each model's sky in just the same way.
+  const points = starPoints(date, SKY_BODIES);
   const selected = Math.max(0, starIndex(state.star));
   let globeTrails = null;
   let flatTrails = null;
@@ -527,11 +598,11 @@ function computeStars() {
   const chosen = points[selected];
   return {
     points,
-    mags: STAR_MAGS,
+    mags: points.map((p, i) => p.mag ?? SKY_BODIES[i].mag), // a planet's brightness changes; a star's is in its table
     lines: STAR_LINES,
     field: computeStarField(air, dome),
     selected,
-    name: STARS[selected].name,
+    name: SKY_BODIES[selected].name,
     measured: points.map((pt) => observedStar(date, lat, lon, pt, air)),
     globe: points.map((pt) => globePredict(pt, lat, lon, air)),
     flat: points.map((pt) => flatPredict(pt, lat, lon, dome, air)),
@@ -1132,7 +1203,14 @@ function bindEarthControls() {
     e.target.value = ''; // so that the same file can be chosen again
     if (!file) return;
     if (file.size > KML_LIMITS.bytes) return toast('That file is too large to read here');
-    const found = parseKml(await file.text());
+    let text;
+    try {
+      // A KMZ is a zipped KML, and is unzipped here in the browser.
+      text = await kmlText(new Uint8Array(await file.arrayBuffer()));
+    } catch (err) {
+      return toast(err.message);
+    }
+    const found = parseKml(text);
     if (found.problem) return toast(found.problem);
     kmlData = { ...found, fileName: file.name };
     kmlEnds = { from: null, to: null };
@@ -1519,6 +1597,26 @@ function setDemoBody(html) {
   if (ticked) body.querySelector(`[data-pick="${ticked}"]`)?.focus();
 }
 
+/** An argument can draw a picture of its own. It goes above the explanation and is redrawn with it. */
+function renderDemoDrawing(argument, data, own) {
+  const canvas = $('demo-canvas');
+  canvas.hidden = !argument?.draw;
+  if (canvas.hidden) return;
+  const w = canvas.clientWidth;
+  const h = argument.drawHeight ?? 180;
+  if (!w) return; // not on screen: drawn when it comes back
+  const dpr = window.devicePixelRatio || 1;
+  if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    canvas.style.height = `${h}px`;
+  }
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  argument.draw(ctx, { w, h }, data, app, own);
+}
+
 // The controls that belong to the argument on show. They are built once per argument and then kept in step.
 let controlsFor = null;
 function renderDemoControls(argument, own) {
@@ -1665,6 +1763,7 @@ function update() {
   }
   const skyMoon = (key) =>
     m && { model: m[key], measured: m.obs, lit: m.lit[key], side: m.side[key], shadow: key === 'globe' ? m.shadow : null };
+  lastStars = s;
   const skyStars = (key) =>
     s && {
       model: s[key],
@@ -2113,6 +2212,7 @@ function renderDemo(c) {
   const argument = answered && state.demo && demo === DEMOS[state.demo] ? demo : null;
   const own = cleanOwn(argument, state.own);
   renderDemoControls(argument, own);
+  renderDemoDrawing(argument, c, own);
   setDemoBody(answered ? demo.body(c, app, own) : '');
   for (const btn of document.querySelectorAll('#demo-list button')) {
     const on = btn.dataset.tour ? (state.picking ? btn.dataset.tour === OWN_TOUR : btn.dataset.tour === tour?.id) : btn.dataset.demo === state.demo;
@@ -2354,17 +2454,7 @@ function bindControls() {
     requestUpdate();
   });
   // Stars
-  const featured = new Set(FEATURED_STARS.map(([name]) => name));
-  $('star').innerHTML =
-    '<optgroup label="Good ones to start with">' +
-    FEATURED_STARS.map(([name, note]) => `<option value="${name}">${name}${note ? ` (${note})` : ''}</option>`).join('') +
-    '</optgroup><optgroup label="Other bright stars">' +
-    STARS.filter((star) => !featured.has(star.name))
-      .map((star) => star.name)
-      .sort((a, b) => a.localeCompare(b))
-      .map((name) => `<option>${name}</option>`)
-      .join('') +
-    '</optgroup>';
+  fillStarPickers();
   $('star').addEventListener('change', (e) => {
     Object.assign(state, { star: e.target.value, stars: true, follow: true });
     requestUpdate();
@@ -2615,6 +2705,28 @@ function bindHorizonControls() {
   showWeather();
 }
 
+/** Fills the two lists of stars: the one to follow, and the one to say what was measured. */
+function fillStarPickers() {
+  const options = (names) => names.map((name) => `<option value="${esc(name)}">${esc(name)}</option>`).join('');
+  const featured = new Set(FEATURED_STARS.map(([name]) => name));
+  const others = STARS.filter((star) => !featured.has(star.name)).map((star) => star.name).sort((a, b) => a.localeCompare(b));
+  const planets = PLANETS.map((p) => p.name);
+  const added = SKY_BODIES.filter((s) => s.hr !== undefined).map((s) => s.name);
+  const fromCatalogue = added.length ? `<optgroup label="From the catalogue">${options(added)}</optgroup>` : '';
+  const follow = $('star');
+  follow.innerHTML =
+    '<optgroup label="Good ones to start with">' +
+    FEATURED_STARS.map(([name, note]) => `<option value="${name}">${name}${note ? ` (${note})` : ''}</option>`).join('') +
+    `</optgroup><optgroup label="Other bright stars">${options(others)}</optgroup><optgroup label="Planets">${options(planets)}</optgroup>${fromCatalogue}`;
+  follow.value = state.star;
+  const what = $('m-what');
+  const chosen = what.value;
+  what.innerHTML =
+    `<option value="">The sun</option><optgroup label="A planet">${options(planets)}</optgroup>` +
+    `<optgroup label="A star">${options(STARS.map((s) => s.name).sort((a, b) => a.localeCompare(b)))}</optgroup>${fromCatalogue}`;
+  what.value = chosen;
+}
+
 function bindMeasurementForm() {
   const offset = -new Date().getTimezoneOffset();
   const hours = Math.floor(Math.abs(offset) / 60);
@@ -2638,13 +2750,7 @@ function bindMeasurementForm() {
     return filled('m-stick') && filled('m-shadow') && stick > 0 && shadow > 0 ? shadowToElevation(stick, shadow) : null;
   };
   // What was measured: the sun, or one of the stars. A star throws no shadow, so it is always an angle.
-  $('m-what').innerHTML =
-    '<option value="">The sun</option><optgroup label="A star">' +
-    STARS.map((s) => s.name)
-      .sort((a, b) => a.localeCompare(b))
-      .map((name) => `<option value="${esc(name)}">${esc(name)}</option>`)
-      .join('') +
-    '</optgroup>';
+  fillStarPickers();
   const usingShadow = () => !$('m-what').value && $('m-method').value === 'shadow';
   const showMethod = () => {
     const star = $('m-what').value;
@@ -2898,6 +3004,13 @@ function readHash() {
 // ---------- start ----------
 
 async function start() {
+  let stored = '';
+  try {
+    stored = localStorage.getItem(STORE_KEY) ?? '';
+  } catch {
+    // Storage can be unavailable. Then there is nothing stored to read.
+  }
+  await knowCatalogueStarsIn(decodeURIComponent(location.hash.replace(/\+/g, ' ')), stored);
   measurements = mergeMeasurements(loadStoredMeasurements());
   observations = mergeObservations(loadStoredObservations());
   readHash();
@@ -2912,8 +3025,8 @@ async function start() {
   };
   globeView = new GlobeView($('globe-view'), land, landCanvas, REF_CITIES, { onPick });
   flatView = new FlatView($('flat-view'), land, landCanvas, REF_CITIES, { onPick });
-  globeSky = new SkyView($('globe-sky'), { onLook });
-  flatSky = new SkyView($('flat-sky'), { onLook });
+  globeSky = new SkyView($('globe-sky'), { onLook, onPick: (dir, fov) => pickStar('globe', dir, fov) });
+  flatSky = new SkyView($('flat-sky'), { onLook, onPick: (dir, fov) => pickStar('flat', dir, fov) });
   hzViews = [
     new HorizonView($('hz-globe-side'), 'side', 'globe'),
     new HorizonView($('hz-flat-side'), 'side', 'flat'),
@@ -2935,7 +3048,8 @@ async function start() {
   setPair(state.demo ? DEMOS[state.demo].pair : 'outside');
   window.addEventListener('resize', requestUpdate);
   // A link pasted into a tab that already has the app open changes only the hash.
-  window.addEventListener('hashchange', () => {
+  window.addEventListener('hashchange', async () => {
+    await knowCatalogueStarsIn(decodeURIComponent(location.hash.replace(/\+/g, ' ')));
     readHash();
     applyBareLink();
     setMode(state.mode);

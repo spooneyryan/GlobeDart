@@ -14,6 +14,8 @@
 //   body(data, app, own)   the explanation as HTML, rebuilt from the live numbers
 //   controls          optional: sliders and lists of its own, described in controls.js.
 //                     Their values are the `own` handed to apply and body
+//   draw(ctx, size, data, app, own)   optional: a picture of its own, drawn above the explanation on a
+//                     canvas `size.w` by `size.h` pixels. `drawHeight` sets how tall, in pixels
 //   checks(t)         optional: tests of the numbers it relies on, run by tools/check-maths.mjs
 //
 // `app` is the set of helpers main.js hands over. To add an argument, write
@@ -38,8 +40,9 @@ import eyelevel from './eyelevel.js';
 import looming from './looming.js';
 import pilots from './pilots.js';
 import air from './air.js';
+import anymap from './anymap.js';
 
-export const ARGUMENTS = [sunset, angles, sunrise, december, polaris, southern, phases, sameface, eclipse, flights, icewall, ship, eyelevel, looming, waterlevel, bedford, twosunsets, pilots, spin, air];
+export const ARGUMENTS = [sunset, angles, sunrise, december, polaris, southern, phases, sameface, eclipse, flights, icewall, anymap, ship, eyelevel, looming, waterlevel, bedford, twosunsets, pilots, spin, air];
 
 /** The headings the arguments are listed under, in order. */
 export const GROUPS = [
@@ -61,7 +64,7 @@ export const TOURS = [
   { id: 'sky', label: 'The sun and the stars', about: 'What the sky does over a day, over a year, and from different places.', steps: ['sunset', 'sunrise', 'december', 'angles', 'polaris', 'southern'] },
   { id: 'moon', label: 'The moon', about: 'Its phases, its face, and the shadow that crosses it.', steps: ['phases', 'sameface', 'eclipse'] },
   { id: 'horizon', label: 'The horizon', about: 'Ships, skylines and still water.', steps: ['ship', 'eyelevel', 'waterlevel', 'bedford', 'looming', 'twosunsets'] },
-  { id: 'travel', label: 'Travel, motion and air', about: 'Flights, voyages, pilots, the spin and the air.', steps: ['flights', 'icewall', 'pilots', 'spin', 'air'] },
+  { id: 'travel', label: 'Travel, motion and air', about: 'Flights, voyages, pilots, the spin and the air.', steps: ['flights', 'icewall', 'anymap', 'pilots', 'spin', 'air'] },
 ];
 
 /** The name, in links, of a tour somebody put together themselves. */

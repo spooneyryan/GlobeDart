@@ -59,12 +59,31 @@ export function observedSun(date, lat, lon, air = STANDARD_AIR) {
  * point on Earth it is directly overhead right now, plus its coordinates for
  * this date. A star's "substellar point" plays the same part as the subsolar
  * point does for the sun.
+ *
+ * An entry with a `body` is a planet. It has no fixed place among the stars,
+ * so its place is worked out for the date, along with how far away and how
+ * bright it is. The nearest a planet comes shifts its place in the sky by
+ * under 0.01° between one side of the Earth and the other, which is ignored.
  */
 export function starPoints(date, stars) {
   const time = Astronomy.MakeTime(date);
   const rot = Astronomy.Rotation_EQJ_EQD(time);
   const gast = Astronomy.SiderealTime(time);
   return stars.map((s) => {
+    if (s.body) {
+      // A planet: where it is seen from the centre of the Earth, allowing for the time its light takes to arrive.
+      const geo = Astronomy.GeoVector(Astronomy.Body[s.body], time, true);
+      const place = Astronomy.EquatorFromVector(Astronomy.RotateVector(rot, geo));
+      return {
+        lat: place.dec,
+        lon: wrap180((place.ra - gast) * 15),
+        ra: place.ra,
+        dec: place.dec,
+        sizeDeg: 0,
+        distKm: place.dist * Astronomy.KM_PER_AU,
+        mag: Astronomy.Illumination(Astronomy.Body[s.body], time).mag,
+      };
+    }
     const ra = s.ra * 15 * DEG;
     const dec = s.dec * DEG;
     const j2000 = new Astronomy.Vector(Math.cos(dec) * Math.cos(ra), Math.cos(dec) * Math.sin(ra), Math.sin(dec), time);

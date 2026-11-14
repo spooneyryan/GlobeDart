@@ -89,7 +89,7 @@
               <button id="hz-sight-kml">Save the sight line as KML</button>
             </div>
           </div>
-          <button id="hz-load-kml">Load two places from a KML file</button>
+          <button id="hz-load-kml">Load two places from a KML or KMZ file</button>
           <label class="row">
             <span>Looking at</span>
             <select id="hz-shape">
@@ -311,12 +311,12 @@
           <h2>Google Earth <button type="button" class="info" data-info="sky.earth" aria-label="How this is worked out: Google Earth">i</button></h2>
           <a id="earth-link" class="button" target="_blank" rel="noopener noreferrer">Open this place in Google Earth</a>
           <button id="earth-kml">Save this view as a KML file</button>
-          <button id="earth-load">Load places from a KML file</button>
-          <input type="file" id="kml-file" accept=".kml,application/vnd.google-earth.kml+xml,application/xml,text/xml" hidden />
+          <button id="earth-load">Load places from a KML or KMZ file</button>
+          <input type="file" id="kml-file" accept=".kml,.kmz,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz,application/xml,text/xml" hidden />
         </section>
 
         <section id="kml-section" hidden>
-          <h2>From your KML file <button type="button" class="info" data-info="sky.kml" aria-label="How this is worked out: loading a KML file">i</button></h2>
+          <h2>From your file <button type="button" class="info" data-info="sky.kml" aria-label="How this is worked out: loading a KML file">i</button></h2>
           <p class="hint" id="kml-summary"></p>
           <div id="kml-list" class="own-list"></div>
           <button id="kml-clear">Clear this list</button>
@@ -426,6 +426,7 @@
             <button id="tour-show" class="primary">Show what each model says</button>
           </div>
           <div id="demo-controls" hidden></div>
+          <canvas id="demo-canvas" hidden></canvas>
           <div id="demo-body"></div>
           <div id="tour-end" class="buttons two" hidden>
             <button id="tour-again">Start again</button>

@@ -37,15 +37,15 @@ The empty `.nojekyll` file tells GitHub Pages to serve the files exactly as they
 | `js/astro.js` | Wrapper round astronomy-engine: subsolar point, measured sun and star positions, sunrise/sunset, seasons |
 | `js/models.js` | The two models. Each takes the point an object is overhead plus the observer's position and predicts azimuth, elevation and apparent width. Also the scoring |
 | `js/refraction.js` | How much the air lifts what you see, for standard air or a given temperature and pressure. The measurement and both models all use it |
-| `js/stars.js` | A hand-entered table of 96 bright stars and the lines that join them into familiar figures |
-| `js/distances.js` | Distances under each model, and the non-stop flights used to test them |
+| `js/stars.js` | A hand-entered table of 96 bright stars and the lines that join them into familiar figures, the five planets, and stars added from the full catalogue |
+| `js/distances.js` | Distances under each model, the non-stop flights used to test them, and the test of whether four places can lie on any flat sheet |
 | `js/horizon.js` | What is hidden behind the horizon under each model, and how the air near the ground changes it |
 | `js/presets.js` | Well-known long views across water, each with the sources for its figures |
 | `js/raytrace.js` | Light followed step by step through air whose temperature changes with height, over curved or flat ground |
 | `js/atmosphere.js` | The standard atmosphere: how the air's pressure falls with height when gravity holds it down |
 | `js/rotation.js` | A turning globe: speed of the ground, the weight the turn takes off, and how a pendulum's swing turns |
 | `js/flight.js` | Level flight: how fast the nose comes down to follow a globe, and what flying dead straight would do |
-| `js/earth.js` | A link that opens Google Earth at a place, KML files of the view and of a line of sight, and a reader for KML files |
+| `js/earth.js` | A link that opens Google Earth at a place, KML files of the view and of a line of sight, and a reader for KML and KMZ files |
 | `js/arguments/` | The demonstrations, one file per flat-earth argument, the list of them and of the tours, and the controls an argument can have of its own |
 | `js/explain.js` | What every number means and how it is worked out, written to be shown with the live numbers |
 | `js/info.js` | The small "i" buttons and the box each one opens |
@@ -155,7 +155,13 @@ score across every star.
 - The stars' own slow drift since 2000 is not allowed for. The largest is Alpha Centauri's, about 0.03°.
 - Behind the 96 named stars are the other 8,300 or so that the eye can see: the Bright Star Catalogue, down to
   magnitude 6.5. Each model places every one of them from the point it is overhead, as it does the named stars, so
-  the whole sky can be compared. They cannot be followed or measured; only the named ones can.
+  the whole sky can be compared.
+- Click or tap any star in either sky to follow it. A star from the catalogue is then known by its number there,
+  such as "HR 7018", appears in both star lists, and can be measured like a named one. Up to 15 can be added, and
+  links carry them.
+- The five planets the eye can see are in the lists too. A planet has no fixed place among the stars, so its place
+  is worked out for the date. It is otherwise treated exactly like a star, and the flat model puts it at the
+  height of the stars.
 - The catalogue is a saved copy in `data/`, fetched from VizieR by `node tools/fetch-bright-stars.mjs`. All 96
   hand-entered stars are in it within 0.03°, which the maths check confirms. The two come from different sources.
 - The flat model puts every star at one height, turning about the point above the north pole once a day. That
@@ -273,10 +279,10 @@ line of sight itself with and without the air bending it. Where the line goes un
 the way. In Google Earth Pro, "Show Elevation Profile" on the ground line shows the real terrain along it. Heights
 in the file are above sea level, so the height of the water matters and can be set.
 
-**Reading a KML file.** "Load places from a KML file" lists the pins and paths in a file saved from Google Earth.
+**Reading a KML or KMZ file.** "Load places from a KML or KMZ file" lists the pins and paths in a file saved from Google Earth.
 A pin can become the observer. Two pins, or the two ends of a path, can become the ends of a line of sight, which
-sets the horizon tool's distance. The file is read in the browser and sent nowhere. KMZ files have to be unzipped
-first, and only pins and paths are read.
+sets the horizon tool's distance. The file is read in the browser and sent nowhere. A KMZ file, which is a zipped
+KML, is unzipped in the browser too. Only pins and paths are read.
 
 ## The tours
 
@@ -289,7 +295,7 @@ person showing another.
 | The sun and the stars | sunset, sunrise direction, December daylight, sun angles, the pole star, southern stars |
 | The moon | phases, the same face, eclipses |
 | The horizon | a ship, the horizon at eye level, water finding its level, the Bedford Level, things seen from too far away, two sunsets |
-| Travel, motion and air | southern flights, the ice wall, pilots and the nose, feeling the spin, air without a container |
+| Travel, motion and air | southern flights, the ice wall, any flat map, pilots and the nose, feeling the spin, air without a container |
 
 - "Choose your own" lists every argument with a tick box. Tick between two and twelve and they become a tour, in
   the order they are listed. Once it is running, "Copy link to this view" gives a link that carries the choice.
@@ -314,7 +320,7 @@ A link can name a demonstration or a tour and nothing else, and the app sets the
 ## The demonstrations
 
 The bar at the top lists the demonstrations under six headings: the sun, the moon, the stars, distances, the
-horizon, and motion and air. Picking a heading shows its demonstrations beneath it. There are twenty, each answering one
+horizon, and motion and air. Picking a heading shows its demonstrations beneath it. There are twenty-one, each answering one
 flat-earth claim, which is quoted above its explanation.
 
 ## Writing an argument
@@ -332,6 +338,11 @@ argument as `own`:
 controls: [{ id: 'south', label: 'Sail round at', min: 10, max: 80, step: 1, value: 60, show: (v) => `${v}° south` }],
 body(data, app, own) { /* own.south is the number on the slider */ }
 ```
+
+An argument can also draw a picture of its own. It exports `draw(ctx, size, data, app, own)`, and the app gives it
+a canvas above the explanation and redraws it whenever anything changes. "Air without a container" draws pressure
+against height this way, and "Any flat map" draws four cities laid out on a flat sheet. The checks run every such
+drawing at several sizes and with every setting of its controls.
 
 The values go back to where they start each time the argument is opened, and are kept in links. Three arguments
 use this so far: the ice wall (which line of latitude to sail round), water finding its level (a stretch of your
@@ -356,5 +367,5 @@ France. Those keep their own terms.
 
 ## Not built yet
 
-Flat-model variants with a different map, the planets, and following or measuring a star that is not one of the
-96 named ones. More ideas are in `docs/future.md`.
+A flat model drawn on a different map. "Any flat map" shows why no such map could fit, without needing one. More
+ideas are in `docs/future.md`.

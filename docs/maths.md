@@ -101,7 +101,9 @@ s      = √(d² + H²)                 straight-line distance from the observer
 width  = 2 × atan(w ÷ 2s)           the width it should then show
 ```
 
-The flat model's stars are handled the same way, all at one height of their own.
+The flat model's stars are handled the same way, all at one height of their own. So are the planets, which
+differ from stars only in that the place each is overhead is worked out for the date instead of read from a
+table.
 
 **Bending light.** A version some supporters propose has light curve upward, so that a far-off sun looks lower
 and can set. With c the amount of curve, a ray leaving the eye at slope s is `s × x + c × x² ÷ 2` high after a
@@ -243,6 +245,23 @@ the wind.
 
 - Code: `js/distances.js`, `globeDistanceKm`, `flatDistanceKm`, `routeStats`.
 - Checks: section 9 (every listed flight needs an ordinary airliner's speed on the globe).
+
+## 7a. Four places on any flat sheet
+
+Three places can always be drawn to scale on a flat sheet from their three distances. Put A at the start, B a
+distance AB along a line, and C above the line. A fourth place D is then fixed by its distances to A and B:
+
+```
+along  = (AB² + AD² − BD²) ÷ (2 × AB)       how far along the line AB
+off    = ±√(AD² − along²)                    how far off it, on either side
+```
+
+So the sheet allows only two values for the sixth distance, from C to D: one for each side. If the real distance
+is neither, the four places are not on a flat surface. This uses no map, so it holds for every flat map. London,
+New York, Tokyo and Los Angeles miss by 1,500 km; London, Tokyo, Sydney and Santiago by over 10,000 km.
+
+- Code: `js/distances.js`, `flatSheetLayout`; `js/arguments/anymap.js`.
+- Checks: section 14 (run from `js/arguments/anymap.js`).
 
 ## 8. Over the horizon
 

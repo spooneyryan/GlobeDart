@@ -33,7 +33,7 @@ const SUN_LOW = new THREE.Color(0xff7b3a);
 const SUN_HIGH = new THREE.Color(0xfff4d2);
 
 export class SkyView extends View3D {
-  constructor(container, { onLook }) {
+  constructor(container, { onLook, onPick = null }) {
     super(container);
     this.camera = new THREE.PerspectiveCamera(60, 1, 1, 2000);
     this.camera.rotation.order = 'YXZ';
@@ -234,7 +234,10 @@ export class SkyView extends View3D {
       const [a, b] = [...pointers.values()];
       return Math.hypot(a[0] - b[0], a[1] - b[1]) || 1;
     };
+    // A press that is let go where it started is a click on the sky, not a drag.
+    let press = null;
     el.addEventListener('pointerdown', (e) => {
+      press = pointers.size === 0 ? [e.clientX, e.clientY] : null;
       pointers.set(e.pointerId, [e.clientX, e.clientY]);
       if (pointers.size === 2) pinch = { spread: spread(), fov: this.look.fov };
       try {
@@ -262,6 +265,17 @@ export class SkyView extends View3D {
       pointers.delete(e.pointerId);
       if (pointers.size < 2) pinch = null;
     };
+    el.addEventListener('pointerup', (e) => {
+      if (onPick && press && Math.hypot(e.clientX - press[0], e.clientY - press[1]) < 5) {
+        // The direction under the pointer: out from the eye, through that point on the screen.
+        const box = el.getBoundingClientRect();
+        const ray = new THREE.Vector3(((e.clientX - box.left) / box.width) * 2 - 1, 1 - ((e.clientY - box.top) / box.height) * 2, 0.5)
+          .unproject(this.camera)
+          .normalize();
+        onPick({ az: ((Math.atan2(ray.x, -ray.z) / DEG) + 360) % 360, el: Math.asin(ray.y) / DEG }, this.look.fov);
+      }
+      press = null;
+    });
     el.addEventListener('pointerup', stop);
     el.addEventListener('pointercancel', stop);
     el.addEventListener(

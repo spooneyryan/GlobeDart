@@ -19,23 +19,30 @@ order other than the listed one.
 ## Also built: your own star measurements
 
 "Your own measurements" takes the height of a star as well as the sun's, and fits the flat model's star height to
-them separately. Still to do: stars that are not among the 96 in the table, and the planets.
+them separately. The five planets and any star in the full catalogue can be measured too.
 
 ## Also built: every star the eye can see
 
-The Bright Star Catalogue, 8,404 stars, is drawn behind the named ones in both skies. Still to do: following or
-measuring one of them, and their names.
+The Bright Star Catalogue, 8,404 stars, is drawn behind the named ones in both skies. Clicking one follows it,
+under its catalogue number. Still to do: the names astronomers give them, such as "33 Piscium".
+
+## Also built: the planets
+
+Mercury, Venus, Mars, Jupiter and Saturn can be followed and measured like stars. Still to do: anything that is
+special to a planet, such as the way Mars doubles back among the stars, or the phases of Venus.
 
 ## Also built: a flat model with bending light
 
-The flat model's light can be made to curve upward so that its sun sets. Still to do: variants with a different
-map, such as one with two poles.
+The flat model's light can be made to curve upward so that its sun sets.
+
+A flat model on a different map, such as one with two poles, is not built. No such map comes with an agreed
+account of how the sun moves over it, so the app would be inventing the model it then tested. "Any flat map"
+answers the claim another way: four cities and the six distances between them cannot be drawn on any flat sheet.
 
 ## Also built: the air needs no container
 
 "Air without a container" answers the claim that gas cannot sit next to a vacuum without a dome, with the
-standard atmosphere against a sealed container. Still to do: a drawing of its own. Today it borrows the level
-flight views.
+standard atmosphere against a sealed container, and draws its own chart of pressure against height.
 
 ## 1. Connect to Google Earth
 
@@ -50,7 +57,8 @@ Notes:
   Earth Pro can show the real terrain along. A well-known view knows its two ends; so does a sight line made from
   a KML file.
 - Built: reading a KML file back in, for its pins and paths.
-- Still to do: KMZ files, and using the heights stored with the pins.
+- Built: KMZ files, unzipped in the browser.
+- Still to do: using the heights stored with the pins.
 - Anything deeper than a link or a file needs Google's terms checked first. The app has no backend and loads
   nothing from the internet today, and that is worth keeping.
 
@@ -65,7 +73,8 @@ Notes:
   scene, and text built from the live numbers. Each can carry its own checks, which `tools/check-maths.mjs` runs.
 - Built: an argument can list sliders and pick-lists of its own (`controls`), drawn above its explanation and
   kept in links. The ice wall, water finding its level and the Bedford Level use them.
-- Still to do: an argument drawing a view of its own. Today it can only use the views of the three tools.
+- Built: an argument can draw a picture of its own above its explanation. Two do.
+- Still to do: an argument replacing the four main views with its own.
 - Added since: "the horizon always rises to eye level", "we can see things the curve should hide", and the pilots
   argument below.
 - Also added: "Antarctica is an ice wall", "we would feel the spin" and "water always finds its level". The

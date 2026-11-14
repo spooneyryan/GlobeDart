@@ -5,9 +5,9 @@
 //   el     elevation above the horizon of what was measured, degrees
 //   az     compass bearing to it, degrees from true north, or null if not measured
 //   tempC  air temperature when it was taken, degrees Celsius, or null if not noted
-//   star   the name of the star that was measured, or null for the sun
+//   star   the name of the star or planet that was measured, or null for the sun
 import { DEG, subsolarPoint, starPoints, wrap360 } from './astro.js';
-import { STARS, starIndex } from './stars.js';
+import { SKY_BODIES, starIndex } from './stars.js';
 import { globePredict, flatPredict, flatBendPerKm, impliedSunHeightKm, skySeparation } from './models.js';
 import { STANDARD_AIR, AIR_LIMITS } from './refraction.js';
 
@@ -43,7 +43,7 @@ export function airFor(m, air) {
 /** The place on Earth that the sun, or the star that was measured, stood over when the measurement was taken. */
 export function overheadPoint(m) {
   const date = new Date(m.t);
-  return m.star ? starPoints(date, [STARS[starIndex(m.star)]])[0] : subsolarPoint(date);
+  return m.star ? starPoints(date, [SKY_BODIES[starIndex(m.star)]])[0] : subsolarPoint(date);
 }
 
 /**

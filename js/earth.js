@@ -218,3 +218,78 @@ export function parseKml(text) {
   }
   return { points, lines, problem: points.length || lines.length ? null : 'No places or paths were found in that file.' };
 }
+
+// ---------- reading a KMZ file ----------
+
+const two = (bytes, at) => bytes[at] | (bytes[at + 1] << 8);
+const four = (bytes, at) => (bytes[at] | (bytes[at + 1] << 8) | (bytes[at + 2] << 16) | (bytes[at + 3] << 24)) >>> 0;
+
+/** Unpacks zip "deflate" data, giving up if it grows past `most` bytes. */
+async function inflate(data, most) {
+  if (typeof DecompressionStream === 'undefined') throw new Error('This browser cannot unzip a KMZ file. Unzip it and load the .kml inside.');
+  const reader = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw')).getReader();
+  const parts = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.length;
+    if (total > most) {
+      await reader.cancel();
+      throw new Error('The KML inside that file is too large to read here.');
+    }
+    parts.push(value);
+  }
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const part of parts) {
+    out.set(part, at);
+    at += part.length;
+  }
+  return out;
+}
+
+/**
+ * The KML text inside a KMZ file. A KMZ is a zip archive: its list of files is
+ * at the end, and each file's data is found from that list. The file called
+ * doc.kml is taken, or failing that the first .kml there is.
+ *
+ * @param bytes  the file, as a Uint8Array
+ * @returns the text of the KML. Throws an Error that says what is wrong if there is none to be had.
+ */
+export async function unzipKml(bytes) {
+  const notZip = new Error('That file is not a KMZ (it is not a zip archive).');
+  // The record that ends the archive is within its last 64 KB or so.
+  let end = -1;
+  for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 65557); i--) {
+    if (four(bytes, i) === 0x06054b50) {
+      end = i;
+      break;
+    }
+  }
+  if (end < 0) throw notZip;
+  const count = two(bytes, end + 10);
+  let at = four(bytes, end + 16);
+  let chosen = null;
+  for (let i = 0; i < count && at + 46 <= bytes.length && four(bytes, at) === 0x02014b50; i++) {
+    const nameLength = two(bytes, at + 28);
+    const name = new TextDecoder().decode(bytes.subarray(at + 46, at + 46 + nameLength));
+    const entry = { name, method: two(bytes, at + 10), packed: four(bytes, at + 20), size: four(bytes, at + 24), header: four(bytes, at + 42) };
+    if (/\.kml$/i.test(name) && (!chosen || /(^|\/)doc\.kml$/i.test(name))) chosen = entry;
+    at += 46 + nameLength + two(bytes, at + 30) + two(bytes, at + 32);
+  }
+  if (!chosen) throw new Error('There is no KML file inside that KMZ.');
+  if (chosen.size > KML_LIMITS.bytes) throw new Error('The KML inside that file is too large to read here.');
+  const h = chosen.header;
+  if (h + 30 > bytes.length || four(bytes, h) !== 0x04034b50) throw notZip;
+  const start = h + 30 + two(bytes, h + 26) + two(bytes, h + 28);
+  const data = bytes.subarray(start, start + chosen.packed);
+  if (chosen.method === 0) return new TextDecoder().decode(data);
+  if (chosen.method !== 8) throw new Error('That KMZ is packed in a way this cannot read. Unzip it and load the .kml inside.');
+  return new TextDecoder().decode(await inflate(data, KML_LIMITS.bytes));
+}
+
+/** The text of a KML or KMZ file, given its bytes. A zip starts with the letters PK. */
+export async function kmlText(bytes) {
+  return bytes[0] === 0x50 && bytes[1] === 0x4b ? unzipKml(bytes) : new TextDecoder().decode(bytes);
+}

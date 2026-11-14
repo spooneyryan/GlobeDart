@@ -247,6 +247,9 @@ export const EXPLAIN = {
       overhead, and each works out where you should see it, by the same two calculations.</p>
       <p>The globe puts the stars immeasurably far away. The flat model puts them all at one height, turning
       about the point above the north pole once a day. That height has its own slider.</p>
+      <p>The planets are handled the same way, except that the place each one is overhead is worked out for the
+      date, since a planet moves among the stars. Click or tap any star in either sky to follow it: one from the
+      full catalogue is then known by its number there, such as HR 7018.</p>
       <p>If the stars sat at one height above a flat earth, every observer's measured angle would give that same
       height. The table lists what each city's measurement gives.</p>
       <p>The score is the typical miss across all the stars in the list, seen from ${REF_CITIES.length} cities,
@@ -405,16 +408,16 @@ export const EXPLAIN = {
   'sky.kml': {
     tool: 'sky',
     title: 'Loading a KML file',
-    code: [['earth.js', 'parseKml']],
+    code: [['earth.js', 'parseKml', 'unzipKml']],
     body: () => `
-      <p>A KML file is what Google Earth saves when you choose "Save Place As" for a pin, a path or a folder.
-      Loading one lists the pins (places) and paths in it.</p>
+      <p>A KML or KMZ file is what Google Earth saves when you choose "Save Place As" for a pin, a path or a
+      folder. Loading one lists the pins (places) and paths in it. A KMZ is the same thing zipped, and is unzipped
+      here.</p>
       <p>"Observer" moves the observer to a place. Picking one place as "From" and another as "To" puts the
       horizon tool's line of sight between them and sets its distance. "Sight along it" does the same with the
       two ends of a path.</p>
       <p>The file is read here, in the browser. Nothing is sent anywhere. Only pins and paths are read: shapes,
-      pictures and anything else in the file are ignored. A KMZ file is a zipped KML and has to be unzipped
-      first.</p>`,
+      pictures and anything else in the file are ignored.</p>`,
   },
 
   // ---------- the moon ----------

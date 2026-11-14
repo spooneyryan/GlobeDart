@@ -11,6 +11,24 @@ const PLACES = [
   ['A weather balloon', 30000],
 ];
 
+const INK = { text: '#e6edf5', muted: '#93a4b8', grid: '#243243', globe: '#7fb4ff', flat: '#ffb224' };
+
+function label(ctx, string, x, y, colour = INK.muted, align = 'left', weight = 400) {
+  ctx.font = `${weight} 11px system-ui, -apple-system, 'Segoe UI', sans-serif`;
+  ctx.textAlign = align;
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = colour;
+  ctx.fillText(string, x, y);
+}
+
+/** A step for a scale that gives a few round-numbered marks up to `max`. */
+function roundStep(max) {
+  const raw = max / 4;
+  const pow = Math.pow(10, Math.floor(Math.log10(raw)));
+  const n = raw / pow;
+  return (n < 1.5 ? 1 : n < 3.5 ? 2 : n < 7.5 ? 5 : 10) * pow;
+}
+
 const hPa = (p) => `${p >= 100 ? Math.round(p).toLocaleString('en-US') : p >= 1 ? p.toFixed(1) : p.toPrecision(2)} hPa`;
 
 export default {
@@ -28,6 +46,72 @@ export default {
   ],
   apply({ state }) {
     Object.assign(state, { speedKmh: 900, altitudeM: 11000, flightMinutes: 10, flying: false });
+  },
+  drawHeight: 210,
+  /** Pressure across, height up: the curve gravity gives, and the straight line a sealed container would. */
+  draw(ctx, { w, h }, fl, { fmtH }, own) {
+    const pad = { l: 58, r: 14, t: 14, b: 30 };
+    const topM = Math.min(80000, Math.max(12000, own.km * 1000 * 1.3));
+    const fullHpa = 1100;
+    const X = (p) => pad.l + (p / fullHpa) * (w - pad.l - pad.r);
+    const Y = (m) => h - pad.b - (m / topM) * (h - pad.t - pad.b);
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = INK.grid;
+    for (let p = 0; p <= 1000; p += 250) {
+      ctx.beginPath();
+      ctx.moveTo(X(p), Y(0));
+      ctx.lineTo(X(p), Y(topM));
+      ctx.stroke();
+      label(ctx, String(p), X(p), h - pad.b + 10, INK.muted, 'center');
+    }
+    const step = roundStep(topM);
+    for (let m = 0; m <= topM; m += step) {
+      ctx.beginPath();
+      ctx.moveTo(X(0), Y(m));
+      ctx.lineTo(X(fullHpa), Y(m));
+      ctx.stroke();
+      label(ctx, fmtH(m), pad.l - 6, Y(m), INK.muted, 'right');
+    }
+    label(ctx, 'pressure, hPa', X(fullHpa), h - 8, INK.muted, 'right');
+
+    // A sealed container with no gravity: the same pressure all the way up.
+    ctx.strokeStyle = INK.flat;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(X(sealedPressureHpa()), Y(0));
+    ctx.lineTo(X(sealedPressureHpa()), Y(topM));
+    ctx.stroke();
+    ctx.setLineDash([]);
+    label(ctx, 'sealed in, no gravity', X(sealedPressureHpa()) - 6, Y(topM) + 10, INK.flat, 'right');
+
+    // Held down by gravity: thinner the higher you go.
+    ctx.strokeStyle = INK.globe;
+    ctx.beginPath();
+    for (let i = 0; i <= 120; i++) {
+      const m = (topM * i) / 120;
+      if (i) ctx.lineTo(X(pressureAtHpa(m)), Y(m));
+      else ctx.moveTo(X(pressureAtHpa(m)), Y(m));
+    }
+    ctx.stroke();
+    label(ctx, 'held down by gravity', X(pressureAtHpa(topM * 0.55)) + 8, Y(topM * 0.55), INK.globe, 'left');
+
+    // The height chosen, on both.
+    const m = own.km * 1000;
+    ctx.strokeStyle = 'rgba(230, 237, 245, 0.45)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(X(0), Y(m));
+    ctx.lineTo(X(fullHpa), Y(m));
+    ctx.stroke();
+    for (const [p, colour] of [[pressureAtHpa(m), INK.globe], [sealedPressureHpa(), INK.flat]]) {
+      ctx.fillStyle = colour;
+      ctx.beginPath();
+      ctx.arc(X(p), Y(m), 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    const above = Y(m) - 10 > pad.t + 8;
+    label(ctx, hPa(pressureAtHpa(m)), X(pressureAtHpa(m)) + 8, Y(m) + (above ? -10 : 12), INK.text, 'left', 600);
   },
   body(fl, { fmtH }, own) {
     const heightM = own.km * 1000;

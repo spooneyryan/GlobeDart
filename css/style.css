@@ -678,6 +678,15 @@ body:not([data-mode='flight']) .fl-only {
   font-variant-numeric: tabular-nums;
 }
 
+/* A picture the argument on show draws for itself. */
+#demo-canvas {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #0b131d;
+}
+
 /* Choosing the steps of a tour. */
 .pick-group {
   display: flex;

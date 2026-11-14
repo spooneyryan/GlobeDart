@@ -126,7 +126,38 @@ export const STARS = TABLE.trim()
     return { name, con, ra: sexagesimal(ra), dec: sexagesimal(dec), mag: Number(mag) };
   });
 
-export const starIndex = (name) => STARS.findIndex((s) => s.name === name);
+/**
+ * The five planets the eye can see. They are followed and measured like stars,
+ * but they have no fixed place among the stars: it is worked out for each date.
+ */
+export const PLANETS = ['Mercury', 'Venus', 'Mars', 'Jupiter', 'Saturn'].map((name) => ({ name, con: 'planet', body: name }));
+
+/** Everything that can be followed and measured: the named stars, then the planets. A star keeps the index it has in STARS. */
+export const SKY_BODIES = [...STARS, ...PLANETS];
+
+/** How many stars from the full catalogue can be added to SKY_BODIES, to be followed and measured. */
+export const MAX_CATALOGUE_STARS = 15;
+
+/** What a star from the catalogue is called here: its number in the Bright Star Catalogue, as astronomers write it. */
+export const catalogueName = (hr) => `HR ${hr}`;
+/** The names of that kind in a piece of text, such as a link or a list of stored measurements. */
+export const catalogueNamesIn = (text) => [...new Set(String(text ?? '').match(/HR \d{1,4}\b/g) ?? [])];
+
+/**
+ * Adds a star from the full catalogue to SKY_BODIES, so that it can be followed
+ * and measured like a named one. `raDeg` and `decDeg` are its place for the
+ * year 2000, in degrees. Returns its name, or null if no more can be added.
+ */
+export function addCatalogueStar({ hr, raDeg, decDeg, mag }) {
+  const name = catalogueName(hr);
+  if (starIndex(name) >= 0) return name;
+  if (SKY_BODIES.filter((s) => s.hr !== undefined).length >= MAX_CATALOGUE_STARS) return null;
+  SKY_BODIES.push({ name, con: '', ra: raDeg / 15, dec: decDeg, mag, hr });
+  return name;
+}
+
+/** Where a star or planet is in SKY_BODIES, by name, or -1. */
+export const starIndex = (name) => SKY_BODIES.findIndex((s) => s.name === name);
 
 // Lines that join stars into the familiar figures, as chains of names.
 const FIGURES = [

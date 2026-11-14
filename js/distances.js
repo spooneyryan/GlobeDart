@@ -129,3 +129,32 @@ export function routeStats(a, b, hours = null) {
     flatKmh: hours ? flatKm / hours : null,
   };
 }
+
+/**
+ * Four places on a flat sheet, from five of the six distances between them.
+ *
+ * Any three places can be drawn flat from their three distances: A at the
+ * start, B straight along from it, C above the line. A fourth place D is then
+ * fixed by its distances to A and B, to one of two spots: one on C's side of
+ * the line AB and one on the other. So a flat sheet allows only two values for
+ * the sixth distance, from C to D. If the real one is neither, the four places
+ * are not on a flat surface, whatever map is drawn of them.
+ *
+ * Returns the places as [x, y] pairs, with the two candidates for D and the
+ * distance from C to each: first the one on C's side, then the other.
+ */
+export function flatSheetLayout({ ab, ac, bc, ad, bd }) {
+  const along = (toA, toB) => (ab * ab + toA * toA - toB * toB) / (2 * ab);
+  const off = (toA, x) => Math.sqrt(Math.max(0, toA * toA - x * x));
+  const cx = along(ac, bc);
+  const cy = off(ac, cx);
+  const dx = along(ad, bd);
+  const dy = off(ad, dx);
+  return {
+    a: [0, 0],
+    b: [ab, 0],
+    c: [cx, cy],
+    d: [[dx, dy], [dx, -dy]],
+    cd: [Math.hypot(cx - dx, cy - dy), Math.hypot(cx - dx, cy + dy)],
+  };
+}

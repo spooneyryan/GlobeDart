@@ -1,5 +1,6 @@
 // Sanity checks for the sun and model maths: `node tools/check-maths.mjs`.
 import { readFileSync } from 'node:fs';
+import { deflateRawSync } from 'node:zlib';
 import { EXPLAIN } from '../js/explain.js';
 import { flightScene } from '../js/flight.js';
 import * as Astronomy from '../vendor/astronomy.js';
@@ -26,7 +27,7 @@ import {
 } from '../js/horizon.js';
 import { ARGUMENTS, GROUPS, TOOLS, TOURS, OWN_TOUR, MAX_TOUR_STEPS, cleanTourSteps } from '../js/arguments/index.js';
 import { SLIDER_STEPS, defaultsFor, cleanValue, cleanOwn, sliderPosition, sliderValue, encodeOwn, decodeOwn, controlFaults } from '../js/arguments/controls.js';
-import { earthUrl, buildKml, buildSightKml, parseKml, KML_LIMITS } from '../js/earth.js';
+import { earthUrl, buildKml, buildSightKml, parseKml, unzipKml, kmlText, KML_LIMITS } from '../js/earth.js';
 import { VIEWS, viewSizes } from '../js/presets.js';
 import { makeAir, traceRay, traceView, astronomicalBend } from '../js/raytrace.js';
 import {
@@ -50,7 +51,7 @@ import {
   DEG,
   EARTH_RADIUS_KM,
 } from '../js/astro.js';
-import { STARS, STAR_LINES, starIndex } from '../js/stars.js';
+import { STARS, PLANETS, SKY_BODIES, STAR_LINES, starIndex, MAX_CATALOGUE_STARS, addCatalogueStar, catalogueName, catalogueNamesIn } from '../js/stars.js';
 import { ROUTES, routeStats, greatCirclePath, blockHours, globeDistanceKm } from '../js/distances.js';
 import {
   globePredict,
@@ -387,6 +388,62 @@ check('no star height brings the flat model within 10 deg', starFit.best.rms > 1
     near(wrap180((sirius.ra - siderealHours(new Date(t0))) * 15), sirius.lon, 1e-9));
 }
 
+// 10b. The planets, which are followed and measured like stars.
+{
+  check('the five planets the eye can see come after the stars, and a star keeps its place in the list',
+    PLANETS.length === 5 && SKY_BODIES.length === STARS.length + 5 && STARS.every((s, i) => SKY_BODIES[i] === s) &&
+    starIndex('Jupiter') === STARS.length + 3 && starIndex('Sirius') === STARS.findIndex((s) => s.name === 'Sirius'));
+  const at = (name, when) => starPoints(new Date(when), [SKY_BODIES[starIndex(name)]])[0];
+  const apart = (a, b) => globeAngleDeg(a.lat, a.lon, b.lat, b.lon);
+  // From the place a planet is said to be overhead, it is overhead.
+  const venus = at('Venus', t0);
+  const seen = observedStar(new Date(t0), venus.lat, venus.lon, venus, null);
+  check('a planet is seen overhead from the place it is said to be overhead', seen.el > 89.99, f(seen.el, 4));
+  check('and the globe model puts it there too', globePredict(venus, venus.lat, venus.lon, null).el > 89.99);
+  // Facts that do not come from the same sums: how far each inner planet ever gets from the sun, and a famous meeting.
+  let farMercury = 0;
+  let farVenus = 0;
+  for (let day = 0; day < 800; day += 2) {
+    const when = Date.UTC(2024, 0, 1) + day * 86400000;
+    const sunThen = subsolarPoint(new Date(when));
+    farMercury = Math.max(farMercury, apart(at('Mercury', when), sunThen));
+    farVenus = Math.max(farVenus, apart(at('Venus', when), sunThen));
+  }
+  check('Mercury never strays more than 28 degrees from the sun, nor Venus more than 48',
+    farMercury > 20 && farMercury < 28.5 && farVenus > 44 && farVenus < 48, `${f(farMercury, 1)} and ${f(farVenus, 1)} deg over 800 days`);
+  const meeting = Date.UTC(2020, 11, 21, 18);
+  check('Jupiter and Saturn were a tenth of a degree apart on 21 December 2020', near(apart(at('Jupiter', meeting), at('Saturn', meeting)), 0.1, 0.03),
+    f(apart(at('Jupiter', meeting), at('Saturn', meeting)), 3));
+  check('each planet has a distance and a brightness, and Venus outshines every star',
+    PLANETS.every((p) => at(p.name, t0).distKm > 3e7 && Number.isFinite(at(p.name, t0).mag)) && at('Venus', t0).mag < -3.5);
+  const sight = cleanMeasurement({ t: t0, lat: 10, lon: 20, el: 40, az: null, label: '', star: 'Mars' });
+  check('a planet can be measured, and the globe matches a measurement taken from its published place',
+    sight?.star === 'Mars' && overheadPoint(sight).distKm > 5e7 &&
+    scoreMeasurement({ ...sight, el: observedStar(new Date(t0), 10, 20, overheadPoint(sight)).el }, { ...params, starHeightKm: 5000 }).globeMiss < 0.05);
+}
+
+// 10c. Any star in the catalogue can be made one to follow and measure.
+{
+  const bsc = JSON.parse(readFileSync(new URL('../data/bright-stars.json', import.meta.url), 'utf8'));
+  const row = (i) => ({ hr: bsc.hr[i], raDeg: bsc.ra[i], decDeg: bsc.dec[i], mag: bsc.mag[i] });
+  check('names of catalogue stars are found in a link or in stored text, each once',
+    catalogueNamesIn('star=HR 5340&m=2026,1,2,3,,,,HR 7001;x,HR 5340').join() === 'HR 5340,HR 7001' && catalogueNamesIn('THR 12x, HR 99999, hr 5').length === 0);
+  const before = SKY_BODIES.length;
+  const faint = bsc.count - 1;
+  const name = addCatalogueStar(row(faint));
+  check('a star from the catalogue is added under its catalogue number, once',
+    name === catalogueName(bsc.hr[faint]) && SKY_BODIES.length === before + 1 && addCatalogueStar(row(faint)) === name && SKY_BODIES.length === before + 1);
+  const added = SKY_BODIES[starIndex(name)];
+  const spot = starPoints(new Date(t0), [added])[0];
+  check('it is then placed like any named star: overhead from the place it stands over',
+    observedStar(new Date(t0), spot.lat, spot.lon, spot, null).el > 89.99 && near(added.ra * 15, bsc.ra[faint], 1e-9) && added.mag === bsc.mag[faint]);
+  check('and can be measured', cleanMeasurement({ t: t0, lat: 10, lon: 20, el: 30, az: null, label: '', star: name })?.star === name);
+  let last = name;
+  for (let i = faint - 1; i > faint - 40 && last; i--) last = addCatalogueStar(row(i));
+  check(`no more than ${MAX_CATALOGUE_STARS} can be added, and the stars and planets before them keep their places`,
+    last === null && SKY_BODIES.length === before + MAX_CATALOGUE_STARS && starIndex('Saturn') === STARS.length + 4 && SKY_BODIES.length <= 120);
+}
+
 // 11. Bending of light by the air.
 const arcmin = (el) => standardLift(el) * 60;
 check('lift is 29 arcminutes for something geometrically on the horizon', Math.abs(arcmin(0) - 29) < 0.5, f(arcmin(0), 2));
@@ -636,6 +693,31 @@ check(`the ${ARGUMENTS.filter((a) => a.controls?.length).length} arguments with 
     controlFaults({ id: 'x', controls: [{ id: 'a', label: 'A', min: 0, max: 10, step: 3, value: 5 }] }).length === 1 &&
     controlFaults({ id: 'x', controls: [{ id: 'a', label: 'A', min: 0, max: 10, scale: 'log', value: 5 }] }).length === 1);
 }
+// An argument's own picture has to draw, at any size, at both ends of each slider and with each choice of each list, without failing.
+{
+  // Something that accepts every drawing call and keeps no picture.
+  const blankCanvas = () => new Proxy({}, { get: (store, key) => (key in store ? store[key] : () => ({ width: 10, addColorStop() {} })), set: (store, key, value) => ((store[key] = value), true) });
+  const drawHelpers = { fmtH: (m) => `${Math.round(m)} m`, fmtD: (k) => `${k} km`, km: (n) => `${Math.round(n)} km`, city: place, state: {} };
+  const failed = [];
+  for (const a of ARGUMENTS.filter((x) => x.draw)) {
+    const sets = [defaultsFor(a)];
+    for (const c of a.controls ?? []) {
+      if (c.options) sets.push(...c.options.map(([value]) => ({ ...defaultsFor(a), [c.id]: value })));
+      else sets.push({ ...defaultsFor(a), [c.id]: c.min }, { ...defaultsFor(a), [c.id]: c.max });
+    }
+    for (const own of sets) {
+      for (const size of [{ w: 300, h: 150 }, { w: 720, h: 260 }]) {
+        try {
+          a.draw(blankCanvas(), size, {}, drawHelpers, own);
+        } catch (err) {
+          failed.push(`${a.id}: ${err.message}`);
+        }
+      }
+    }
+  }
+  const withDrawing = ARGUMENTS.filter((x) => x.draw !== undefined);
+  check(`the ${withDrawing.length} arguments with a picture of their own can draw it`, failed.length === 0 && withDrawing.every((x) => typeof x.draw === 'function'), failed.join('; '));
+}
 for (const a of ARGUMENTS) a.checks?.({ check, near, f });
 
 // 15. Google Earth.
@@ -713,6 +795,42 @@ check('every opening tag in the KML file is closed',
   check('a file that is too large is not read', parseKml('<kml>' + ' '.repeat(KML_LIMITS.bytes) + '</kml>').problem !== null);
   const crowd = '<kml>' + Array.from({ length: KML_LIMITS.points + 50 }, (_, i) => `<Placemark><Point><coordinates>${i % 90},${i % 45}</coordinates></Point></Placemark>`).join('') + '</kml>';
   check(`no more than ${KML_LIMITS.points} places are kept from one file`, parseKml(crowd).points.length === KML_LIMITS.points);
+}
+
+// 15b. Reading a KMZ file, which is a zipped KML.
+{
+  // The least a zip archive can be: each file's header and data, then the list of files, then the record that ends it.
+  const makeZip = (files) => {
+    const text = new TextEncoder();
+    const le = (n, bytes) => Array.from({ length: bytes }, (_, i) => (n >>> (8 * i)) & 255);
+    const locals = [];
+    const listed = [];
+    let at = 0;
+    for (const { name, content, packed = true } of files) {
+      const raw = text.encode(content);
+      const data = packed ? new Uint8Array(deflateRawSync(raw)) : raw;
+      const common = [...le(packed ? 8 : 0, 2), ...le(0, 4), ...le(0, 4), ...le(data.length, 4), ...le(raw.length, 4), ...le(name.length, 2), ...le(0, 2)];
+      const local = [...le(0x04034b50, 4), ...le(20, 2), ...le(0, 2), ...common, ...text.encode(name), ...data];
+      listed.push(...le(0x02014b50, 4), ...le(20, 2), ...le(20, 2), ...le(0, 2), ...common, ...le(0, 2), ...le(0, 2), ...le(0, 2), ...le(0, 4), ...le(at, 4), ...text.encode(name));
+      locals.push(...local);
+      at += local.length;
+    }
+    return new Uint8Array([...locals, ...listed, ...le(0x06054b50, 4), ...le(0, 4), ...le(files.length, 2), ...le(files.length, 2), ...le(listed.length, 4), ...le(at, 4), ...le(0, 2)]);
+  };
+  const inner = '<kml><Placemark><name>Café pier</name><Point><coordinates>1.5,50.9,12</coordinates></Point></Placemark></kml>';
+  const kmz = makeZip([{ name: 'files/icon.png', content: 'not a picture' }, { name: 'doc.kml', content: inner }]);
+  const unzipped = await unzipKml(kmz);
+  check('a KMZ file is unzipped to the KML inside it', unzipped === inner && parseKml(unzipped).points[0].name === 'Café pier');
+  check('a KMZ whose KML was stored without squeezing reads too', (await unzipKml(makeZip([{ name: 'places.kml', content: inner, packed: false }]))) === inner);
+  check('of several KML files in one KMZ, the one called doc.kml is taken',
+    (await unzipKml(makeZip([{ name: 'other.kml', content: '<kml></kml>' }, { name: 'doc.kml', content: inner }, { name: 'last.kml', content: '<kml></kml>' }]))) === inner);
+  check('a file is taken as KMZ or as plain KML by how it starts',
+    (await kmlText(kmz)) === inner && (await kmlText(new TextEncoder().encode(inner))) === inner);
+  const refused = async (bytes) => unzipKml(bytes).then(() => null, (err) => err.message);
+  check('a zip with no KML in it, and something that is not a zip, are each turned away with a reason',
+    /no KML/.test(await refused(makeZip([{ name: 'readme.txt', content: 'hello' }]))) && /not a KMZ/.test(await refused(new TextEncoder().encode('PK but nothing else here at all'))));
+  check('a KMZ that unpacks to far more than can be read is stopped',
+    /too large/.test(await refused(makeZip([{ name: 'doc.kml', content: '<kml>' + ' '.repeat(KML_LIMITS.bytes + 10) + '</kml>' }]))));
 }
 
 // 16. Light followed through layers of air.
