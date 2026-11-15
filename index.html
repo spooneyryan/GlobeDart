@@ -31,7 +31,7 @@
   <body data-mode="sky">
     <header>
       <div class="brand">
-        <h1>GlobeDart</h1>
+        <h1><a href="./" title="Back to the start">GlobeDart</a></h1>
         <p>Same sun, same observer, two models. Which one matches what people actually see?</p>
       </div>
       <nav id="demos" aria-label="Demonstrations">
@@ -324,6 +324,7 @@
 
         <section>
           <button id="btn-share">Copy link to this view</button>
+          <button id="btn-reset">Start again from the beginning</button>
         </section>
       </aside>
 
@@ -426,13 +427,18 @@
             <button id="tour-show" class="primary">Show what each model says</button>
           </div>
           <div id="demo-controls" hidden></div>
-          <canvas id="demo-canvas" hidden></canvas>
+          <canvas id="demo-canvas" role="img" hidden></canvas>
           <div id="demo-body"></div>
           <div id="tour-end" class="buttons two" hidden>
             <button id="tour-again">Start again</button>
             <button id="tour-explore" class="primary">Explore on your own</button>
           </div>
         </section>
+
+        <nav id="jump" aria-label="Further down this page">
+          <button type="button" data-jump="controls">Change the scene ↓</button>
+          <button type="button" data-jump="results">See the numbers ↓</button>
+        </nav>
 
         <section class="fl-only">
           <h2>What level flight takes <button type="button" class="info" data-info="fl.level" aria-label="How this is worked out: What level flight takes">i</button></h2>

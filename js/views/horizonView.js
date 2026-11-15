@@ -444,7 +444,7 @@ function drawScope(ctx, w, h, model, s) {
   return null;
 }
 
-const angle = (degrees) => (degrees >= 0.1 ? `${degrees.toFixed(2)}°` : `${(degrees * 60).toFixed(1)} arcminutes`);
+const angle = (degrees) => (degrees >= 0.1 ? `${degrees.toFixed(2)}°` : `${(degrees * 60).toFixed(1)} sixtieths of a degree`);
 
 export class HorizonView {
   /**

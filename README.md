@@ -357,6 +357,20 @@ Below about 1180 px wide the page scrolls and the views stay pinned at the top. 
 is shown at a time, switched with the second pair of buttons above them. Sky views take a one-finger drag to look around and a
 two-finger pinch to zoom; the outside views use the usual one-finger orbit and two-finger zoom.
 
+On a phone the explanation comes straight after the views. Two buttons beneath it, "Change the scene" and "See the
+numbers", scroll to the settings and to the tables. In a tour the explanation is brought up under the views at
+each step, and a step's question makes room for its answer once it has been answered.
+
+## Finding your way about
+
+- Each heading in the settings and the results folds its section away. "Display" and "Google Earth" start folded.
+  What is folded is remembered in the browser's local storage.
+- Switching tool with "Sun, stars, maps", "The horizon" or "Level flight" brings up that tool's demonstrations.
+- "Start again from the beginning", and the name at the top, load the page afresh as a plain visit. Measurements
+  that were saved are kept.
+- A plain visit opens on the present moment, or on that day's noon if it is night at the observer.
+- For someone who has asked their device for less motion, nothing glides and no scene starts moving by itself.
+
 ## Licence
 
 Use it freely, for anything, with no credit needed. The one thing not allowed is redistributing the whole of

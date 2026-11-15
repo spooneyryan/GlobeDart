@@ -429,7 +429,7 @@ function renderMoon(c) {
     <tr><td>In the Earth's shadow?${infoButton('moon.eclipse', 'eclipses of the moon')}</td><td>${shadow(m.published)}</td>
       <td class="${m.shadow.kind === m.published ? '' : 'bad'}">${shadow(m.shadow.kind)}</td>
       <td class="${m.published === 'none' ? '' : 'bad'}">cannot be</td></tr>
-    <tr><td>Miss</td><td class="dim">n/a</td><td class="${globeMiss > 1 ? 'bad' : 'good'}">${deg(globeMiss, 2)}</td>
+    <tr><td>Off by</td><td class="dim">n/a</td><td class="${globeMiss > 1 ? 'bad' : 'good'}">${deg(globeMiss, 2)}</td>
       <td class="${flatMiss > 1 ? 'bad' : 'good'}">${deg(flatMiss, 1)}</td></tr>`;
   const seen = m.cities.filter((x) => x.obs.el > 0);
   const lits = seen.map((x) => x.litFlat);
@@ -1215,7 +1215,7 @@ function bindEarthControls() {
     kmlData = { ...found, fileName: file.name };
     kmlEnds = { from: null, to: null };
     renderKml();
-    $('kml-section').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    $('kml-section').scrollIntoView({ block: 'nearest', behavior: glide() });
     return toast(`Read ${file.name}`);
   });
   $('kml-clear').addEventListener('click', () => {
@@ -1509,6 +1509,71 @@ function showWorkings(data) {
   if (body.innerHTML !== html) body.innerHTML = html;
 }
 
+// ---------- moving about the page ----------
+
+// Someone who has asked their device for less motion gets no gliding and nothing that starts moving by itself.
+const calm = window.matchMedia('(prefers-reduced-motion: reduce)');
+const glide = () => (calm.matches ? 'auto' : 'smooth');
+// One column, with the views pinned at the top.
+const phone = window.matchMedia('(max-width: 720px)');
+
+/** On a phone, brings the explanation up to sit just beneath the pinned views, once it has been redrawn. */
+function cardIntoView() {
+  if (!phone.matches) return;
+  requestAnimationFrame(() => requestAnimationFrame(() => $('demo-card').scrollIntoView({ block: 'start', behavior: glide() })));
+}
+
+// A section of settings or results folds away under its heading. What is folded is remembered on this device.
+const FOLD_KEY = 'globedart.folded';
+const FOLDED_AT_FIRST = ['Display', 'Google Earth'];
+function bindFolds() {
+  let stored = {};
+  try {
+    stored = JSON.parse(localStorage.getItem(FOLD_KEY) ?? '{}') ?? {};
+  } catch {
+    // Storage can be unavailable. Then nothing is remembered.
+  }
+  for (const section of document.querySelectorAll('aside section')) {
+    const heading = section.querySelector(':scope > h2');
+    if (!heading || section.id === 'demo-card') continue;
+    // The words of the heading become the button. Its "i" stays beside it.
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'fold';
+    for (const node of [...heading.childNodes]) {
+      if (!(node.nodeType === 1 && node.classList.contains('info'))) button.append(node);
+    }
+    heading.prepend(button);
+    const key = section.id || button.textContent.replace(/[\d:]/g, '').trim();
+    const set = (folded) => {
+      section.classList.toggle('folded', folded);
+      button.setAttribute('aria-expanded', String(!folded));
+    };
+    set(stored[key] ?? FOLDED_AT_FIRST.includes(key));
+    button.addEventListener('click', () => {
+      const folded = !section.classList.contains('folded');
+      set(folded);
+      stored[key] = folded;
+      try {
+        localStorage.setItem(FOLD_KEY, JSON.stringify(stored));
+      } catch {
+        // Not remembered, then.
+      }
+      requestUpdate();
+    });
+  }
+  for (const btn of document.querySelectorAll('#jump button')) {
+    btn.addEventListener('click', () => {
+      const all = document.querySelectorAll(btn.dataset.jump === 'controls' ? '#controls section' : '#results > section:not(#demo-card)');
+      [...all].find((s) => s.offsetParent)?.scrollIntoView({ block: 'start', behavior: glide() });
+    });
+  }
+  $('btn-reset').addEventListener('click', () => {
+    // Without the part after the #, the page loads afresh as a plain visit.
+    location.href = location.pathname;
+  });
+}
+
 // ---------- the guided tour ----------
 
 const TOUR_END = {
@@ -1565,6 +1630,8 @@ function showArgument(id) {
   Object.assign(state, { demo: id, playing: false, sailing: false, flying: false, picking: false });
   state.own = defaultsFor(DEMOS[id]);
   DEMOS[id].apply(app, state.own);
+  // A scene that would start moving by itself waits for its button instead.
+  if (calm.matches) Object.assign(state, { sailing: false, flying: false });
   setMode(DEMOS[id].tool);
   setPair(DEMOS[id].pair);
   requestUpdate();
@@ -1625,6 +1692,7 @@ function renderDemoDrawing(argument, data, own) {
   const canvas = $('demo-canvas');
   canvas.hidden = !argument?.draw;
   if (canvas.hidden) return;
+  canvas.setAttribute('aria-label', `Drawing for "${argument.label}". The text beneath it gives the same result in words.`);
   const w = canvas.clientWidth;
   const h = argument.drawHeight ?? 180;
   if (!w) return; // not on screen: drawn when it comes back
@@ -1830,16 +1898,16 @@ function update() {
 // The lift the air really gives at this height, and the lift each model would
 // need for its plain geometry to land on the measurement.
 function bendingRow(obs, globe, flat, extra = '') {
-  const show = (x, d) => (Math.abs(x) < 0.005 ? 'none' : `${deg(Math.abs(x), d)}${x < 0 ? ' down' : ''}`);
+  // Which way the air would have to move it is always said: up is a lift, down is the opposite.
+  const show = (x, d) => (Math.abs(x) < 0.005 ? 'none' : `${deg(Math.abs(x), d)} ${x < 0 ? 'down' : 'up'}`);
   const fits = (x) => (Math.abs(x - obs.lift) <= 0.1 ? 'good' : 'bad');
-  // A model that needs more lift than the air gives has the direction spelled out.
-  const need = (x, d) => (fits(x) === 'bad' && x >= 0.005 ? `${show(x, d)} up` : show(x, d));
+  const need = show;
   // Well below the horizon the ground is in the way and "lift" stops meaning anything.
   const hidden = obs.el < -1;
   const real = hidden ? '<td class="dim">n/a</td>' : `<td>${show(obs.lift, 2)}</td>`;
   const globeNeed = obs.el - globe.trueEl;
   const flatNeed = obs.el - flat.trueEl;
-  return `<tr><td>Lift from the air${extra}</td>${real}
+  return `<tr><td>Bending by the air${extra}</td>${real}
     ${hidden ? '<td class="dim">n/a</td>' : `<td class="${fits(globeNeed)}">${need(globeNeed, 2)}</td>`}
     <td class="${fits(flatNeed)}">${need(flatNeed, 1)}</td></tr>`;
 }
@@ -1857,7 +1925,7 @@ function renderCompare(c, flatMiss) {
       <td class="${Math.abs(c.flat.sizeDeg - c.obs.sizeDeg) > 0.03 ? 'bad' : ''}">${deg(c.flat.sizeDeg, 2)}</td></tr>
     <tr><td>Sun visible?</td><td>${up ? 'yes' : 'no, set'}</td><td>${c.globe.el > -0.833 ? 'yes' : 'no, set'}</td>
       <td class="${up === c.flat.el > -0.833 ? '' : 'bad'}">${c.flat.el > -0.833 ? 'yes' : 'no, set'}</td></tr>
-    <tr><td>Miss${infoButton('sky.miss', 'miss')}</td><td class="dim">n/a</td><td class="${cls(globeMiss)}">${deg(globeMiss, 2)}</td>
+    <tr><td>Off by${infoButton('sky.miss', 'how far off each model is')}</td><td class="dim">n/a</td><td class="${cls(globeMiss)}">${deg(globeMiss, 2)}</td>
       <td class="${cls(flatMiss)}">${deg(flatMiss, 1)}</td></tr>
     ${bendingRow(c.obs, c.globe, c.flat, infoButton('sky.lift', 'lift from the air'))}`;
 }
@@ -2078,7 +2146,7 @@ function renderStars(c) {
       <td class="${Math.abs(wrap180(f.az - obs.az)) > 1 ? 'bad' : ''}">${bearing(f.az)}</td></tr>
     <tr><td>Above the horizon?</td><td>${up ? 'yes' : 'no'}</td><td>${g.el > 0 ? 'yes' : 'no'}</td>
       <td class="${up ? '' : 'bad'}">yes</td></tr>
-    <tr><td>Miss</td><td class="dim">n/a</td><td class="${globeMiss > 1 ? 'bad' : 'good'}">${deg(globeMiss, 2)}</td>
+    <tr><td>Off by</td><td class="dim">n/a</td><td class="${globeMiss > 1 ? 'bad' : 'good'}">${deg(globeMiss, 2)}</td>
       <td class="${miss > 1 ? 'bad' : 'good'}">${deg(miss, 1)}</td></tr>
     ${bendingRow(obs, g, f)}`;
 
@@ -2214,6 +2282,7 @@ function renderDemo(c) {
   $('tour-bar').hidden = !tour;
   $('tour-end').hidden = !ended;
   $('tour-ask').hidden = !asking;
+  $('demo-card').classList.toggle('answered', asking && tour.shown);
   if (tour) {
     const name = tourOf().label;
     $('tour-step').textContent = ended ? `${name}: the end` : `${name}: step ${tour.step + 1} of ${steps.length}`;
@@ -2348,7 +2417,9 @@ function syncInputs() {
   for (const el of document.querySelectorAll('.unit-d')) el.textContent = imperial() ? 'mi' : 'km';
   $('hz-k').value = Math.round(state.k * 100);
   $('hz-k-label').textContent = `k = ${state.k.toFixed(2)}`;
-  $('hz-k-note').textContent = airInWords(state.k);
+  // What k means, in words: how sharply light curves, against how sharply the sea does.
+  const curve = state.k < 0.005 ? '' : `Light curves ${Math.round(state.k * 100)}% as sharply as the sea does. `;
+  $('hz-k-note').textContent = curve + airInWords(state.k);
   $('hz-sail').textContent = state.sailing ? 'Stop' : 'Send it away';
   // The picker shows a view only while the sizes on show are still that view's.
   const view = VIEWS.find((v) => {
@@ -2592,7 +2663,11 @@ function bindControls() {
     });
   }
   for (const btn of document.querySelectorAll('#demos button[data-tour]')) {
-    btn.addEventListener('click', () => (btn.dataset.tour === OWN_TOUR ? tourPick() : tourGo(0, btn.dataset.tour)));
+    btn.addEventListener('click', () => {
+      if (btn.dataset.tour === OWN_TOUR) tourPick();
+      else tourGo(0, btn.dataset.tour);
+      cardIntoView();
+    });
   }
   // Choosing the steps of a tour: the ticks and the two buttons are inside the explanation, which is redrawn.
   $('demo-body').addEventListener('change', (e) => {
@@ -2619,20 +2694,30 @@ function bindControls() {
   $('tour-start').addEventListener('click', () => {
     // The row beneath lists the tours. With none running, the short one starts straight away.
     demoGroup = TOURS_GROUP;
-    if (!state.tour && !state.picking) tourGo(0, TOURS[0].id);
-    else requestUpdate();
+    if (!state.tour && !state.picking) {
+      tourGo(0, TOURS[0].id);
+      cardIntoView();
+    } else requestUpdate();
   });
-  $('tour-again').addEventListener('click', () => tourGo(0));
-  $('tour-back').addEventListener('click', () => tourGo(state.tour.step - 1));
-  $('tour-next').addEventListener('click', () => tourGo(state.tour.step + 1));
-  $('tour-show').addEventListener('click', tourShow);
+  const then = (act) => () => {
+    act();
+    cardIntoView();
+  };
+  $('tour-again').addEventListener('click', then(() => tourGo(0)));
+  $('tour-back').addEventListener('click', then(() => tourGo(state.tour.step - 1)));
+  $('tour-next').addEventListener('click', then(() => tourGo(state.tour.step + 1)));
+  $('tour-show').addEventListener('click', then(tourShow));
   $('tour-leave').addEventListener('click', tourLeave);
   $('tour-explore').addEventListener('click', tourLeave);
 }
 
 function bindHorizonControls() {
   for (const btn of document.querySelectorAll('#mode-tabs button')) {
-    btn.addEventListener('click', () => setMode(btn.dataset.mode));
+    btn.addEventListener('click', () => {
+      setMode(btn.dataset.mode);
+      const listed = (group) => ARGUMENTS.some((a) => a.group === group && a.tool === state.mode);
+      if (!state.tour && !state.picking && !listed(demoGroup)) demoGroup = ARGUMENTS.find((a) => a.tool === state.mode).group;
+    });
   }
   const set = (key, value) => {
     state[key] = clamp(value, ...HZ_LIMITS[key]);
@@ -3042,6 +3127,7 @@ async function start() {
   // A link written by the app carries its time. Without one, this is a plain visit.
   if (!new URLSearchParams(location.hash.slice(1)).has('t')) openInDaylight();
   bindControls();
+  bindFolds();
   const land = await (await fetch('data/land-110m.json')).json();
   const landCanvas = makeLandCanvas(land);
   const onPick = (lat, lon) => setObserver({ lat, lon });

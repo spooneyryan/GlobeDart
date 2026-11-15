@@ -149,7 +149,7 @@ export const EXPLAIN = {
 
   'sky.miss': {
     tool: 'sky',
-    title: 'What "miss" means',
+    title: 'What "off by" means',
     maths: true,
     code: [['models.js', 'skySeparation']],
     body: (c, { deg }) => `
