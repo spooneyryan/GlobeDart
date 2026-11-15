@@ -697,7 +697,15 @@ check(`the ${ARGUMENTS.filter((a) => a.controls?.length).length} arguments with 
 {
   // Something that accepts every drawing call and keeps no picture.
   const blankCanvas = () => new Proxy({}, { get: (store, key) => (key in store ? store[key] : () => ({ width: 10, addColorStop() {} })), set: (store, key, value) => ((store[key] = value), true) });
-  const drawHelpers = { fmtH: (m) => `${Math.round(m)} m`, fmtD: (k) => `${k} km`, km: (n) => `${Math.round(n)} km`, city: place, state: {} };
+  const drawHelpers = {
+    fmtH: (m) => `${Math.round(m)} m`, fmtD: (k) => `${k} km`, km: (n) => `${Math.round(n)} km`, deg: (n, d = 1) => `${n.toFixed(d)}°`, city: place,
+    state: { sunHeightKm: 5000, lightRangeKm: 10000, flatLight: 'straight', lat: 51.5, lon: 0 },
+  };
+  // What a drawing is handed for the sky: the sun by day, just after sunset, at night, and just after sunset with the flat model's light bending.
+  const skies = [[30, 4000, 'straight'], [-1.5, 9000, 'straight'], [-40, 15000, 'straight'], [-1.5, 10150, 'bent']].map(([el, groundKm, flatLight]) => ({
+    data: { sub, globe: { trueEl: el, el }, obs: { el }, flat: { trueEl: 25, el: 25, groundKm } },
+    helpers: { ...drawHelpers, state: { ...drawHelpers.state, flatLight } },
+  }));
   const failed = [];
   for (const a of ARGUMENTS.filter((x) => x.draw)) {
     const sets = [defaultsFor(a)];
@@ -707,10 +715,12 @@ check(`the ${ARGUMENTS.filter((a) => a.controls?.length).length} arguments with 
     }
     for (const own of sets) {
       for (const size of [{ w: 300, h: 150 }, { w: 720, h: 260 }]) {
-        try {
-          a.draw(blankCanvas(), size, {}, drawHelpers, own);
-        } catch (err) {
-          failed.push(`${a.id}: ${err.message}`);
+        for (const sky of skies) {
+          try {
+            a.draw(blankCanvas(), size, sky.data, sky.helpers, own);
+          } catch (err) {
+            failed.push(`${a.id}: ${err.message}`);
+          }
         }
       }
     }

@@ -167,6 +167,60 @@ Earth is never between the sun and the moon.
 - Checks: section 18 (position within 0.01°; phase within one part in a hundred; all 37 eclipses of 2020 to 2035
   placed correctly, and no eclipse at any other of the 198 full moons in those years).
 
+## 3b. Which side of a cloud is lit
+
+Light strikes the underside of a cloud only if it is travelling upward when it arrives. So each model is asked
+where the sun is, seen from a cloud h above the ground: above level or below it.
+
+**Globe.** The sun is so far away that it is at the same height e from the cloud as from the ground beneath it.
+The ground curves away, so from h up you can see below level by:
+
+```
+drop = acos(R ÷ (R + h))
+```
+
+- e above 0: the light comes down, and the top is lit.
+- e between 0 and −drop: the light comes up over the curve, and the underside is lit.
+- e below −drop: the Earth is in the way, and the cloud is dark.
+
+Turned round, when the sun is e below level the Earth's shadow reaches this high overhead:
+
+```
+shadow = R × (1 ÷ cos e − 1)
+```
+
+The underside stays lit for `drop ÷ rate`, with the rate the sun sinks from section 9a. That is 13 minutes for a
+cloud 10 km up on the equator at an equinox, and about 24 in London in November. Low clouds go dark first.
+
+**Flat.** The sun is H up and a distance d away over the map, so from the cloud it is at:
+
+```
+height = atan((H − h) ÷ d)
+```
+
+H is thousands of km and h is a few, so this is always above level and only the top can be lit. Beyond the reach
+the model gives the sun's light, neither side is.
+
+**Flat, with bending light.** With c the amount of curve (section 3), light that left the sun at slope s₀ is at
+height `H + s₀·x + c·x²/2` after a distance x. To arrive at the cloud:
+
+```
+s₀     = (h − H − c × d² ÷ 2) ÷ d
+height = atan((H − h − c × d² ÷ 2) ÷ d)
+```
+
+Once that height is below level the light has passed its lowest point, `H − s₀² ÷ 2c` up, and arrives only if
+that is above the ground. The underside is lit from the reach out to `reach × (1 + √(h ÷ H))`. Straight light
+over a ball of radius `1 ÷ c = reach² ÷ 2H` does exactly the same near the ground: bending the light is the
+globe's curve moved into the light.
+
+All of this is geometry alone. Air bends light that skims the surface by a further degree or so, which lengthens
+the globe's times a little.
+
+- Code: `js/clouds.js`, `levelDropDeg`, `shadowHeightKm`, `globeCloudLight`, `flatCloudLight`,
+  `litBelowMinutes`; `js/arguments/clouds.js`.
+- Checks: section 14 (run from `js/arguments/clouds.js`).
+
 ## 4. Scoring the models
 
 **Miss.** The angle on the sky between where a model puts the sun and where it is measured. With each position a

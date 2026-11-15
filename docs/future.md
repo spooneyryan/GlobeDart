@@ -44,6 +44,14 @@ answers the claim another way: four cities and the six distances between them ca
 "Air without a container" answers the claim that gas cannot sit next to a vacuum without a dome, with the
 standard atmosphere against a sealed container, and draws its own chart of pressure against height.
 
+## Also built: clouds lit from beneath
+
+"Clouds lit from beneath" asks each model which side of a cloud its sun can light. After sunset the globe's light
+comes up over the curve and lights the underside, with the tops in shade as seen from an aircraft. A sun that is
+always overhead can only light the top. It draws both, with the Earth's shadow climbing as time runs. Still to
+do: the colour of the light, which reddens on its long path through the air, and shadows cast upward onto cloud
+by mountains and aircraft trails.
+
 ## 1. Connect to Google Earth
 
 Let a place, a route or a sight line in GlobeDart be opened in Google Earth, and the other way round.
@@ -73,7 +81,7 @@ Notes:
   scene, and text built from the live numbers. Each can carry its own checks, which `tools/check-maths.mjs` runs.
 - Built: an argument can list sliders and pick-lists of its own (`controls`), drawn above its explanation and
   kept in links. The ice wall, water finding its level and the Bedford Level use them.
-- Built: an argument can draw a picture of its own above its explanation. Two do.
+- Built: an argument can draw a picture of its own above its explanation. Three do.
 - Still to do: an argument replacing the four main views with its own.
 - Added since: "the horizon always rises to eye level", "we can see things the curve should hide", and the pilots
   argument below.

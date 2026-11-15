@@ -43,6 +43,7 @@ The empty `.nojekyll` file tells GitHub Pages to serve the files exactly as they
 | `js/presets.js` | Well-known long views across water, each with the sources for its figures |
 | `js/raytrace.js` | Light followed step by step through air whose temperature changes with height, over curved or flat ground |
 | `js/atmosphere.js` | The standard atmosphere: how the air's pressure falls with height when gravity holds it down |
+| `js/clouds.js` | Which side of a cloud each model's sun lights: the top, the underside, or neither |
 | `js/rotation.js` | A turning globe: speed of the ground, the weight the turn takes off, and how a pendulum's swing turns |
 | `js/flight.js` | Level flight: how fast the nose comes down to follow a globe, and what flying dead straight would do |
 | `js/earth.js` | A link that opens Google Earth at a place, KML files of the view and of a line of sight, and a reader for KML and KMZ files |
@@ -292,7 +293,7 @@ person showing another.
 | Tour | Steps |
 |---|---|
 | The short tour | sunset, sunrise direction, sun angles from many cities, southern stars, southern flights, a ship over the horizon |
-| The sun and the stars | sunset, sunrise direction, December daylight, sun angles, the pole star, southern stars |
+| The sun and the stars | sunset, clouds lit from beneath, sunrise direction, December daylight, sun angles, the pole star, southern stars |
 | The moon | phases, the same face, eclipses |
 | The horizon | a ship, the horizon at eye level, water finding its level, the Bedford Level, things seen from too far away, two sunsets |
 | Travel, motion and air | southern flights, the ice wall, any flat map, pilots and the nose, feeling the spin, air without a container |
@@ -320,7 +321,7 @@ A link can name a demonstration or a tour and nothing else, and the app sets the
 ## The demonstrations
 
 The bar at the top lists the demonstrations under six headings: the sun, the moon, the stars, distances, the
-horizon, and motion and air. Picking a heading shows its demonstrations beneath it. There are twenty-one, each answering one
+horizon, and motion and air. Picking a heading shows its demonstrations beneath it. There are twenty-two, each answering one
 flat-earth claim, which is quoted above its explanation.
 
 ## Writing an argument
@@ -341,7 +342,8 @@ body(data, app, own) { /* own.south is the number on the slider */ }
 
 An argument can also draw a picture of its own. It exports `draw(ctx, size, data, app, own)`, and the app gives it
 a canvas above the explanation and redraws it whenever anything changes. "Air without a container" draws pressure
-against height this way, and "Any flat map" draws four cities laid out on a flat sheet. The checks run every such
+against height this way, "Any flat map" draws four cities laid out on a flat sheet, and "Clouds lit from beneath"
+draws the light arriving at a layer of cloud under each model. The checks run every such
 drawing at several sizes and with every setting of its controls.
 
 The values go back to where they start each time the argument is opened, and are kept in links. Three arguments
