@@ -419,7 +419,7 @@ function renderMoon(c) {
   $('moon-compare').tBodies[0].innerHTML = `
     <tr><td>Elevation${infoButton('moon.position', 'where the moon is')}</td><td>${height(m.obs.el)}</td><td>${height(m.globe.el)}</td>
       <td class="${Math.abs(m.flat.el - m.obs.el) > 1 ? 'bad' : ''}">${deg(m.flat.el)}</td></tr>
-    <tr><td>Bearing</td><td>${bearing(m.obs.az)}</td><td>${bearing(m.globe.az)}</td>
+    <tr class="brk"><td>Bearing</td><td>${bearing(m.obs.az)}</td><td>${bearing(m.globe.az)}</td>
       <td class="${Math.abs(wrap180(m.flat.az - m.obs.az)) > 1 ? 'bad' : ''}">${bearing(m.flat.az)}</td></tr>
     <tr><td>Width</td><td>${deg(m.obs.sizeDeg, 2)}</td><td>${deg(m.globe.sizeDeg, 2)}</td>
       <td class="${Math.abs(m.flat.sizeDeg - m.obs.sizeDeg) > 0.03 ? 'bad' : ''}">${deg(m.flat.sizeDeg, 2)}</td></tr>
@@ -1436,13 +1436,32 @@ const app = {
   cityUnderMoon,
 };
 
+// A plain visit opens on the present moment. If it is night at the observer then, it opens on that day's noon
+// instead, so that there is a sun for the two models to be checked against.
+let openedAt = null;
+function openInDaylight() {
+  if (observedSun(state.date, state.lat, state.lon, currentAir()).el >= 0) return;
+  const noon = sunEvents(state.date, state.lat, state.lon).noon;
+  if (!noon) return;
+  state.date = noon;
+  openedAt = noon.getTime();
+}
+
 const INTRO = {
   title: 'How to use this',
   body: () => `
-    <p>The left side is the globe model, the right side is the flat model. Both are shown the same moment and the
-    same observer. Top row: the view from outside. Bottom row: what the observer should see in the sky.</p>
-    <p>The <b class="m">teal ring</b> marks where the sun is actually measured to be. A model is right when its sun
-    sits inside the ring.</p>
+    ${
+      openedAt === state.date.getTime()
+        ? '<p>It is night where the observer is just now, so this has opened at noon today instead. "Now" goes to the present moment.</p>'
+        : ''
+    }
+    <p><span class="on-wide">The left side is the globe model, the right side is the flat model. Both are shown the
+    same moment and the same observer. Top row: the view from outside. Bottom row: what the observer should see in
+    the sky.</span><span class="on-phone">The globe model is shown first and the flat model second, both at the same
+    moment for the same observer. The two buttons above them choose what to look at: "From outside", or "Observer's
+    sky" for what the observer should see.</span></p>
+    <p>In the observer's sky the <b class="m">teal ring</b> marks where the sun is actually measured to be. A model
+    is right when its sun sits inside the ring.</p>
     <p class="try">Take a tour, pick a demonstration above, or change the time, the place and the flat-model
     settings yourself. Drag any view to look around; scroll or pinch to zoom.</p>`,
 };
@@ -1451,7 +1470,9 @@ const HORIZON_INTRO = {
   title: 'Over the horizon',
   body: (hz) => `
     <p>Something ${fmtH(hz.targetM)} tall, ${fmtD(hz.distanceKm)} away, seen by an eye ${fmtH(hz.eyeM)} above the
-    water. Top row: the scene from the side. Bottom row: what you would see through a telescope.</p>
+    water. <span class="on-wide">Top row: the scene from the side. Bottom row: what you would see through a
+    telescope.</span><span class="on-phone">The two buttons above the views choose between the scene from the side
+    and what you would see through a telescope.</span></p>
     <p>The globe says the sea hides it from the bottom up. The flat model says nothing can hide it, however far
     it goes.</p>
     <p class="try">Press "Send it away", or drag the distance and the height of your eye. Then change the air and
@@ -1461,8 +1482,10 @@ const HORIZON_INTRO = {
 const FLIGHT_INTRO = {
   title: 'Level flight',
   body: (fl) => `
-    <p>An aircraft at ${fmtSpeed(fl.speedKmh)}, holding its height. Top row: one whole lap, speeded up. Bottom row:
-    the next ${fmtTime(fl.minutes)} of flight, drawn to true scale.</p>
+    <p>An aircraft at ${fmtSpeed(fl.speedKmh)}, holding its height. <span class="on-wide">Top row: one whole lap, speeded
+    up. Bottom row: the next ${fmtTime(fl.minutes)} of flight, drawn to true scale.</span><span class="on-phone">The
+    two buttons above the views choose between one whole lap, speeded up, and the next ${fmtTime(fl.minutes)} of
+    flight, drawn to true scale.</span></p>
     <p>On the globe the nose comes down by ${fmtAngle(fl.rateDegPerMin)} a minute as the aircraft follows the
     ground round. On the flat model it never moves.</p>
     <p class="try">Press "Fly the lap", then change the speed and the length of the stretch.</p>`,
@@ -1828,7 +1851,7 @@ function renderCompare(c, flatMiss) {
   $('compare').tBodies[0].innerHTML = `
     <tr><td>Elevation${infoButton('sky.elevation', 'elevation')}</td><td>${deg(c.obs.el)}</td><td>${deg(c.globe.el)}</td>
       <td class="${Math.abs(c.flat.el - c.obs.el) > 1 ? 'bad' : ''}">${deg(c.flat.el)}</td></tr>
-    <tr><td>Bearing${infoButton('sky.bearing', 'bearing')}</td><td>${bearing(c.obs.az)}</td><td>${bearing(c.globe.az)}</td>
+    <tr class="brk"><td>Bearing${infoButton('sky.bearing', 'bearing')}</td><td>${bearing(c.obs.az)}</td><td>${bearing(c.globe.az)}</td>
       <td class="${Math.abs(wrap180(c.flat.az - c.obs.az)) > 1 ? 'bad' : ''}">${bearing(c.flat.az)}</td></tr>
     <tr><td>Sun's width${infoButton('sky.width', 'width of the sun')}</td><td>${deg(c.obs.sizeDeg, 2)}</td><td>${deg(c.globe.sizeDeg, 2)}</td>
       <td class="${Math.abs(c.flat.sizeDeg - c.obs.sizeDeg) > 0.03 ? 'bad' : ''}">${deg(c.flat.sizeDeg, 2)}</td></tr>
@@ -2051,7 +2074,7 @@ function renderStars(c) {
   $('star-compare').tBodies[0].innerHTML = `
     <tr><td>Elevation</td><td>${height(obs.el)}</td><td>${height(g.el)}</td>
       <td class="${Math.abs(f.el - obs.el) > 1 ? 'bad' : ''}">${deg(f.el)}</td></tr>
-    <tr><td>Bearing</td><td>${bearing(obs.az)}</td><td>${bearing(g.az)}</td>
+    <tr class="brk"><td>Bearing</td><td>${bearing(obs.az)}</td><td>${bearing(g.az)}</td>
       <td class="${Math.abs(wrap180(f.az - obs.az)) > 1 ? 'bad' : ''}">${bearing(f.az)}</td></tr>
     <tr><td>Above the horizon?</td><td>${up ? 'yes' : 'no'}</td><td>${g.el > 0 ? 'yes' : 'no'}</td>
       <td class="${up ? '' : 'bad'}">yes</td></tr>
@@ -2594,8 +2617,10 @@ function bindControls() {
     requestUpdate();
   });
   $('tour-start').addEventListener('click', () => {
+    // The row beneath lists the tours. With none running, the short one starts straight away.
     demoGroup = TOURS_GROUP;
-    requestUpdate();
+    if (!state.tour && !state.picking) tourGo(0, TOURS[0].id);
+    else requestUpdate();
   });
   $('tour-again').addEventListener('click', () => tourGo(0));
   $('tour-back').addEventListener('click', () => tourGo(state.tour.step - 1));
@@ -3014,6 +3039,8 @@ async function start() {
   measurements = mergeMeasurements(loadStoredMeasurements());
   observations = mergeObservations(loadStoredObservations());
   readHash();
+  // A link written by the app carries its time. Without one, this is a plain visit.
+  if (!new URLSearchParams(location.hash.slice(1)).has('t')) openInDaylight();
   bindControls();
   const land = await (await fetch('data/land-110m.json')).json();
   const landCanvas = makeLandCanvas(land);

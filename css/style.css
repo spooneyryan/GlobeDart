@@ -774,15 +774,38 @@ table.data td {
   white-space: nowrap;
 }
 
+/* The name of a row may wrap, so that the columns of numbers always fit the panel. */
 table.data th:first-child,
 table.data td:first-child {
   text-align: left;
   color: var(--muted);
   font-weight: 400;
+  white-space: normal;
 }
 
 table.data thead th {
   font-size: 12px;
+  white-space: normal;
+}
+
+/* Beside the name of a row the "i" takes no room on its line, so it is never left on a line of its own.
+   The cell keeps the room for it on the right. */
+table.data td:first-child:has(.info) {
+  padding-right: 23px;
+}
+
+table.data td:first-child .info {
+  margin-right: -19px;
+}
+
+/* A row of bearings: each may put its compass point on a second line. */
+table.data tr.brk td {
+  white-space: normal;
+}
+
+/* Wording that depends on how the views are laid out: four at once, or one pair at a time. */
+.on-phone {
+  display: none;
 }
 
 td.bad {
@@ -1415,6 +1438,12 @@ h4.flat {
     font-size: 14px;
     margin-left: 5px;
   }
+  table.data td:first-child:has(.info) {
+    padding-right: 31px;
+  }
+  table.data td:first-child .info {
+    margin-right: -27px;
+  }
   .info-close {
     min-height: 32px;
   }
@@ -1471,7 +1500,13 @@ h4.flat {
     gap: 6px 16px;
   }
   .brand p {
+    font-size: 12px;
+  }
+  .on-wide {
     display: none;
+  }
+  .on-phone {
+    display: inline;
   }
   #demos {
     align-items: stretch;
@@ -1579,6 +1614,13 @@ h4.flat {
   }
   #views {
     order: 0;
+  }
+}
+
+/* Where there is very little height, the line under the name gives its room to the views. */
+@media (max-height: 520px) {
+  .brand p {
+    display: none;
   }
 }
 

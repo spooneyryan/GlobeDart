@@ -287,7 +287,7 @@ KML, is unzipped in the browser too. Only pins and paths are read.
 
 ## The tours
 
-"Take a tour" lists the tours. Each walks through a few arguments in order, easiest first, and is meant for one
+"Take a tour" starts the short tour and lists the others beneath it. Each walks through a few arguments in order, easiest first, and is meant for one
 person showing another.
 
 | Tour | Steps |
