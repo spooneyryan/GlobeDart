@@ -1545,13 +1545,57 @@ function cardIntoView() {
 // A section of settings or results folds away under its heading. What is folded is remembered on this device.
 const FOLD_KEY = 'globedart.folded';
 const FOLDED_AT_FIRST = ['Display', 'Google Earth'];
-function bindFolds() {
-  let stored = {};
+// Each sidebar can also be tucked away at its edge of the screen, where the sidebars sit beside the views.
+const TUCK_KEY = 'globedart.tucked';
+const SIDE_NAMES = { controls: 'settings', results: 'results' };
+const folds = []; // { section, key, set } for every section that folds
+
+function recall(key) {
   try {
-    stored = JSON.parse(localStorage.getItem(FOLD_KEY) ?? '{}') ?? {};
+    return JSON.parse(localStorage.getItem(key) ?? '{}') ?? {};
   } catch {
     // Storage can be unavailable. Then nothing is remembered.
+    return {};
   }
+}
+function remember(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Not remembered, then.
+  }
+}
+
+/** The sections of a sidebar that fold and are on show with the present tool. */
+const foldsOf = (side) => folds.filter((f) => f.section.closest('aside').id === side && getComputedStyle(f.section).display !== 'none');
+
+/** Tucks a sidebar away at its edge of the screen, or brings it back. */
+function setTucked(side, tucked) {
+  if (document.body.classList.contains(`tuck-${side}`) === tucked) return;
+  document.body.classList.toggle(`tuck-${side}`, tucked);
+  remember(TUCK_KEY, { ...recall(TUCK_KEY), [side]: tucked });
+  requestUpdate();
+}
+
+/** Keeps the buttons at the top of each sidebar saying what they will do. */
+function syncSides() {
+  for (const head of document.querySelectorAll('.side-head')) {
+    const side = head.dataset.side;
+    const shown = foldsOf(side);
+    head.querySelector('.side-all').textContent = shown.length && shown.every((f) => f.section.classList.contains('folded')) ? 'Expand all' : 'Collapse all';
+    const tucked = document.body.classList.contains(`tuck-${side}`);
+    const tuck = head.querySelector('.side-tuck');
+    tuck.setAttribute('aria-expanded', String(!tucked));
+    tuck.setAttribute('aria-label', `${tucked ? 'Show' : 'Hide'} the ${SIDE_NAMES[side]}`);
+    tuck.title = tucked ? `Show the ${SIDE_NAMES[side]}` : `Hide the ${SIDE_NAMES[side]}, to give the views more room`;
+    tuck.querySelector('.side-word').textContent = tucked ? SIDE_NAMES[side] : 'Hide';
+    // The arrow points the way the sidebar will go: off to its edge, or back in from it.
+    tuck.querySelector('.side-arrow').textContent = (side === 'controls') === tucked ? '»' : '«';
+  }
+}
+
+function bindFolds() {
+  const stored = recall(FOLD_KEY);
   for (const section of document.querySelectorAll('aside section')) {
     const heading = section.querySelector(':scope > h2');
     if (!heading || section.id === 'demo-card') continue;
@@ -1569,21 +1613,36 @@ function bindFolds() {
       button.setAttribute('aria-expanded', String(!folded));
     };
     set(stored[key] ?? FOLDED_AT_FIRST.includes(key));
+    folds.push({ section, key, set });
     button.addEventListener('click', () => {
       const folded = !section.classList.contains('folded');
       set(folded);
       stored[key] = folded;
-      try {
-        localStorage.setItem(FOLD_KEY, JSON.stringify(stored));
-      } catch {
-        // Not remembered, then.
-      }
+      remember(FOLD_KEY, stored);
       requestUpdate();
     });
   }
+  const tucked = recall(TUCK_KEY);
+  for (const head of document.querySelectorAll('.side-head')) {
+    const side = head.dataset.side;
+    document.body.classList.toggle(`tuck-${side}`, tucked[side] === true);
+    // Folds every section on show in this sidebar, or unfolds them all if they are all folded already.
+    head.querySelector('.side-all').addEventListener('click', () => {
+      const shown = foldsOf(side);
+      const fold = !shown.every((f) => f.section.classList.contains('folded'));
+      for (const f of shown) {
+        f.set(fold);
+        stored[f.key] = fold;
+      }
+      remember(FOLD_KEY, stored);
+      requestUpdate();
+    });
+    head.querySelector('.side-tuck').addEventListener('click', () => setTucked(side, !document.body.classList.contains(`tuck-${side}`)));
+  }
+  syncSides();
   for (const btn of document.querySelectorAll('#jump button')) {
     btn.addEventListener('click', () => {
-      const all = document.querySelectorAll(btn.dataset.jump === 'controls' ? '#controls section' : '#results > section:not(#demo-card)');
+      const all = document.querySelectorAll(btn.dataset.jump === 'controls' ? '#controls > *' : '#results > :not(#demo-card, #jump)');
       [...all].find((s) => s.offsetParent)?.scrollIntoView({ block: 'start', behavior: glide() });
     });
   }
@@ -1648,6 +1707,7 @@ function showArgument(id) {
   demoGroup = DEMOS[id].group;
   Object.assign(state, { demo: id, playing: false, sailing: false, flying: false, picking: false });
   state.own = defaultsFor(DEMOS[id]);
+  setTucked('results', false); // the explanation is in that sidebar
   DEMOS[id].apply(app, state.own);
   // A scene that would start moving by itself waits for its button instead.
   if (calm.matches) Object.assign(state, { sailing: false, flying: false });
@@ -1660,6 +1720,7 @@ function showArgument(id) {
 function tourGo(step, id = state.tour?.id ?? TOURS[0].id) {
   state.tour = { id, step: 0, shown: false };
   state.tour.step = clamp(step, 0, tourSteps().length);
+  setTucked('results', false); // the tour's questions are in that sidebar
   Object.assign(state, { demo: null, playing: false, sailing: false, flying: false, picking: false });
   requestUpdate();
 }
@@ -1679,6 +1740,7 @@ function tourLeave() {
 
 /** Opens the list of arguments to tick for a tour of one's own. */
 function tourPick() {
+  setTucked('results', false);
   Object.assign(state, { tour: null, demo: null, picking: true, playing: false, sailing: false, flying: false });
   requestUpdate();
 }
@@ -2397,6 +2459,7 @@ function fromInputTime(value) {
 }
 
 function syncInputs() {
+  syncSides();
   setIfIdle($('m-time'), toInputTime(state.date));
   $('m-where').textContent =
     `It will be recorded at the observer's place, ${where(state.lat, state.lon)}. ` +

@@ -44,6 +44,11 @@
 
     <main>
       <aside id="controls">
+        <div class="side-head" data-side="controls">
+          <span class="side-name">Settings</span>
+          <button type="button" class="side-all">Collapse all</button>
+          <button type="button" class="side-tuck" aria-expanded="true"><span class="side-arrow" aria-hidden="true">«</span><span class="side-word">Hide</span></button>
+        </div>
         <section class="fl-only">
           <h2>Level flight</h2>
           <label class="stack">
@@ -411,6 +416,11 @@
       </section>
 
       <aside id="results">
+        <div class="side-head" data-side="results">
+          <button type="button" class="side-tuck" aria-expanded="true"><span class="side-word">Hide</span><span class="side-arrow" aria-hidden="true">»</span></button>
+          <span class="side-name">Results</span>
+          <button type="button" class="side-all">Collapse all</button>
+        </div>
         <section id="demo-card">
           <div id="tour-bar" hidden>
             <span id="tour-step"></span>

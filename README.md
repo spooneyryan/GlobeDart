@@ -396,6 +396,12 @@ each step, and a step's question makes room for its answer once it has been answ
 ## Finding your way about
 
 - Each heading in the settings and the results folds its section away. "Display" and "Google Earth" start folded.
+- A bar at the top of each sidebar has "Collapse all", which folds every section in that sidebar that is on show
+  and turns into "Expand all" once they are all folded.
+- On a screen wide enough to have the sidebars beside the views, "Hide" in the same bar tucks that sidebar away
+  as a strip at its edge of the screen, and the views take the room. Clicking the strip brings it back. Choosing
+  a demonstration or a tour brings the results back by itself, because the explanation is in that sidebar.
+  What is folded and what is tucked away are remembered on the device, and are not carried in links.
   What is folded is remembered in the browser's local storage.
 - Switching tool with "Sun, stars, maps", "The horizon" or "Level flight" brings up that tool's demonstrations.
 - "Start again from the beginning", and the name at the top, load the page afresh as a plain visit. Measurements
