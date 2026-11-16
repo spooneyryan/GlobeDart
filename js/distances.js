@@ -1,6 +1,6 @@
 // Distances between places under each model, and the real non-stop flights
 // that let anyone test them with a timetable.
-import { DEG, EARTH_RADIUS_KM } from './astro.js';
+import { DEG, EARTH_RADIUS_KM, wrap180, wrap360 } from './astro.js';
 import { globeVec, globeAngleDeg, flatMapDistanceKm } from './models.js';
 
 /** Airliners cruise at roughly this ground speed in still air. */
@@ -26,6 +26,32 @@ export function globeDistanceKm(a, b) {
  */
 export function flatDistanceKm(a, b) {
   return flatMapDistanceKm(a.lat, a.lon, b.lat, b.lon);
+}
+
+/**
+ * The compass direction to set off in to go from a to b the shortest way over
+ * the globe, in degrees clockwise from north. With Δλ how far east b is of a:
+ *   atan2(sin Δλ × cos φ₂, cos φ₁ × sin φ₂ − sin φ₁ × cos φ₂ × cos Δλ)
+ * Over a couple of hundred km this is the direction a map or a compass
+ * corrected for true north gives.
+ */
+export function bearingDeg(a, b) {
+  const [p1, p2, dl] = [a.lat * DEG, b.lat * DEG, (b.lon - a.lon) * DEG];
+  return wrap360(Math.atan2(Math.sin(dl) * Math.cos(p2), Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl)) / DEG);
+}
+
+/**
+ * Where you are after setting off from a in a compass direction and going a
+ * distance over the globe, as { lat, lon }. With θ the direction and δ the
+ * distance as an angle at the Earth's centre (distance ÷ R):
+ *   φ₂ = asin(sin φ₁ × cos δ + cos φ₁ × sin δ × cos θ)
+ *   λ₂ = λ₁ + atan2(sin θ × sin δ × cos φ₁, cos δ − sin φ₁ × sin φ₂)
+ */
+export function placeAlong(a, directionDeg, km) {
+  const [p1, th, d] = [a.lat * DEG, directionDeg * DEG, km / EARTH_RADIUS_KM];
+  const p2 = Math.asin(Math.sin(p1) * Math.cos(d) + Math.cos(p1) * Math.sin(d) * Math.cos(th));
+  const lon = a.lon + Math.atan2(Math.sin(th) * Math.sin(d) * Math.cos(p1), Math.cos(d) - Math.sin(p1) * Math.sin(p2)) / DEG;
+  return { lat: p2 / DEG, lon: wrap180(lon) };
 }
 
 /**

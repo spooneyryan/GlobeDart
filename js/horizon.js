@@ -122,6 +122,32 @@ export function hiddenHeightM(eyeM, distanceKm, k = 0) {
 }
 
 /**
+ * How far above eye level the top of something appears, in degrees. Below zero
+ * it is below eye level. The heights of the eye and of the top are measured
+ * from the same level, such as the sea.
+ *
+ * On the globe everything a distance d away has dropped below the eye's own
+ * level by d² ÷ 2R′, so the top stands at
+ *   atan((top − eye − d² ÷ 2R′) ÷ d)
+ * On a flat surface nothing drops, and with straight light it is
+ *   atan((top − eye) ÷ d)
+ *
+ * Both are one formula. What counts is how much the ground curves away from
+ * the light, for each km travelled:
+ *   globe   (1 − k) ÷ R     which is 1 ÷ R′
+ *   flat    (0 − k) ÷ R     the ground does not curve, and the light bends down toward it
+ * and the drop is d² × that ÷ 2. So air that bends light lifts a far top on
+ * the flat model too. For two tops at different distances, the gap between
+ * the models' answers does not depend on k at all: see the two-mountain
+ * argument (js/arguments/twopeaks.js).
+ */
+export function topAngleDeg(eyeM, topM, distanceKm, k = 0, flat = false) {
+  const curve = ((flat ? 0 : 1) - k) / EARTH_RADIUS_KM;
+  const dropM = ((distanceKm * distanceKm * curve) / 2) * 1000;
+  return Math.atan2((topM - eyeM - dropM) / 1000, distanceKm) / DEG;
+}
+
+/**
  * The air the flat model would need to hide what the globe hides.
  * On a flat surface the light itself would have to curve upward, away from the
  * ground, as sharply as the globe's surface curves away from its light.

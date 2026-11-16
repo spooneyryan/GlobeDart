@@ -93,6 +93,31 @@ canigou.allauch.free.fr, lists the viewpoints with their positions, heights and 
 - The line of sight is over 250 km long and reaches nearly 3 km up, where the air is thinner and bends light
   less than near the ground. The single standard figure for the bending is only a guide here.
 
+## Two mountains from Portland, Oregon
+
+These are for the demonstration "Two mountains" (`js/arguments/twopeaks.js`), not for the picker. They were read on
+16 November 2026.
+
+| Figure | Value | Source |
+|---|---|---|
+| Mount St Helens, summit | 46.1912, −122.1944 | Wikipedia, "Mount St. Helens" |
+| Its height | 2,549 m (8,363 ft) | the same |
+| Mount Rainier, summit | 46.8517, −121.7603 | Wikipedia, "Mount Rainier" |
+| Its height | 4,392 m (14,410 ft) | US National Park Service, Mount Rainier, "Frequently Asked Questions" |
+| Viewpoint: Pittock Mansion, Portland | 45.5252, −122.7163 | Wikipedia, "Pittock Mansion", gives 45.5250, −122.7164 |
+| Ground there | 284.3 m | US Geological Survey elevation service, at 45.5252, −122.7163 |
+
+- Wikipedia gives Rainier as 4,391 m (14,406 ft), from a 2025 survey. The Park Service's 14,410 ft is the 1956
+  figure. A metre at that distance is a three-thousandth of a degree.
+- Wikipedia says Pittock Mansion is "1,000 feet (300 m) above sea level". The Geological Survey's 284.3 m for the
+  ground at that position is used, with 1.7 m added for a standing eye: 286 m.
+- The distances are worked out from the positions: 84.4 km to St Helens and 164.8 km to Rainier.
+- The observer backs away to the south-west, on a compass bearing of 225° from the viewpoint. That line was
+  chosen because it keeps the two summits side by side. Nothing has been checked about what can be seen from the
+  ground along it: hills and forest are in the way in most places, on either model.
+- No photograph has been measured. The demonstration says what each model predicts, and how to measure a
+  photograph of your own.
+
 ## Looked into and left out
 
 - **The Bedford Level.** It is a test with three markers, not a view of something far away, so it is one of the

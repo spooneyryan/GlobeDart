@@ -363,7 +363,7 @@ person showing another.
 | The short tour | sunset, sunrise direction, sun angles from many cities, southern stars, southern flights, a ship over the horizon |
 | Sun, stars and planets | sunset, clouds lit from beneath, sunrise direction, December daylight, sun angles, the pole star, southern stars, Mars doubling back, the phases of Venus |
 | The moon | phases, the same face, eclipses of the moon, eclipses of the sun, the tides |
-| The horizon | a ship, the horizon at eye level, water finding its level, the Bedford Level, things seen from too far away, two sunsets |
+| The horizon | a ship, two mountains, the horizon at eye level, water finding its level, the Bedford Level, things seen from too far away, two sunsets |
 | Travel, motion and air | southern flights, the ice wall, any flat map, pilots and the nose, feeling the spin, air without a container |
 
 - "Choose your own" lists every argument with a tick box. Tick between two and twelve and they become a tour.
@@ -391,7 +391,7 @@ A link can name a demonstration or a tour and nothing else, and the app sets the
 ## The demonstrations
 
 The bar at the top lists the demonstrations under six headings: the sun, the moon, stars and planets, distances, the
-horizon, and motion and air. Picking a heading shows its demonstrations beneath it. There are twenty-six, each answering one
+horizon, and motion and air. Picking a heading shows its demonstrations beneath it. There are twenty-seven, each answering one
 flat-earth claim, which is quoted above its explanation.
 
 ## Writing an argument

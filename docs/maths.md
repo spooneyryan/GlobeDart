@@ -556,6 +556,40 @@ Everything after that is section 8. The figures and their sources are in `docs/v
 - Code: `js/presets.js`, `viewSizes`.
 - Checks: section 12b.
 
+## 9d. Two summits in one view
+
+How far above eye level a top appears, with h the height of the eye, H the height of the top (both from the same
+level) and d its distance:
+
+```
+flat    = atan((H − h) ÷ d)
+globe   = atan((H − h − d² ÷ 2R′) ÷ d)
+```
+
+The second is the first with the drop of section 8 taken off: everything a distance d away has fallen d² ÷ 2R′
+below the eye's own level. Both are one formula, in which what counts is how much the ground curves away from the
+light for each km travelled: `(1 − k) ÷ R` on the globe, and `−k ÷ R` on a flat surface under the same air.
+
+Take two summits at distances d₁ and d₂ and ask how far one stands above the other. Give both models the same
+air, and their answers differ by
+
+```
+(d₂ − d₁) ÷ 2R        in radians
+```
+
+whatever the air is, because the bending moves both models' answers by the same amount. For Mount St Helens and
+Mount Rainier from Portland that is 0.36°. With straight light on the flat model and standard air on the globe,
+which is what the demonstration draws, it is 0.30°.
+
+Backing away, the flat model's answer swaps: the difference in distance comes to count for less and the difference
+in height for more, so it puts the taller, further summit on top. The globe's answer does not swap from near the
+ground, and the further summit is the first to go under the horizon.
+
+The figures and their sources are in `docs/views.md`. Both models are given the same distances over the ground.
+
+- Code: `js/horizon.js`, `topAngleDeg`; `js/distances.js`, `bearingDeg`, `placeAlong`; `js/arguments/twopeaks.js`.
+- Checks: section 14 (run from `js/arguments/twopeaks.js`).
+
 ## 10. Layers of air
 
 With one k the air is the same all the way up. Here it is described by its temperature at each height, and each
