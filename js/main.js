@@ -2773,6 +2773,24 @@ function bindControls() {
     state.refraction = e.target.value;
     requestUpdate();
   });
+
+  // The observer's sky keeps its own options behind the three dots in its corner. The list stays open while
+  // they are ticked, and closes on a press anywhere else or on Escape.
+  const skyMenu = $('sky-menu-button');
+  const skyList = $('sky-menu-list');
+  const openSkyMenu = (open) => {
+    skyList.hidden = !open;
+    skyMenu.setAttribute('aria-expanded', String(open));
+  };
+  skyMenu.addEventListener('click', () => openSkyMenu(skyList.hidden));
+  document.addEventListener('pointerdown', (e) => {
+    if (!skyList.hidden && !e.target.closest('#sky-menu')) openSkyMenu(false);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || skyList.hidden) return;
+    openSkyMenu(false);
+    skyMenu.focus();
+  });
   for (const [id, key] of [
     ['air-temp', 'tempC'],
     ['air-pressure', 'pressureHpa'],

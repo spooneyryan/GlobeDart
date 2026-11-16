@@ -268,8 +268,6 @@
         <section class="sky-only">
           <h2>Display</h2>
           <label class="check"><input type="checkbox" id="sight-lines" /> Sight lines from <span class="ref-count"></span> cities</label>
-          <label class="check"><input type="checkbox" id="follow" /> Keep the sun in view</label>
-          <label class="check"><input type="checkbox" id="sky-grid" /> Angle grid on the observer's sky</label>
           <label class="row">
             <span>Bending of light by the air <button type="button" class="info" data-info="sky.air" aria-label="How this is worked out: bending of light by the air">i</button></span>
             <select id="refraction">
@@ -369,6 +367,15 @@
         </div>
         <div class="view sky" id="globe-sky">
           <div class="view-title globe">Observer's sky, globe model</div>
+          <div class="view-menu" id="sky-menu">
+            <button type="button" id="sky-menu-button" class="view-menu-button" aria-expanded="false" aria-controls="sky-menu-list" aria-label="Options for the observer's sky" title="Options for the observer's sky">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="3" cy="8" r="1.6" /><circle cx="8" cy="8" r="1.6" /><circle cx="13" cy="8" r="1.6" /></svg>
+            </button>
+            <div id="sky-menu-list" class="view-menu-list" hidden>
+              <label class="check"><input type="checkbox" id="follow" /> <span>Keep <span class="sight-name">the sun</span> in view</span></label>
+              <label class="check"><input type="checkbox" id="sky-grid" /> Draw grid lines</label>
+            </div>
+          </div>
         </div>
         <div class="view sky" id="flat-sky">
           <div class="view-title flat">Observer's sky, flat model</div>

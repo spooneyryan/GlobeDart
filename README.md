@@ -121,9 +121,9 @@ The two lower views show what each model says the observer sees, from where the 
   wherever the models put the sun at different heights.
 - When a model has the moon hiding the sun, its sky darkens by the share hidden. With all of it hidden the sky
   is dark, with dusk all round the horizon.
-- Drag to look around and scroll or pinch to zoom. "Keep the sun in view" in the Display section turns the view
+- Drag to look around and scroll or pinch to zoom. The three dots in the corner of the globe model's sky open the options for both skies. "Keep the sun in view" there turns the view
   to follow the sun, the moon or the chosen star, keeping some ground in sight unless it is nearly overhead.
-- "Angle grid on the observer's sky" in the Display section draws lines of equal elevation every 10° and of
+- "Draw grid lines", in the same list, draws lines of equal elevation every 10° and of
   equal bearing every 30°, with their labels and the line of the horizon. It is off to begin with and is carried
   in the link.
 

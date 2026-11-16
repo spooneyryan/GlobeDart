@@ -746,6 +746,52 @@ body:not([data-mode='flight']) .fl-only {
   transform: translate(-50%, -50%);
 }
 
+/* The observer's sky has a few options of its own, behind the three dots in its corner. They act on both skies. */
+.view-menu {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.view-menu-button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 26px;
+  min-height: 0;
+  padding: 0;
+  border-color: #3b4c60;
+  border-radius: 6px;
+  background: rgba(8, 13, 20, 0.82);
+}
+
+.view-menu-button svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+.view-menu-button[aria-expanded='true'] {
+  border-color: var(--globe);
+}
+
+.view-menu-list {
+  display: grid;
+  gap: 2px;
+  padding: 6px 12px 6px 10px;
+  border: 1px solid #3b4c60;
+  border-radius: 8px;
+  background: rgba(11, 16, 23, 0.96);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
 .readout {
   position: absolute;
   left: 8px;
@@ -1827,6 +1873,14 @@ h4.flat {
   }
   .check {
     min-height: 36px;
+  }
+  /* A finger gets a larger button for the sky's options than a mouse does. */
+  .view-menu-button {
+    width: 40px;
+    height: 34px;
+  }
+  .view-menu-list {
+    font-size: 15px;
   }
   .check input {
     width: 20px;
