@@ -65,10 +65,10 @@ header {
 }
 
 #demos {
+  --tray-line: #4f79ad;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 6px;
   min-width: 0;
 }
 
@@ -82,6 +82,58 @@ header {
   max-width: 100%;
 }
 
+/* The lower row belongs to the heading that is open in the upper row. It is drawn as that heading's tray:
+   boxed, set in from the bar, named after the heading, and pointed at by it. */
+#demo-groups {
+  padding-bottom: 9px;
+}
+
+#demo-list {
+  align-self: stretch;
+  padding: 4px 5px;
+  border: 1px solid var(--tray-line);
+  border-radius: 9px;
+  background: var(--bg);
+}
+
+#demo-list button {
+  padding: 4px 9px;
+  font-size: 13px;
+}
+
+/* The heading's name, at the start of its tray. It is left out where the bar has no room to spare for it. */
+#demo-list .nav-label {
+  display: none;
+  flex: none;
+  margin: 0 auto 0 4px;
+  padding-right: 8px;
+  white-space: nowrap;
+}
+
+@media (min-width: 1560px), (max-width: 720px) {
+  #demo-list .nav-label {
+    display: block;
+  }
+}
+
+#demo-groups button.active,
+#tour-start[aria-pressed='true'] {
+  position: relative;
+}
+
+/* The pointer: a notch standing on the tray's top edge, under the middle of the open heading. */
+#demo-groups button.active::after,
+#tour-start[aria-pressed='true']::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 2px);
+  margin-left: -8px;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-bottom: 8px solid var(--tray-line);
+}
+
 /* A group is a tab: the one that is open is outlined, not filled like a running demonstration. */
 #demo-groups button[data-group] {
   background: transparent;
@@ -93,9 +145,10 @@ header {
 }
 
 #demo-groups button[data-group].active {
-  background: var(--panel-2);
-  border-color: var(--globe);
+  background: var(--bg);
+  border-color: var(--tray-line);
   color: var(--text);
+  font-weight: 600;
 }
 
 .nav-label {
@@ -350,8 +403,8 @@ aside section.folded > :not(h2) {
 
 /* "Take a tour" stays the main button; a ring shows while it is the tours that are listed beneath. */
 #tour-start[aria-pressed='true'] {
-  outline: 2px solid var(--globe);
-  outline-offset: 1px;
+  outline: 2px solid var(--tray-line);
+  outline-offset: -1px;
 }
 
 /* Links to further down the page, on a phone only. */
@@ -512,22 +565,25 @@ body:not([data-mode='flight']) .fl-only {
   padding: 5px 12px;
 }
 
+/* A view's name, in its model's colour: blue for the globe and amber for the flat model, as in the tables. */
 .view-title {
   position: absolute;
   top: 8px;
   left: 8px;
   z-index: 3;
-  padding: 4px 9px;
+  padding: 3px 9px;
+  border: 1px solid rgba(127, 180, 255, 0.45);
   border-radius: 6px;
-  background: rgba(8, 13, 20, 0.78);
+  background: rgba(8, 13, 20, 0.82);
+  color: var(--globe);
   font-weight: 650;
   font-size: 13px;
   pointer-events: none;
-  border-left: 3px solid var(--globe);
 }
 
 .view-title.flat {
-  border-left-color: var(--flat);
+  border-color: rgba(255, 178, 36, 0.45);
+  color: var(--flat);
 }
 
 .view-title small {
@@ -1692,7 +1748,6 @@ h4.flat {
     flex-wrap: nowrap;
     justify-content: flex-start;
     overflow-x: auto;
-    padding-bottom: 2px;
     scrollbar-width: thin;
   }
   #demos button {
@@ -1737,7 +1792,7 @@ h4.flat {
   }
   .view-title {
     font-size: 12px;
-    padding: 3px 7px;
+    padding: 2px 7px;
     top: 6px;
     left: 6px;
   }

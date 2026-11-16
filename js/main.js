@@ -2407,6 +2407,10 @@ function renderDemo(c) {
     btn.hidden = btn.dataset.group !== demoGroup;
   }
   $('tour-start').setAttribute('aria-pressed', String(demoGroup === TOURS_GROUP));
+  // The lower row says whose it is.
+  const groupName = demoGroup === TOURS_GROUP ? 'Tours' : GROUPS.find((g) => g.id === demoGroup).label;
+  $('demo-list-name').textContent = groupName;
+  $('demo-list').setAttribute('aria-label', demoGroup === TOURS_GROUP ? 'Tours' : `Demonstrations: ${groupName}`);
   for (const btn of document.querySelectorAll('#demo-groups button[data-group]')) {
     const open = btn.dataset.group === demoGroup;
     btn.classList.toggle('active', open);
@@ -2744,6 +2748,7 @@ function bindControls() {
 
   $('demo-groups').insertAdjacentHTML('beforeend', GROUPS.map((g) => `<button data-group="${g.id}">${esc(g.label)}</button>`).join(''));
   $('demo-list').innerHTML =
+    '<span class="nav-label" id="demo-list-name" aria-hidden="true"></span>' +
     ARGUMENTS.map((a) => `<button data-demo="${a.id}" data-group="${a.group}" title="${esc(a.claim)}">${esc(a.label)}</button>`).join('') +
     TOURS.map((t) => `<button data-tour="${t.id}" data-group="${TOURS_GROUP}" title="${esc(t.about)}">${esc(t.label)} · ${t.steps.length}</button>`).join('') +
     `<button data-tour="${OWN_TOUR}" data-group="${TOURS_GROUP}" title="Pick the arguments yourself">Choose your own</button>`;
