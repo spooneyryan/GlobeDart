@@ -2201,7 +2201,9 @@ function renderFit() {
         `(at ${km(fit.best.heightKm)}${state.flatLight === 'bent' ? ', with its light curving as set' : ''}). For scale, the sun itself is about 0.5° wide. `
       : '') +
     `Day or night: of the ${tally.all} city-hours, the globe has the sun up or down rightly in ${tally.globe}. ` +
-    `The flat model, going by ${state.flatLight === 'bent' ? 'where its curving light lets the sun set' : 'how far its light reaches'}, is right in ${tally.flat}.`;
+    `The flat model, going by ${state.flatLight === 'bent' ? 'where its curving light lets the sun set' : 'how far its light reaches'}, is right in ${tally.flat}. ` +
+    // The globe is being marked against the almanac here, as it is in the table at the observer.
+    `The globe's two figures are true by construction: what counts as right, and which hours are night, come from the almanac, which rests on the same astronomy as the globe. They are not the evidence. What this panel tests is the flat model.`;
   drawFitChart(fit, current);
 }
 

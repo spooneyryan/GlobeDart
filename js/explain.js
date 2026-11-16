@@ -226,6 +226,11 @@ export const EXPLAIN = {
       does the model have the sun visible or not? The flat model is given its own rule for that. With straight
       light the sun counts as visible wherever its light is said to reach. With curving light it counts as
       visible until it sets.</p>
+      <p>The globe's own figures here, its typical miss and its count of city-hours, are true by construction. What
+      counts as right in both is the almanac, and the almanac rests on the same astronomy as the globe model. So
+      they are not evidence for the globe, and are not offered as any. The evidence is that the almanac matches
+      what people measure, which "Your own measurements" lets you test. What this panel does test is the flat
+      model: whether any setting of it comes near the same figures.</p>
       <p>"Flat, as set" uses the sun height on the slider. "Flat, best" is the lowest score any height from 100 km
       to 1,000,000 km reaches; the chart shows the score at every height in between.</p>`,
   },
