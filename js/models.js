@@ -331,6 +331,156 @@ export function earthShadow(sub, moon) {
   return { offDeg, shadowKm, shadowDeg, moonDeg, kind };
 }
 
+// ---------- the moon's shadow: eclipses of the sun ----------
+
+/**
+ * How much of the sun's disc is hidden by the moon's, as a fraction of its
+ * area. With s and m the two discs' radii as angles in the sky, and x the
+ * angle between their centres:
+ *
+ *   none of it          when x ≥ s + m
+ *   all of it           when x ≤ m − s          (the moon looks the larger)
+ *   (m ÷ s)²            when x ≤ s − m          (a ring of sun is left round the moon)
+ *
+ * and in between, the area the two circles share, over the sun's area:
+ *
+ *   s² acos((x² + s² − m²) ÷ 2xs) + m² acos((x² + m² − s²) ÷ 2xm)
+ *     − ½ √((s + m − x)(x + s − m)(x − s + m)(x + s + m))
+ */
+export function discCovered(sunR, moonR, sep) {
+  if (sep >= sunR + moonR) return 0;
+  if (sep <= Math.abs(moonR - sunR)) return moonR >= sunR ? 1 : (moonR * moonR) / (sunR * sunR);
+  const ofSun = sunR * sunR * Math.acos((sep * sep + sunR * sunR - moonR * moonR) / (2 * sep * sunR));
+  const ofMoon = moonR * moonR * Math.acos((sep * sep + moonR * moonR - sunR * sunR) / (2 * sep * moonR));
+  const kite = 0.5 * Math.sqrt((sunR + moonR - sep) * (sep + sunR - moonR) * (sep - sunR + moonR) * (sep + sunR + moonR));
+  return (ofSun + ofMoon - kite) / (Math.PI * sunR * sunR);
+}
+
+/**
+ * What one observer sees of an eclipse of the sun. `sun` and `moon` are each a
+ * bearing `az`, a height `el` and a width `sizeDeg`, from the measurement or
+ * from either model. `inFront` is false when the moon is the further of the
+ * two, which only the flat model can manage: then it hides nothing.
+ */
+export function sunCovered(sun, moon, inFront = true) {
+  const sepDeg = skySeparation(sun, moon);
+  const s = sun.sizeDeg / 2;
+  const m = moon.sizeDeg / 2;
+  const fraction = inFront ? discCovered(s, m, sepDeg) : 0;
+  const kind = fraction <= 0 ? 'none' : sepDeg <= m - s ? 'total' : sepDeg <= s - m ? 'annular' : 'partial';
+  return { sepDeg, fraction, kind, inFront };
+}
+
+/**
+ * The moon's shadow on the globe. The middle of the shadow lies along the
+ * straight line from the middle of the sun through the middle of the moon.
+ * Where that line meets a ball of the Earth's radius R is the place the
+ * eclipse is seen centrally at that moment.
+ *
+ * With the moon at M (measured from the Earth's centre), u the direction the
+ * light is travelling, and b = M · u:
+ *
+ *   the line passes the Earth's centre at   p = √(|M|² − b²)
+ *   and, if p < R, meets the ground after   t = −b − √(R² − p²)   km beyond the moon
+ *
+ * The sun is larger than the moon, so the fully dark part of the shadow
+ * narrows as it goes, and the part with some of the sun hidden widens. With r
+ * and m the radii of the sun and moon and g the distance between them:
+ *
+ *   fully dark, radius    m − t × (r − m) ÷ g     below zero: it has come to a point first, and a ring of sun is left
+ *   partly dark, radius   m + t × (r + m) ÷ g
+ *
+ * `kind` is 'total' or 'annular' when the line meets the ground, 'partial'
+ * when it misses but the wider shadow does not, and otherwise 'none'.
+ */
+export function moonShadowGlobe(sub, moon) {
+  const sunAt = globePlace(sub.lat, sub.lon, sub.distKm);
+  const moonAt = globePlace(moon.lat, moon.lon, moon.distKm);
+  const gapKm = Math.hypot(...minus(moonAt, sunAt));
+  const dir = times(minus(moonAt, sunAt), 1 / gapKm);
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const b = dot(moonAt, dir);
+  const missKm = Math.sqrt(Math.max(0, dot(moonAt, moonAt) - b * b));
+  const partlyDark = (t) => MOON_RADIUS_KM + (t * (SUN_RADIUS_KM + MOON_RADIUS_KM)) / gapKm;
+  if (missKm >= EARTH_RADIUS_KM) {
+    const penumbraKm = partlyDark(-b);
+    return { missKm, centre: null, darkKm: 0, penumbraKm, kind: missKm < EARTH_RADIUS_KM + penumbraKm ? 'partial' : 'none' };
+  }
+  const t = -b - Math.sqrt(EARTH_RADIUS_KM * EARTH_RADIUS_KM - missKm * missKm);
+  const at = [0, 1, 2].map((i) => moonAt[i] + dir[i] * t);
+  const centre = { lat: Math.asin(at[1] / EARTH_RADIUS_KM) / DEG, lon: Math.atan2(-at[2], at[0]) / DEG };
+  const darkKm = MOON_RADIUS_KM - (t * (SUN_RADIUS_KM - MOON_RADIUS_KM)) / gapKm;
+  return { missKm, centre, darkKm, penumbraKm: partlyDark(t), kind: darkKm > 0 ? 'total' : 'annular' };
+}
+
+/**
+ * The moon's shadow on the flat model. The sun is H up over one place on the
+ * map and the moon h up over another, g apart. Someone sees the middle of the
+ * moon on the middle of the sun where the line through the two comes down to
+ * the ground, which it only does if the moon is the lower of the two. By
+ * similar triangles that is, beyond the place under the moon and straight away
+ * from the place under the sun,
+ *
+ *   x = g × h ÷ (H − h)
+ *
+ * With bending light (c per km, see flatBendPerKm) the path from the ground is
+ * s·x + c·x²/2. It has to pass through the moon at x and the sun at x + g:
+ *
+ *   B = (H − h) ÷ g − c × g ÷ 2
+ *   x = (B − √(B² − 2ch)) ÷ c
+ *
+ * `params` is { sunHeightKm, moonHeightKm, bendPerKm }. `centre` is null when
+ * no such place exists, and `offMap` is true when it lies beyond the rim.
+ */
+export function moonShadowFlat(sub, moon, params) {
+  const { sunHeightKm: H, moonHeightKm: h, bendPerKm: c = 0 } = params;
+  const sunAt = flatPlace(sub.lat, sub.lon);
+  const moonAt = flatPlace(moon.lat, moon.lon);
+  const gapKm = Math.hypot(moonAt[0] - sunAt[0], moonAt[2] - sunAt[2]);
+  const none = { gapKm, centre: null, fromMoonKm: null, offMap: false };
+  if (!(h < H)) return none;
+  let x = 0;
+  if (gapKm > 1e-9) {
+    const B = (H - h) / gapKm - (c * gapKm) / 2;
+    const inside = B * B - 2 * c * h;
+    if (B <= 0 || inside < 0) return none;
+    x = c > 0 ? (B - Math.sqrt(inside)) / c : h / B;
+  }
+  const along = gapKm > 1e-9 ? x / gapKm : 0;
+  const px = moonAt[0] + (moonAt[0] - sunAt[0]) * along;
+  const pz = moonAt[2] + (moonAt[2] - sunAt[2]) * along;
+  const fromPoleDeg = Math.hypot(px, pz) / EARTH_RADIUS_KM / DEG;
+  return {
+    gapKm,
+    centre: { lat: 90 - fromPoleDeg, lon: Math.atan2(-pz, px) / DEG },
+    fromMoonKm: x,
+    offMap: fromPoleDeg > 180,
+  };
+}
+
+/**
+ * The height the flat model's moon would have to be at for its shadow to come
+ * down as near as it can to a given place, with the sun where `params` puts
+ * it. Nothing in the model fixes the moon's height, so this is the most
+ * generous choice for one eclipse at one moment. Tried at every 5,000th of the
+ * sun's height below it, down to half way.
+ *
+ * Returns { heightKm, missKm }: the height, and how far from the place the
+ * shadow still is, measured over the real Earth.
+ */
+export function bestFlatMoonHeightKm(sub, moon, place, params) {
+  const H = params.sunHeightKm;
+  let best = null;
+  for (let i = 1; i <= 2500; i++) {
+    const heightKm = H * (1 - i / 5000);
+    const shade = moonShadowFlat(sub, moon, { ...params, moonHeightKm: heightKm });
+    if (!shade.centre || shade.offMap) continue;
+    const missKm = globeAngleDeg(shade.centre.lat, shade.centre.lon, place.lat, place.lon) * DEG * EARTH_RADIUS_KM;
+    if (!best || missKm < best.missKm) best = { heightKm, missKm };
+  }
+  return best;
+}
+
 /**
  * A model's score against a list of observations: the root-mean-square miss,
  *   √(average of miss²)

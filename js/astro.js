@@ -188,6 +188,54 @@ export function lunarEclipses(fromYear, toYear) {
   return list;
 }
 
+// What is published about one eclipse of the sun: its kind ('partial',
+// 'annular' or 'total'), the moment the line through the sun and moon passes
+// nearest the Earth's centre, how near that is, and, when the line meets the
+// ground, the place it does so at that moment.
+const solarEclipse = (found) => ({
+  kind: found.kind,
+  peak: found.peak.date,
+  axisKm: found.distance,
+  lat: found.latitude ?? null,
+  lon: found.longitude ?? null,
+});
+
+/** The next eclipse of the sun after a date, as published. With `totalOnly`, the next total one. */
+export function nextSolarEclipse(date, totalOnly = false) {
+  let found = Astronomy.SearchGlobalSolarEclipse(date);
+  for (let i = 0; i < 40 && totalOnly && found.kind !== 'total'; i++) found = Astronomy.NextGlobalSolarEclipse(found.peak);
+  return solarEclipse(found);
+}
+
+/** The published eclipse of the sun with its middle within `hours` of a moment, or null. */
+export function solarEclipseNear(date, hours = 4) {
+  const found = solarEclipse(Astronomy.SearchGlobalSolarEclipse(new Date(date.getTime() - 2 * 86400000)));
+  return Math.abs(found.peak.getTime() - date.getTime()) <= hours * 3600000 ? found : null;
+}
+
+/** Every eclipse of the sun, of any kind, with its middle in a span of years. For checking. */
+export function solarEclipses(fromYear, toYear) {
+  const list = [];
+  let found = Astronomy.SearchGlobalSolarEclipse(new Date(Date.UTC(fromYear, 0, 1)));
+  while (found.peak.date.getUTCFullYear() <= toYear) {
+    list.push(solarEclipse(found));
+    found = Astronomy.NextGlobalSolarEclipse(found.peak);
+  }
+  return list;
+}
+
+/** Every new moon in a span of years. For checking. */
+export function newMoons(fromYear, toYear) {
+  const list = [];
+  let from = new Date(Date.UTC(fromYear, 0, 1));
+  for (;;) {
+    const found = Astronomy.SearchMoonPhase(0, from, 40).date;
+    if (found.getUTCFullYear() > toYear) return list;
+    list.push(found);
+    from = new Date(found.getTime() + 10 * 86400000);
+  }
+}
+
 /** Name of the constellation containing a J2000 position, for checking the star table. */
 export function constellationAt(raHours, decDeg) {
   return Astronomy.Constellation(raHours, decDeg).symbol;

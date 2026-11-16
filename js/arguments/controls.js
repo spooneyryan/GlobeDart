@@ -13,6 +13,8 @@
 //   options            for a list to pick from: [[value, label], ...]
 // and, for a slider, optionally
 //   show(value, app)   how the value is written beside it
+// and, for either, optionally
+//   sets: true         changing it sets the scene again, by running `apply` with the new values
 //
 // The values reach `apply(app, own)` and `body(data, app, own)` as `own`, an
 // object keyed by id. They go back to their starting values each time the

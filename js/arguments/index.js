@@ -30,6 +30,7 @@ import flights from './flights.js';
 import phases from './phases.js';
 import sameface from './sameface.js';
 import eclipse from './eclipse.js';
+import suneclipse from './suneclipse.js';
 import icewall from './icewall.js';
 import ship from './ship.js';
 import waterlevel from './waterlevel.js';
@@ -43,7 +44,7 @@ import air from './air.js';
 import anymap from './anymap.js';
 import clouds from './clouds.js';
 
-export const ARGUMENTS = [sunset, clouds, angles, sunrise, december, polaris, southern, phases, sameface, eclipse, flights, icewall, anymap, ship, eyelevel, looming, waterlevel, bedford, twosunsets, pilots, spin, air];
+export const ARGUMENTS = [sunset, clouds, angles, sunrise, december, polaris, southern, phases, sameface, eclipse, suneclipse, flights, icewall, anymap, ship, eyelevel, looming, waterlevel, bedford, twosunsets, pilots, spin, air];
 
 /** The headings the arguments are listed under, in order. */
 export const GROUPS = [
@@ -63,7 +64,7 @@ export const TOOLS = ['sky', 'horizon', 'flight'];
 export const TOURS = [
   { id: 'short', label: 'The short tour', about: 'Six of the strongest arguments, easiest first.', steps: ['sunset', 'sunrise', 'angles', 'southern', 'flights', 'ship'] },
   { id: 'sky', label: 'The sun and the stars', about: 'What the sky does over a day, over a year, and from different places.', steps: ['sunset', 'clouds', 'sunrise', 'december', 'angles', 'polaris', 'southern'] },
-  { id: 'moon', label: 'The moon', about: 'Its phases, its face, and the shadow that crosses it.', steps: ['phases', 'sameface', 'eclipse'] },
+  { id: 'moon', label: 'The moon', about: 'Its phases, its face, the shadow that crosses it and the shadow it casts.', steps: ['phases', 'sameface', 'eclipse', 'suneclipse'] },
   { id: 'horizon', label: 'The horizon', about: 'Ships, skylines and still water.', steps: ['ship', 'eyelevel', 'waterlevel', 'bedford', 'looming', 'twosunsets'] },
   { id: 'travel', label: 'Travel, motion and air', about: 'Flights, voyages, pilots, the spin and the air.', steps: ['flights', 'icewall', 'anymap', 'pilots', 'spin', 'air'] },
 ];

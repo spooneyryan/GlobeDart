@@ -71,6 +71,9 @@ import {
   viewsApartDeg,
   brightSideDeg,
   earthShadow,
+  sunCovered,
+  moonShadowGlobe,
+  moonShadowFlat,
 } from '../js/models.js';
 import { moonPoint, observedMoon, moonPhase, nextFullMoon, nextLunarEclipse, lunarEclipses, publishedEclipse } from '../js/astro.js';
 import { CITIES, REF_CITIES } from '../js/cities.js';
@@ -706,6 +709,28 @@ check(`the ${ARGUMENTS.filter((a) => a.controls?.length).length} arguments with 
     data: { sub, globe: { trueEl: el, el }, obs: { el }, flat: { trueEl: 25, el: 25, groundKm } },
     helpers: { ...drawHelpers, state: { ...drawHelpers.state, flatLight } },
   }));
+  // And an eclipse of the sun with the moon on show, the flat moon first level with its sun and then lower.
+  {
+    const when = new Date(Date.UTC(2024, 3, 8, 18, 17));
+    const at = { lat: 25.29, lon: -104.14 };
+    const s = subsolarPoint(when);
+    const mp = moonPoint(when);
+    for (const moonHeightKm of [5000, 4913]) {
+      const sun = { obs: observedSun(when, at.lat, at.lon), globe: globePredict(s, at.lat, at.lon), flat: flatPredict(s, at.lat, at.lon, params) };
+      const moon = {
+        point: mp,
+        obs: observedMoon(when, at.lat, at.lon),
+        globe: globePredictNear(mp, at.lat, at.lon),
+        flat: flatPredict(mp, at.lat, at.lon, { sunHeightKm: moonHeightKm, lightRangeKm: Infinity }),
+      };
+      moon.cover = { measured: sunCovered(sun.obs, moon.obs), globe: sunCovered(sun.globe, moon.globe), flat: sunCovered(sun.flat, moon.flat, moon.flat.slantKm < sun.flat.slantKm) };
+      moon.shade = { globe: moonShadowGlobe(s, mp), flat: moonShadowFlat(s, mp, { sunHeightKm: 5000, moonHeightKm }) };
+      skies.push({
+        data: { sub: s, ...sun, moon },
+        helpers: { ...drawHelpers, land: { polygons: [[[0, 0, 20, 0, 20, 20, 0, 20]]] }, state: { ...drawHelpers.state, ...at, date: when, moonHeightKm } },
+      });
+    }
+  }
   const failed = [];
   for (const a of ARGUMENTS.filter((x) => x.draw)) {
     const sets = [defaultsFor(a)];
@@ -1048,6 +1073,17 @@ const sample = {
         lit: { measured: moonPhase(now).fraction, globe: litFraction(p.globe.sun, p.globe.moon, eye.globe), flat: litFraction(p.flat.sun, p.flat.moon, eye.flat) },
         shadow: earthShadow(sub, mp),
         published: publishedEclipse(now),
+        cover: (() => {
+          const sunSeen = { obs: observedSun(now, hereNow.lat, hereNow.lon, air), globe: globePredict(sub, hereNow.lat, hereNow.lon, air), flat: flatPredict(sub, hereNow.lat, hereNow.lon, params, air) };
+          const moonFlat = flatPredict(mp, hereNow.lat, hereNow.lon, dome, air);
+          return {
+            measured: sunCovered(sunSeen.obs, observedMoon(now, hereNow.lat, hereNow.lon, air)),
+            globe: sunCovered(sunSeen.globe, globePredictNear(mp, hereNow.lat, hereNow.lon, air)),
+            flat: sunCovered(sunSeen.flat, moonFlat, moonFlat.slantKm < sunSeen.flat.slantKm),
+          };
+        })(),
+        // The flat moon is put a little under its sun here, so that the working for its shadow is gone through.
+        shade: { globe: moonShadowGlobe(sub, mp), flat: moonShadowFlat(sub, mp, { sunHeightKm: 5000, moonHeightKm: 4900, bendPerKm: flatBendPerKm({ sunHeightKm: 5000, bendSetKm: 10000 }) }) },
         cities: REF_CITIES.map((c) => ({
           ...c,
           obs: observedMoon(now, c.lat, c.lon, air),

@@ -570,6 +570,57 @@ export const EXPLAIN = {
     },
   },
 
+  'moon.cover': {
+    tool: 'sky',
+    title: "The moon's shadow on the Earth",
+    maths: true,
+    code: [['models.js', 'moonShadowGlobe', 'moonShadowFlat', 'sunCovered', 'discCovered', 'bestFlatMoonHeightKm']],
+    body(c, { state, deg, km, percent }) {
+      const m = c.moon;
+      if (!m) return '<p>Turn on "Show the moon" to see the working.</p>';
+      const g = m.shade.globe;
+      const f = m.shade.flat;
+      const place = (p) => `${latitude(p.lat)}, ${longitude(p.lon)}`;
+      const seen = (cover) => `${deg(cover.sepDeg, 2)} apart, ${percent(cover.fraction)} hidden`;
+      return `
+      <p>The sun is eclipsed for someone when the moon is in front of it in their sky. The middle of the moon's
+      shadow is on the straight line from the middle of the sun through the middle of the moon, so each model is
+      asked where that line comes down.</p>
+      ${heading('globe', 'Globe')}
+      ${steps(
+        step('The sun is overhead at, and its distance', '', `${place(c.sub)}, ${km(c.sub.distKm)}`),
+        step('The moon is overhead at, and its distance', '', `${place(m.point)}, ${km(m.point.distKm)}`),
+        step("How near the line through the two passes to the Earth's centre", 'p', km(g.missKm)),
+        step("The Earth's radius", 'R', km(EARTH_RADIUS_KM)),
+        g.centre
+          ? step('p is less than R, so the line meets the ground at', '', place(g.centre))
+          : step('p is more than R, so the line', '', `misses by ${km(g.missKm - EARTH_RADIUS_KM)}`),
+        g.centre && step('Radius of the fully dark shadow there', 'm − t × (r − m) ÷ g', g.darkKm > 0 ? km(g.darkKm) : 'it has come to a point: a ring of sun is left'),
+        step('Radius of the shadow with some of the sun hidden', 'm + t × (r + m) ÷ g', km(g.penumbraKm)),
+        step('Globe says', '', g.kind === 'none' ? 'no eclipse anywhere' : g.kind === 'partial' ? 'a partial eclipse for some places' : `a ${g.kind === 'annular' ? 'ring-shaped' : 'total'} eclipse at that place`),
+      )}
+      <p>Here m and r are the radii of the moon and the sun, ${km(MOON_RADIUS_KM)} and ${km(SUN_RADIUS_KM)}, g is the
+      distance between them, and t is how far beyond the moon the line meets the ground.</p>
+      ${heading('flat', 'Flat')}
+      ${steps(
+        step('Height of the sun and of the moon', 'H, h', `${km(state.sunHeightKm)}, ${km(state.moonHeightKm)}`),
+        step('How far apart they are over the map', 'g', km(f.gapKm)),
+        f.centre
+          ? step('The line through them comes down beyond the place under the moon by', state.flatLight === 'bent' ? '(B − √(B² − 2ch)) ÷ c' : 'g × h ÷ (H − h)', km(f.fromMoonKm))
+          : step('The moon is not low enough under the sun, so the line', '', 'never comes down'),
+        f.centre && step('Which is at', '', f.offMap ? 'beyond the rim of the map' : place(f.centre)),
+      )}
+      ${state.flatLight === 'bent' ? '<p>With bending light, c is how much the light curves and B = (H − h) ÷ g − c × g ÷ 2.</p>' : ''}
+      ${heading('', 'From the observer')}
+      ${steps(
+        step('Measured: the middles of the moon and the sun', '', seen(m.cover.measured)),
+        step('Globe', '', seen(m.cover.globe)),
+        step('Flat', '', m.cover.flat.inFront ? seen(m.cover.flat) : `${deg(m.cover.flat.sepDeg, 2)} apart, with the moon the further of the two`),
+      )}
+      <p>The share hidden is the area the two discs have in common, as a fraction of the sun's.</p>`;
+    },
+  },
+
   // ---------- over the horizon ----------
 
   'hz.views': {

@@ -167,6 +167,67 @@ Earth is never between the sun and the moon.
 - Checks: section 18 (position within 0.01°; phase within one part in a hundred; all 37 eclipses of 2020 to 2035
   placed correctly, and no eclipse at any other of the 198 full moons in those years).
 
+**Eclipses of the sun.** The middle of the moon's shadow lies on the straight line from the middle of the sun
+through the middle of the moon. On the globe, with the moon at M from the Earth's centre, u the direction the
+light travels and b = M · u:
+
+```
+p = √(|M|² − b²)          how near the line passes to the Earth's centre
+t = −b − √(R² − p²)       how far beyond the moon it meets the ground, when p < R
+```
+
+With m and r the radii of the moon and sun and g the distance between them, the shadow there has these radii,
+measured square to the light:
+
+```
+fully dark   = m − t × (r − m) ÷ g      below zero: a ring of sun is left
+partly dark  = m + t × (r + m) ÷ g
+```
+
+The line misses the Earth when p > R, and there is still a partial eclipse somewhere while p is less than R plus
+the partly dark radius. The ball is a perfect one. The real Earth is flattened by one part in 298, which moves
+the place the line meets the ground by up to 65 km; meeting the flattened Earth instead gives the published
+place to within a km.
+
+On the flat model the sun is H up and the moon h, over places g apart on the map. The line through them only
+comes down to the ground if the moon is the lower, and by similar triangles it does so beyond the place under
+the moon by
+
+```
+x = g × h ÷ (H − h)
+```
+
+With bending light (c per km) the path from the ground is s·x + c·x²/2 and has to pass through both:
+
+```
+B = (H − h) ÷ g − c × g ÷ 2
+x = (B − √(B² − 2ch)) ÷ c         no shadow when B ≤ 0 or B² < 2ch
+```
+
+Nothing fixes h. "Solar eclipse" tries every 5,000th of H below the sun, down to half way, and takes the height
+whose shadow lands nearest the published place at the middle of the eclipse on show.
+
+For one observer, the share of the sun hidden is the area the two discs have in common over the sun's area. With
+s and m the discs' radii as angles and x the angle between their centres:
+
+```
+none            when x ≥ s + m
+all             when x ≤ m − s
+(m ÷ s)²        when x ≤ s − m
+otherwise       (s² acos((x² + s² − m²) ÷ 2xs) + m² acos((x² + m² − s²) ÷ 2xm)
+                  − ½ √((s + m − x)(x + s − m)(x − s + m)(x + s + m))) ÷ πs²
+```
+
+- Code: `js/models.js`, `moonShadowGlobe`, `moonShadowFlat`, `bestFlatMoonHeightKm`, `sunCovered`,
+  `discCovered`. Published values: `js/astro.js`, `nextSolarEclipse`, `solarEclipseNear`, `solarEclipses`,
+  `newMoons`. The argument: `js/arguments/suneclipse.js`.
+- Checks: with the argument (of the 198 new moons of 2020 to 2035 the globe's sum picks out the 34 published
+  eclipses, each of the right kind, and no others; the 24 with the line on the ground are within 65 km of the
+  published place; from that place the published moon is within 0.01° of the sun's middle; with its best height
+  for each eclipse the flat shadow is still over 500 km out whenever the sun is under 35° up; the best height
+  runs from 4,913 to 4,938 km under a sun at 5,000 km; and a moon at any of those heights casts a shadow on the
+  map at more than twice as many new moons as have a real one).
+
 ## 3b. Which side of a cloud is lit
 
 Light strikes the underside of a cloud only if it is travelling upward when it arrives. So each model is asked

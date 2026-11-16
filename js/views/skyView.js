@@ -1,8 +1,10 @@
-// First-person view of the sky from the observer's position.
+// First-person view from where the observer stands: the sky this model predicts,
+// over the ground of a field (see ground.js).
 // East = +x, up = +y, north = -z. Both sky views share one look direction and zoom.
 import * as THREE from 'three';
 import { DEG } from '../astro.js';
 import { View3D, COLORS, lineSegments, DynamicSegments, PointCloud, makeGlowSprite } from '../scene-utils.js';
+import { Ground } from './ground.js';
 
 const FAR = 500;
 const SCOPE_PX_PER_DEG = 150;
@@ -27,15 +29,13 @@ const NIGHT_LOW = new THREE.Color(0x0d1426);
 const DAY_TOP = new THREE.Color(0x2a69bf);
 const DAY_LOW = new THREE.Color(0xa6caee);
 const DUSK_LOW = new THREE.Color(0xe58c55);
-const GROUND_DAY = new THREE.Color(0x35432f);
-const GROUND_NIGHT = new THREE.Color(0x0a0e0b);
 const SUN_LOW = new THREE.Color(0xff7b3a);
 const SUN_HIGH = new THREE.Color(0xfff4d2);
 
 export class SkyView extends View3D {
   constructor(container, { onLook, onPick = null }) {
     super(container);
-    this.camera = new THREE.PerspectiveCamera(60, 1, 1, 2000);
+    this.camera = new THREE.PerspectiveCamera(60, 1, 0.2, 2000);
     this.camera.rotation.order = 'YXZ';
     this.look = { az: 180, pitch: 20, fov: 60 };
 
@@ -76,7 +76,7 @@ export class SkyView extends View3D {
     sky.renderOrder = 0;
     this.scene.add(sky);
 
-    // Faint elevation / bearing grid.
+    // Faint elevation / bearing grid, for reading angles off the sky. Off unless asked for: see setGrid.
     const grid = [];
     const seg = (a, b) => grid.push(a.x, a.y, a.z, b.x, b.y, b.z);
     for (let el = 10; el < 90; el += 10) {
@@ -88,6 +88,7 @@ export class SkyView extends View3D {
     this.grid = lineSegments(grid, 0xffffff, 0.16);
     this.grid.material.depthTest = false;
     this.grid.renderOrder = 1;
+    this.grid.visible = false;
     this.scene.add(this.grid);
 
     // Stars, drawn only when the app passes them in: where each is measured to be
@@ -165,38 +166,38 @@ export class SkyView extends View3D {
     this.ownCircle.object.renderOrder = 4.5;
     this.scene.add(this.ownCircle.object);
 
-    // Opaque ground: everything below the horizon is hidden, as it is in life.
-    this.ground = new THREE.Mesh(
-      new THREE.SphereGeometry(900, 64, 16, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2),
-      new THREE.MeshBasicMaterial({ color: GROUND_DAY.clone(), side: THREE.BackSide, depthTest: false }),
-    );
-    this.ground.renderOrder = 5;
-    this.scene.add(this.ground);
+    // The ground: everything below the horizon is hidden, as it is in life.
+    this.ground = new Ground(this.scene);
     const horizon = [];
     for (let az = 0; az < 360; az += 2) {
       const a = skyDir(az, 0, FAR);
       const b = skyDir(az + 2, 0, FAR);
       horizon.push(a.x, a.y, a.z, b.x, b.y, b.z);
     }
-    const horizonLine = lineSegments(horizon, 0xffffff, 0.5);
-    horizonLine.material.depthTest = false;
-    horizonLine.renderOrder = 6;
-    this.scene.add(horizonLine);
+    this.horizonLine = lineSegments(horizon, 0xffffff, 0.5);
+    this.horizonLine.material.depthTest = false;
+    this.horizonLine.renderOrder = 6;
+    this.horizonLine.visible = false;
+    this.scene.add(this.horizonLine);
 
-    // Labels
+    // Labels. The eight compass points always show; the finer bearings and the elevations come with the grid.
+    this.gridLabels = [];
     const compass = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
     for (let az = 0; az < 360; az += 15) {
       const major = az % 45 === 0;
       if (!major && az % 30 !== 0) continue;
       const item = this.labels.add(major ? `${compass[az / 45]} ${az}°` : `${az}°`, major ? 'compass' : 'compass minor');
       item.pos.copy(skyDir(az, 0, FAR));
+      if (!major) this.gridLabels.push(item);
     }
     for (const az of [0, 90, 180, 270]) {
       for (let el = 10; el < 90; el += 10) {
         const item = this.labels.add(`${el}°`, 'elev');
         item.pos.copy(skyDir(az + 1.5, el, FAR));
+        this.gridLabels.push(item);
       }
     }
+    for (const item of this.gridLabels) item.visible = false;
     this.sunLabel = this.labels.add('', 'sun');
     this.measuredLabel = this.labels.add('measured position', 'measured');
     this.ownLabel = this.labels.add('', 'own');
@@ -289,10 +290,23 @@ export class SkyView extends View3D {
     this.setLook(this.look);
   }
 
+  /** Shows or hides the lines of equal elevation and bearing, their labels and the line of the horizon. */
+  setGrid(on) {
+    if (this.grid.visible === on) return;
+    this.grid.visible = this.horizonLine.visible = on;
+    for (const item of this.gridLabels) item.visible = on;
+    this.dirty = true;
+  }
+
+  /** How far down from the top of the view the readout reaches, in pixels. */
+  coveredTop() {
+    return this.hidden ? 0 : this.readout.offsetTop + this.readout.offsetHeight;
+  }
+
   setLook(look) {
     this.look = {
       az: ((look.az % 360) + 360) % 360,
-      pitch: Math.min(89, Math.max(-12, look.pitch)),
+      pitch: Math.min(89, Math.max(-55, look.pitch)),
       fov: Math.min(100, Math.max(2, look.fov)),
     };
     this.camera.rotation.set(this.look.pitch * DEG, -this.look.az * DEG, 0);
@@ -310,19 +324,24 @@ export class SkyView extends View3D {
    *                  star is the star's name, or null for the sun; nearAz is the bearing to put its label beside)
    * @param stars     null, or { model, measured, mags, lines, trails, selected, name }: this model's
    *                  and the measured {az, el} of every star, the index and name of the chosen one
-   * @param moon      null, or { model, measured, lit, side, shadow }: where this model puts the moon and
+   * @param moon      null, or { model, measured, lit, side, shadow, cover }: where this model puts the moon and
    *                  where it is measured ({az, el, sizeDeg}), the fraction of its face this model lights,
-   *                  which way the lit side faces, and the Earth's shadow on it if this model has one
+   *                  which way the lit side faces, the Earth's shadow on it if this model has one, and the
+   *                  share of the sun this model has it hiding
    */
   update(sun, measured, lit, text, own = null, stars = null, moon = null) {
     const el = sun.el;
-    const bright = lit ? smooth(-6, 8, el) : 0;
-    const dusk = lit ? smooth(-12, -2, el) * (1 - smooth(0, 14, el)) : 0;
+    // An eclipse of the sun, as this model has it: the daylight goes as the sun is hidden, slowly at first as the
+    // eye sees it, and when all of it is hidden there is dusk all round the horizon.
+    const hidden = moon?.cover ?? 0;
+    const day = lit ? smooth(-6, 8, el) : 0;
+    const bright = day * (0.16 + 0.84 * Math.pow(1 - hidden, 0.25));
+    const dusk = lit ? Math.max(smooth(-12, -2, el) * (1 - smooth(0, 14, el)), 0.8 * day * Math.pow(hidden, 12)) : 0;
     this.skyUniforms.uTop.value.copy(NIGHT_TOP).lerp(DAY_TOP, bright);
     this.skyUniforms.uLow.value.copy(NIGHT_LOW).lerp(DAY_LOW, bright).lerp(DUSK_LOW, dusk * 0.85);
     this.skyUniforms.uSunDir.value.copy(skyDir(sun.az, el));
-    this.skyUniforms.uGlow.value = lit ? 0.4 + 0.6 * smooth(-4, 4, el) : 0.25;
-    this.ground.material.color.copy(GROUND_NIGHT).lerp(GROUND_DAY, bright);
+    this.skyUniforms.uGlow.value = (lit ? 0.4 + 0.6 * smooth(-4, 4, el) : 0.25) * (1 - 0.8 * hidden);
+    this.ground.update({ bright, dusk, low: this.skyUniforms.uLow.value, sunDir: this.skyUniforms.uSunDir.value, sunEl: el, lit, hidden });
 
     const sunColor = SUN_LOW.clone().lerp(SUN_HIGH, smooth(0, 14, el));
     const radius = FAR * Math.tan((sun.sizeDeg / 2) * DEG);
@@ -333,6 +352,7 @@ export class SkyView extends View3D {
     this.glow.position.copy(this.sun.position);
     this.glow.scale.setScalar(radius * 14);
     this.glow.material.color.copy(sunColor);
+    this.glow.material.opacity = 1 - 0.8 * hidden;
 
     this.measuredRing.position.copy(skyDir(measured.az, measured.el, FAR));
     this.measuredRing.lookAt(0, 0, 0);
@@ -392,8 +412,11 @@ export class SkyView extends View3D {
     this.scopeSun.style.display = this.scopeGround.style.display = show ? 'none' : '';
     if (!show) return;
 
-    // Drawn a little larger than life so it can be found; the inset shows its true face.
-    const radius = FAR * Math.tan(Math.max(moon.model.sizeDeg / 2, 0.45) * DEG);
+    // Drawn a little larger than life so it can be found; the inset shows its true face. In front of the sun it
+    // is its true size and dark, so that it hides no more of the sun than this model says.
+    const eclipsing = moon.cover > 0;
+    const radius = FAR * Math.tan(Math.max(moon.model.sizeDeg / 2, eclipsing ? 0 : 0.45) * DEG);
+    this.moon.material.color.set(eclipsing ? 0x10131a : 0xdfe5ec);
     this.moon.position.copy(skyDir(moon.model.az, moon.model.el, FAR));
     this.moon.lookAt(0, 0, 0);
     this.moon.scale.setScalar(radius);

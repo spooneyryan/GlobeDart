@@ -53,7 +53,8 @@ The empty `.nojekyll` file tells GitHub Pages to serve the files exactly as they
 | `js/observations.js` | Horizon observations the user enters themselves: what bending each one implies, how each model fares, and the text form used in links |
 | `js/measurements.js` | Measurements of the sun or a star that the user enters themselves: stick-and-shadow conversion, scoring against both models, and the text form used in links |
 | `js/views/globeView.js`, `flatView.js` | Outside views of each model |
-| `js/views/skyView.js` | First-person sky view, used once per model with a shared look direction |
+| `js/views/skyView.js` | The observer's sky: a first-person view, used once per model with a shared look direction |
+| `js/views/ground.js` | The ground under the observer's sky: the field, its tracks and landmarks, and the shadows |
 | `js/views/horizonView.js` | The horizon drawings: the scene from the side and through a telescope, once per model |
 | `js/views/flightView.js` | The level-flight drawings: one lap speeded up, and a stretch to true scale |
 | `js/main.js` | State, controls, result panels, shareable URL, and the helpers handed to each argument |
@@ -95,6 +96,27 @@ the page is what changes with the numbers, and the short instructions needed to 
 - Both models get the same single input for each object: the point on Earth it is directly overhead. Neither is handed the answer.
 - The flat model is given the kindest reading available: its sun is sized to look correct when overhead, it is scored on daytime moments only, and its sun and stars each get their own adjustable height.
 - The globe side has no free parameters. The flat side has every knob exposed.
+
+## The observer's sky
+
+The two lower views show what each model says the observer sees, from where the observer stands.
+
+- The observer stands in a mown field where two farm tracks cross. One track runs north to south and the other
+  east to west, so each compass point on the horizon has a track leading to it. There are hay bales, a fence, a
+  tree to the north and a farmhouse to the south.
+- The field is scenery. It is the same in both views and at every place on Earth, and neither model has any say
+  in it. Nothing in the east or the west stands taller than the eye, so the horizon is clear for sunrise and
+  sunset.
+- The light and the shadows do follow each view's own sun. The bales, the tree and the observer cast shadows
+  away from it, long when it is low. Look down and away from the sun to see your own. The two views differ
+  wherever the models put the sun at different heights.
+- When a model has the moon hiding the sun, its sky darkens by the share hidden. With all of it hidden the sky
+  is dark, with dusk all round the horizon.
+- Drag to look around and scroll or pinch to zoom. "Keep the sun in view" in the Display section turns the view
+  to follow the sun, the moon or the chosen star, keeping some ground in sight unless it is nearly overhead.
+- "Angle grid on the observer's sky" in the Display section draws lines of equal elevation every 10° and of
+  equal bearing every 30°, with their labels and the line of the horizon. It is off to begin with and is carried
+  in the link.
 
 ## Your own measurements
 
@@ -184,6 +206,14 @@ close enough for that to shift it by up to a degree depending on where you stand
 - **Eclipses.** The Earth's shadow at the moon is worked out from the sizes and distances of the sun, Earth and
   moon. That one sum gives every partial and total eclipse published for 2020 to 2035 and no others. On the flat
   model the Earth is never between the sun and the moon.
+- **Eclipses of the sun.** The middle of the moon's shadow is on the line from the sun through the moon. Where
+  that line meets a ball of the Earth's radius is where the eclipse is seen. That one sum, tried at all 198 new
+  moons from 2020 to 2035, picks out the 34 published eclipses, each of the right kind, and puts the shadow
+  within 65 km of the published place. The flat model's moon has to be lower than its sun to cast a shadow at
+  all, and nothing says by how much. "Solar eclipse" gives it the height that suits the eclipse on show best and
+  then follows both shadows across a map: the flat one is thousands of km out at the ends of the track, wrong
+  again at the next eclipse, and on the map at far more new moons than have an eclipse. The Moon table has a row
+  for how much of the sun is hidden from the observer.
 - "Next full moon" and "Next eclipse" jump to those moments and move the observer to where the moon is high.
 - The flat model's moon is treated as a ball lit by its sun. A moon that gives its own light would say nothing
   about phases, so there is nothing in that version to test.
@@ -294,7 +324,7 @@ person showing another.
 |---|---|
 | The short tour | sunset, sunrise direction, sun angles from many cities, southern stars, southern flights, a ship over the horizon |
 | The sun and the stars | sunset, clouds lit from beneath, sunrise direction, December daylight, sun angles, the pole star, southern stars |
-| The moon | phases, the same face, eclipses |
+| The moon | phases, the same face, eclipses of the moon, eclipses of the sun |
 | The horizon | a ship, the horizon at eye level, water finding its level, the Bedford Level, things seen from too far away, two sunsets |
 | Travel, motion and air | southern flights, the ice wall, any flat map, pilots and the nose, feeling the spin, air without a container |
 
@@ -321,7 +351,7 @@ A link can name a demonstration or a tour and nothing else, and the app sets the
 ## The demonstrations
 
 The bar at the top lists the demonstrations under six headings: the sun, the moon, the stars, distances, the
-horizon, and motion and air. Picking a heading shows its demonstrations beneath it. There are twenty-two, each answering one
+horizon, and motion and air. Picking a heading shows its demonstrations beneath it. There are twenty-three, each answering one
 flat-earth claim, which is quoted above its explanation.
 
 ## Writing an argument
@@ -343,12 +373,14 @@ body(data, app, own) { /* own.south is the number on the slider */ }
 An argument can also draw a picture of its own. It exports `draw(ctx, size, data, app, own)`, and the app gives it
 a canvas above the explanation and redraws it whenever anything changes. "Air without a container" draws pressure
 against height this way, "Any flat map" draws four cities laid out on a flat sheet, and "Clouds lit from beneath"
-draws the light arriving at a layer of cloud under each model. The checks run every such
+draws the light arriving at a layer of cloud under each model, and "Solar eclipse" draws the sun through eclipse
+glasses and the track of the shadow on a map. The checks run every such
 drawing at several sizes and with every setting of its controls.
 
-The values go back to where they start each time the argument is opened, and are kept in links. Three arguments
+The values go back to where they start each time the argument is opened, and are kept in links. Four arguments
 use this so far: the ice wall (which line of latitude to sail round), water finding its level (a stretch of your
-own) and the Bedford Level (the length of water for a three-mark test). `js/arguments/controls.js` describes the
+own), the Bedford Level (the length of water for a three-mark test) and the solar eclipse (which eclipse). A
+control marked `sets: true` is a different scene for each value, so changing it runs `apply` again. `js/arguments/controls.js` describes the
 fields, and the checks refuse a control that is badly described.
 
 ## Phones and tablets

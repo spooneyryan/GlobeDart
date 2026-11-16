@@ -5,9 +5,11 @@ each is listed under it.
 
 ## Also built: the moon
 
-"Show the moon" puts the moon in both skies, with its phase as each model lights it, and three arguments use it:
-phases, the same face, and eclipses. Still to do: the moon's own tilt and wobble (so the insets could show its
-markings the right way up), eclipses of the sun, and the tides.
+"Show the moon" puts the moon in both skies, with its phase as each model lights it, and four arguments use it:
+phases, the same face, eclipses of the moon and eclipses of the sun. Still to do: the moon's own tilt and wobble
+(so the insets could show its markings the right way up), and the tides. For eclipses of the sun: the shadow
+drawn on the globe and the flat map themselves, the area that sees a partial eclipse, and timing an eclipse of
+your own against both models.
 
 ## Also built: a guided tour
 
@@ -51,6 +53,14 @@ comes up over the curve and lights the underside, with the tops in shade as seen
 always overhead can only light the top. It draws both, with the Earth's shadow climbing as time runs. Still to
 do: the colour of the light, which reddens on its long path through the air, and shadows cast upward onto cloud
 by mountains and aircraft trails.
+
+## Also built: the observer stands somewhere
+
+The observer's sky used to be a chart: a sky with a grid over it and a strip of plain green beneath. It is now a
+view from a place, a field where two tracks cross, with bales, a fence, a tree and a farmhouse for scale, and
+shadows that follow each model's own sun. The grid is a setting, off to begin with. The sky also darkens when a
+model has the moon hiding the sun. Still to do: clouds, the moon's light on the ground at night, scenery that
+suits the observer's place (a beach, a desert, snow), and the corona round a fully hidden sun.
 
 ## 1. Connect to Google Earth
 

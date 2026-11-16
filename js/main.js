@@ -29,6 +29,9 @@ import {
   viewsApartDeg,
   brightSideDeg,
   earthShadow,
+  sunCovered,
+  moonShadowGlobe,
+  moonShadowFlat,
 } from './models.js';
 import { CITIES, REF_CITIES } from './cities.js';
 import {
@@ -117,6 +120,7 @@ const state = {
   flatLighting: 'model',
   flatLight: 'straight', // how the flat model's light travels: 'straight', or 'bent' (curving upward, so that the sun can set)
   follow: true,
+  skyGrid: false, // lines of equal elevation and bearing drawn over the observer's sky
   playing: false,
   speed: 10, // simulated minutes per real second
   demo: null,
@@ -378,6 +382,16 @@ function computeMoon(sub, sunObs, sunGlobe, sunFlat) {
     },
     shadow: earthShadow(sub, point),
     published: eclipseNow(),
+    // An eclipse of the sun: how much of the sun the moon hides from here, and where the middle of its shadow falls.
+    cover: {
+      measured: sunCovered(sunObs, obs),
+      globe: sunCovered(sunGlobe, globe),
+      flat: sunCovered(sunFlat, flat, flat.slantKm < sunFlat.slantKm),
+    },
+    shade: {
+      globe: moonShadowGlobe(sub, point),
+      flat: moonShadowFlat(sub, point, { sunHeightKm: state.sunHeightKm, moonHeightKm: state.moonHeightKm, bendPerKm: flatBend() }),
+    },
     cities: REF_CITIES.map((place) => {
       const o = observedMoon(date, place.lat, place.lon, air);
       const fl = flatPredict(point, place.lat, place.lon, dome, air);
@@ -416,6 +430,8 @@ function renderMoon(c) {
   const globeMiss = skySeparation(m.obs, m.globe);
   const off = (a, b) => (Math.abs(a - b) > 0.05 ? 'bad' : '');
   const shadow = (kind) => (kind === 'none' ? 'no' : `yes, ${kind}`);
+  // How much of the sun's disc the moon covers, for an eclipse of the sun.
+  const hidden = (cover) => (cover.fraction <= 0 ? 'none' : cover.fraction >= 1 ? 'all' : `${clamp(Math.round(cover.fraction * 100), 1, 99)}%`);
   $('moon-compare').tBodies[0].innerHTML = `
     <tr><td>Elevation${infoButton('moon.position', 'where the moon is')}</td><td>${height(m.obs.el)}</td><td>${height(m.globe.el)}</td>
       <td class="${Math.abs(m.flat.el - m.obs.el) > 1 ? 'bad' : ''}">${deg(m.flat.el)}</td></tr>
@@ -429,6 +445,9 @@ function renderMoon(c) {
     <tr><td>In the Earth's shadow?${infoButton('moon.eclipse', 'eclipses of the moon')}</td><td>${shadow(m.published)}</td>
       <td class="${m.shadow.kind === m.published ? '' : 'bad'}">${shadow(m.shadow.kind)}</td>
       <td class="${m.published === 'none' ? '' : 'bad'}">cannot be</td></tr>
+    <tr><td>Sun hidden by the moon${infoButton('moon.cover', 'eclipses of the sun')}</td><td>${hidden(m.cover.measured)}</td>
+      <td class="${off(m.cover.globe.fraction, m.cover.measured.fraction)}">${hidden(m.cover.globe)}</td>
+      <td class="${off(m.cover.flat.fraction, m.cover.measured.fraction)}">${hidden(m.cover.flat)}</td></tr>
     <tr><td>Off by</td><td class="dim">n/a</td><td class="${globeMiss > 1 ? 'bad' : 'good'}">${deg(globeMiss, 2)}</td>
       <td class="${flatMiss > 1 ? 'bad' : 'good'}">${deg(flatMiss, 1)}</td></tr>`;
   const seen = m.cities.filter((x) => x.obs.el > 0);
@@ -1672,8 +1691,12 @@ function applyBareLink() {
   bareLink = null;
   if (tourShown) tourShow();
   else if (demo) showArgument(demo);
-  // Opening the argument put its controls back to the start. The link may say otherwise.
-  if (state.demo) state.own = decodeOwn(DEMOS[state.demo], own);
+  // Opening the argument put its controls back to the start. The link may say otherwise, and a control that
+  // sets the scene has to set it again.
+  if (state.demo) {
+    state.own = decodeOwn(DEMOS[state.demo], own);
+    if (controlsOf(DEMOS[state.demo]).some((control) => control.sets)) DEMOS[state.demo].apply(app, state.own);
+  }
 }
 
 // The explanation is only rewritten when it changes, so that what is in it can be clicked and selected.
@@ -1770,6 +1793,10 @@ function setLook(look) {
   flatSky.setLook(look);
 }
 
+// How far below the horizon the bottom of the observer's sky reaches when it follows something: enough ground
+// to stand on, and more of it when what is followed is low.
+const groundInView = (top) => 14 + 6 * (1 - clamp(top / 30, 0, 1));
+
 function followLook(c) {
   // Keep the sun in view, or the chosen star when the stars are on, or the moon when it is.
   const s = c.stars;
@@ -1779,10 +1806,13 @@ function followLook(c) {
   const together = Math.abs(diff) < 115;
   const az = together ? obs.az + diff / 2 : obs.az;
   const top = Math.max(obs.el, together ? flat.el : 0, 0);
-  const bottom = Math.max(Math.min(obs.el, together ? flat.el : obs.el), 0);
   const aspect = globeSky.width / globeSky.height;
-  const fov = clamp(Math.max(58, top - bottom + 34, together ? (Math.abs(diff) + 26) / aspect : 0), 58, 96);
-  return { az, pitch: clamp((top + bottom) / 2, fov / 2 - 10, 82), fov };
+  const ground = groundInView(top);
+  // The share of the view's height that the title and the readout cover, which what is followed has to clear.
+  const covered = Math.min(0.42, (Math.max(globeSky.coveredTop(), flatSky.coveredTop()) + 14) / globeSky.height);
+  const fov = clamp(Math.max(58, (top + ground + 2) / (1 - covered), together ? (Math.abs(diff) + 26) / aspect : 0), 58, 92);
+  // Keep that much ground in view unless it would push what is followed up under the readout.
+  return { az, pitch: clamp(Math.max(fov / 2 - ground, top + 2 + (covered - 0.5) * fov), -10, 82), fov };
 }
 
 function update() {
@@ -1815,7 +1845,8 @@ function update() {
   const c = compute();
   globeView.update(state, c);
   flatView.update(state, c);
-  if (state.follow) setLook(followLook(c));
+  globeSky.setGrid(state.skyGrid);
+  flatSky.setGrid(state.skyGrid);
 
   const up = c.obs.el > -0.9;
   const flatMiss = skySeparation(c.obs, c.flat);
@@ -1853,7 +1884,7 @@ function update() {
       `${percent(m.lit.flat)} lit, and ${deg(skySeparation(m.obs, m.flat))} from where it is measured`;
   }
   const skyMoon = (key) =>
-    m && { model: m[key], measured: m.obs, lit: m.lit[key], side: m.side[key], shadow: key === 'globe' ? m.shadow : null };
+    m && { model: m[key], measured: m.obs, lit: m.lit[key], side: m.side[key], shadow: key === 'globe' ? m.shadow : null, cover: m.cover[key].fraction };
   lastStars = s;
   const skyStars = (key) =>
     s && {
@@ -1868,6 +1899,8 @@ function update() {
     };
   globeSky.update(c.globe, c.obs, true, globeText, c.own, skyStars('globe'), skyMoon('globe'));
   flatSky.update(c.flat, c.obs, c.flat.lit, flatText, c.own, skyStars('flat'), skyMoon('flat'));
+  // After the readouts are written, because where to look depends on how much of the view they cover.
+  if (state.follow) setLook(followLook(c));
   const views = $('views');
   views.classList.toggle('has-own', c.ownLines.length > 0);
   views.classList.toggle('has-route', !!c.route);
@@ -2397,6 +2430,7 @@ function syncInputs() {
   $('route-to').value = state.route?.to ?? '';
   $('sight-lines').checked = state.sightLines;
   $('follow').checked = state.follow;
+  $('sky-grid').checked = state.skyGrid;
   $('refraction').value = state.refraction;
   const custom = state.refraction === 'custom';
   $('air-fields').hidden = !custom;
@@ -2601,6 +2635,7 @@ function bindControls() {
   for (const [id, key] of [
     ['sight-lines', 'sightLines'],
     ['follow', 'follow'],
+    ['sky-grid', 'skyGrid'],
     ['stars', 'stars'],
     ['moon', 'moon'],
     ['trails', 'trails'],
@@ -2689,6 +2724,11 @@ function bindControls() {
     if (!control) return;
     const raw = control.options ? e.target.value : control.scale === 'log' ? sliderValue(control, Number(e.target.value)) : Number(e.target.value);
     state.own = { ...state.own, [control.id]: cleanValue(control, raw) };
+    // Some choices are a different scene altogether, such as which eclipse to look at.
+    if (control.sets) {
+      state.playing = false;
+      DEMOS[state.demo].apply(app, state.own);
+    }
     requestUpdate();
   });
   $('tour-start').addEventListener('click', () => {
@@ -2964,6 +3004,7 @@ function writeHash() {
     h: Math.round(state.sunHeightKm),
     r: Math.round(state.lightRangeKm),
     sl: state.sightLines ? 1 : 0,
+    ...(state.skyGrid ? { ag: 1 } : {}),
     fl: state.flatLighting,
     ...(state.flatLight === 'bent' ? { fb: 1 } : {}),
     rf: { off: 0, standard: 1, custom: 2 }[state.refraction],
@@ -2991,7 +3032,7 @@ function writeHash() {
   }
   if (state.moon) {
     p.set('mo', 1);
-    p.set('mh', Math.round(state.moonHeightKm));
+    p.set('mh', Number(state.moonHeightKm.toFixed(1)));
   }
   if (state.route) p.set('rt', `${state.route.from}~${state.route.to}`);
   if (state.mode === 'flight') {
@@ -3044,6 +3085,7 @@ function readHash() {
   state.sunHeightKm = num('h', MIN_HEIGHT_KM, MAX_HEIGHT_KM) ?? state.sunHeightKm;
   state.lightRangeKm = num('r', 1000, 20000) ?? state.lightRangeKm;
   if (p.has('sl')) state.sightLines = p.get('sl') === '1';
+  state.skyGrid = p.get('ag') === '1';
   if (p.has('rf')) state.refraction = { 0: 'off', 2: 'custom' }[p.get('rf')] ?? 'standard';
   state.tempC = num('tc', ...AIR_LIMITS.tempC) ?? state.tempC;
   state.pressureHpa = num('ph', ...AIR_LIMITS.pressureHpa) ?? state.pressureHpa;
@@ -3129,6 +3171,7 @@ async function start() {
   bindControls();
   bindFolds();
   const land = await (await fetch('data/land-110m.json')).json();
+  app.land = land; // for an argument that draws a map of its own
   const landCanvas = makeLandCanvas(land);
   const onPick = (lat, lon) => setObserver({ lat, lon });
   const onLook = (look) => {
