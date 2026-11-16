@@ -433,9 +433,15 @@ each step, and a step's question makes room for its answer once it has been answ
   What is folded and what is tucked away are remembered on the device, and are not carried in links.
   What is folded is remembered in the browser's local storage.
 - Switching tool with "Sun, stars, maps", "The horizon" or "Level flight" brings up that tool's demonstrations.
-- "Play" and the speed the time runs at are in the bar above the views, at the far end from those three, with
-  the date and time on show beside them. They stay in sight with the settings folded, tucked away or scrolled
-  off. On a phone they share the row that switches between the two pairs of views, without the date and time.
+- Everything that sets the moment on show is in the bar above the views, not in the settings. "Play" and the
+  speed the time runs at are at the far end of the row from those three. Under them is a row with the date, the
+  time of day as a slider, the time by the sun at the observer, and the jumps to sunrise, noon, sunset and now.
+  They stay in sight with the settings folded, tucked away or scrolled off. With both sidebars tucked away, or
+  on a very wide screen, it is all one row.
+- On a phone "Play" ends the row that switches between the two pairs of views. Under it are the date, the four
+  jumps as one short list, and the speed. The time of day has a row to itself.
+- "Play" is green. The two rows of the menu at the top have a colour of their own, a muted indigo, to set them
+  apart from the settings and the tools.
 - "Start again from the beginning", and the name at the top, load the page afresh as a plain visit. Measurements
   that were saved are kept.
 - A plain visit opens on the present moment, or on that day's noon if it is night at the observer.

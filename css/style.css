@@ -65,7 +65,13 @@ header {
 }
 
 #demos {
-  --tray-line: #4f79ad;
+  /* The menu has a colour of its own, so that it reads as the way round the app and not as settings. */
+  --nav: #252b4d;
+  --nav-line: #47528f;
+  --nav-hover: #2f3764;
+  --nav-on: #4450ad;
+  --tray: #12152b;
+  --tray-line: #6b77cf;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -93,12 +99,31 @@ header {
   padding: 4px 5px;
   border: 1px solid var(--tray-line);
   border-radius: 9px;
-  background: var(--bg);
+  background: var(--tray);
 }
 
 #demo-list button {
   padding: 4px 9px;
   font-size: 13px;
+}
+
+#demos button {
+  background: var(--nav);
+  border-color: var(--nav-line);
+  color: #e2e5ff;
+}
+
+#demos button:hover {
+  background: var(--nav-hover);
+  border-color: #6471c4;
+}
+
+/* The demonstration or tour that is running, and "Take a tour". */
+#demos button.active,
+#demos button.primary {
+  background: var(--nav-on);
+  border-color: #8f9bf0;
+  color: #fff;
 }
 
 /* The heading's name, at the start of its tray. It is left out where the bar has no room to spare for it. */
@@ -136,18 +161,17 @@ header {
 
 /* A group is a tab: the one that is open is outlined, not filled like a running demonstration. */
 #demo-groups button[data-group] {
-  background: transparent;
-  color: var(--muted);
+  color: #c3c9f2;
 }
 
 #demo-groups button[data-group]:hover {
-  color: var(--text);
+  color: #fff;
 }
 
 #demo-groups button[data-group].active {
-  background: var(--bg);
+  background: var(--tray);
   border-color: var(--tray-line);
-  color: var(--text);
+  color: #fff;
   font-weight: 600;
 }
 
@@ -1380,12 +1404,107 @@ body:not([data-mode='sky']) #play-bar {
   min-width: 70px;
 }
 
-#clock {
-  margin-right: 4px;
+/* Play is the one button that sets things moving, so it is the one that is green. */
+button.play {
+  background: #15803f;
+  border-color: #3fd07c;
+  color: #fff;
+  font-weight: 600;
+}
+
+button.play:hover {
+  background: #1a9a4c;
+  border-color: #6be59d;
+}
+
+/* The moment on show: its date, its time of day, and the jumps to sunrise and the rest. A row of its own under the tools. */
+#time-bar {
+  flex: 1 1 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+body:not([data-mode='sky']) #time-bar {
+  display: none;
+}
+
+#time-bar input[type='date'] {
+  flex: none;
+  padding: 4px 8px;
+}
+
+.time-field {
+  flex: 1 1 120px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 0 4px;
+}
+
+.time-field input {
+  flex: 1;
+  min-width: 50px;
+  margin: 0;
+}
+
+#time-label {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+#solar-time {
+  margin-right: 2px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+#jump-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+#time-bar button {
+  padding: 5px 10px;
+}
+
+#time-jump {
+  display: none;
+}
+
+/* Where the bar has the room, the time controls go on the same line as the tools, between them and Play. */
+@media (min-width: 1900px) {
+  #view-bar {
+    flex-wrap: nowrap;
+  }
+  #time-bar {
+    order: 1;
+    flex: 1 1 0;
+    margin: 0 10px;
+  }
+  #play-bar {
+    order: 2;
+    margin-left: 0;
+  }
+}
+
+@media (min-width: 1340px) and (min-height: 521px) {
+  body.tuck-controls.tuck-results #view-bar {
+    flex-wrap: nowrap;
+  }
+  body.tuck-controls.tuck-results #time-bar {
+    order: 1;
+    flex: 1 1 0;
+    margin: 0 10px;
+  }
+  body.tuck-controls.tuck-results #play-bar {
+    order: 2;
+    margin-left: 0;
+  }
 }
 
 /* ---------- over the horizon ---------- */
@@ -1768,8 +1887,8 @@ h4.flat {
     top: 0;
     z-index: 5;
     background: var(--bg);
-    height: 62vh;
-    height: 62svh;
+    height: 66vh;
+    height: 66svh;
     max-height: 720px;
     grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr);
     border-bottom: 1px solid var(--line);
@@ -1824,8 +1943,8 @@ h4.flat {
   #views {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr);
-    height: 58vh;
-    height: 58svh;
+    height: 66vh;
+    height: 66svh;
     gap: 6px;
     padding: 6px;
   }
@@ -1838,30 +1957,67 @@ h4.flat {
   #mode-tabs {
     flex: 1 1 260px;
   }
-  /* On a phone the time runs from the end of the row that switches between the pairs of views. */
+  /* On a phone the two groups of time controls are taken apart and laid out afresh. Play ends the row that
+     switches between the pairs of views. Under it are the date, the jumps as one short list, and the speed.
+     The time of day has a row to itself, so that its slider is long enough to use. */
   #view-tabs {
     flex: 1 1 190px;
   }
-  #play-bar {
-    flex: none;
+  #play-bar,
+  #time-bar {
+    display: contents;
   }
-  /* Both rows of the bar stay one line tall, so the views lose no height to it. */
   #view-bar #view-tabs button,
-  #view-bar #play-bar button {
+  #view-bar #btn-play {
     padding: 4px 6px;
     font-size: 13px;
     white-space: nowrap;
   }
-  #view-bar #play-bar button {
-    min-width: 50px;
+  #view-tabs {
+    order: 1;
   }
-  #view-bar #play-bar select {
-    min-height: 34px;
-    padding: 4px 2px;
-    font-size: 13px;
+  #view-bar #btn-play {
+    order: 2;
+    flex: none;
+    min-width: 54px;
   }
-  #clock {
+  #date {
+    order: 3;
+  }
+  #time-jump {
+    order: 4;
+  }
+  #speed {
+    order: 5;
+  }
+  .time-field {
+    order: 6;
+    flex: 1 1 100%;
+    margin: 0;
+  }
+  #jump-buttons {
     display: none;
+  }
+  /* These keep the size of type that stops a phone zooming the page when one is tapped. */
+  #view-bar #date,
+  #view-bar #time-jump,
+  #view-bar #speed {
+    min-height: 34px;
+    padding: 4px 4px;
+  }
+  #view-bar #date {
+    flex: 1 1 130px;
+    min-width: 0;
+  }
+  #view-bar #time-jump {
+    display: block;
+    flex: none;
+  }
+  #view-bar #speed {
+    flex: none;
+  }
+  #view-bar #time {
+    height: 28px;
   }
   #mode-tabs button {
     flex: 1;
@@ -1956,8 +2112,8 @@ h4.flat {
   /* Scrolling to a section stops with it just beneath the pinned views. */
   aside section,
   .side-head {
-    scroll-margin-top: calc(58vh + 6px);
-    scroll-margin-top: calc(58svh + 6px);
+    scroll-margin-top: calc(66vh + 6px);
+    scroll-margin-top: calc(66svh + 6px);
   }
   /* Once a step's question has been answered it makes room for the answer. */
   #demo-card.answered #tour-ask {

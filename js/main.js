@@ -2516,10 +2516,9 @@ function syncInputs() {
   setIfIdle($('date'), isoDay(state.date));
   const minutes = utcMinutes(state.date);
   $('time').value = Math.floor(minutes);
-  $('time-label').textContent = hhmm(Math.floor(minutes));
-  $('clock').textContent = `${state.date.toLocaleDateString('en-GB', { timeZone: 'UTC', day: 'numeric', month: 'short', year: 'numeric' })}, ${hhmm(Math.floor(minutes))} UTC`;
-  $('solar-time').textContent =
-    `About ${hhmm(Math.floor(minutes + state.lon * 4))} by the sun at the observer (clock zones vary).`;
+  $('time-label').textContent = `${hhmm(Math.floor(minutes))} UTC`;
+  $('solar-time').textContent = `${hhmm(Math.floor(minutes + state.lon * 4))} by the sun`;
+  $('solar-time').title = 'About this time by the sun at the observer. Clock zones vary.';
   setIfIdle($('lat'), state.lat.toFixed(2));
   setIfIdle($('lon'), state.lon.toFixed(2));
   const match = CITIES.find((c) => Math.abs(c.lat - state.lat) < 0.005 && Math.abs(c.lon - state.lon) < 0.005);
@@ -2647,12 +2646,23 @@ function bindControls() {
     state.date = t;
     requestUpdate();
   };
-  $('btn-sunrise').addEventListener('click', jump('rise', 'sunrise'));
-  $('btn-noon').addEventListener('click', jump('noon', 'solar noon'));
-  $('btn-sunset').addEventListener('click', jump('set', 'sunset'));
-  $('btn-now').addEventListener('click', () => {
-    state.date = new Date();
-    requestUpdate();
+  const jumps = {
+    rise: jump('rise', 'sunrise'),
+    noon: jump('noon', 'solar noon'),
+    set: jump('set', 'sunset'),
+    now: () => {
+      state.date = new Date();
+      requestUpdate();
+    },
+  };
+  $('btn-sunrise').addEventListener('click', jumps.rise);
+  $('btn-noon').addEventListener('click', jumps.noon);
+  $('btn-sunset').addEventListener('click', jumps.set);
+  $('btn-now').addEventListener('click', jumps.now);
+  // On a phone the four jumps are one short list, which goes back to its name once it has been used.
+  $('time-jump').addEventListener('change', (e) => {
+    jumps[e.target.value]?.();
+    e.target.value = '';
   });
   $('btn-play').addEventListener('click', () => {
     state.playing = !state.playing;
