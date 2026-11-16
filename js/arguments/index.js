@@ -47,6 +47,7 @@ import retrograde from './retrograde.js';
 import venus from './venus.js';
 import tides from './tides.js';
 
+/** Every argument, in the order the app lists them. */
 export const ARGUMENTS = [sunset, clouds, angles, sunrise, december, polaris, southern, retrograde, venus, phases, sameface, eclipse, suneclipse, tides, flights, icewall, anymap, ship, eyelevel, looming, waterlevel, bedford, twosunsets, pilots, spin, air];
 
 /** The headings the arguments are listed under, in order. */
@@ -59,8 +60,10 @@ export const GROUPS = [
   { id: 'motion', label: 'Motion and air' },
 ];
 
+/** The same arguments, looked up by id. */
 export const ARGUMENT_BY_ID = Object.fromEntries(ARGUMENTS.map((a) => [a.id, a]));
 
+/** The three tools an argument can use: the sky and the two maps, the horizon, and level flight. */
 export const TOOLS = ['sky', 'horizon', 'flight'];
 
 /** The guided tours. Each is a list of arguments in the order they are shown, easiest first. The first is the one a bare link starts. */
@@ -74,6 +77,7 @@ export const TOURS = [
 
 /** The name, in links, of a tour somebody put together themselves. */
 export const OWN_TOUR = 'own';
+/** The fewest and the most steps such a tour can have. */
 export const MIN_TOUR_STEPS = 2;
 export const MAX_TOUR_STEPS = 12;
 

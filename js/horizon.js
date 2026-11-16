@@ -8,6 +8,11 @@
 // Heights are in metres and distances in kilometres. The formulas are the
 // usual surveying ones, good while heights and distances are small next to the
 // size of the Earth.
+//
+// In the formulas below R is the Earth's radius and R′ is the radius the Earth
+// seems to have once the bending is allowed for: R′ = R ÷ (1 − k). The flat
+// model's answers need no formula: on a flat surface nothing is hidden at any
+// distance, and the horizon is at eye level.
 import { DEG, EARTH_RADIUS_KM } from './astro.js';
 
 /** The range of sizes the tool works with, in metres and kilometres. */
@@ -24,7 +29,16 @@ export const STANDARD_GROUND_AIR = Object.freeze({ tempC: 15, pressureHpa: 1013.
 /** Air that cools faster than this with height is denser above than below, and overturns. */
 export const OVERTURNING_LAPSE = -0.0343;
 
-/** The bending coefficient for air of a given temperature, pressure and change of temperature with height. */
+/**
+ * The bending coefficient for air of a given temperature, pressure and change of temperature with height:
+ *
+ *   k = 503 × P ÷ T² × (0.0343 + dT/dh)
+ *
+ * with P in hectopascals, T in kelvin and dT/dh in °C per metre. Light bends
+ * toward denser air. Air is denser below because of the weight above it, which
+ * is the 0.0343, and less so if it is also warmer below, which is the dT/dh.
+ * The 503 comes from how much air slows light, as measured in the laboratory.
+ */
 export function coefficientFromWeather({ tempC, pressureHpa, lapse }) {
   const t = tempC + 273.15;
   return ((503 * pressureHpa) / (t * t)) * (-OVERTURNING_LAPSE + lapse);
@@ -62,18 +76,27 @@ export function middleMarkRiseM(distanceKm, k = 0) {
 /**
  * Light that curves the same way as the surface makes the Earth behave as if
  * it were larger. At k = 1 and beyond, nothing is ever hidden.
+ *   R′ = R ÷ (1 − k)
  */
 export function effectiveRadiusKm(k = 0) {
   return k >= 1 ? Infinity : EARTH_RADIUS_KM / (1 - k);
 }
 
-/** How far away the horizon is on the globe, for an eye at a given height. */
+/**
+ * How far away the horizon is on the globe, in km, for an eye at a height h:
+ *   √(2 × R′ × h)
+ * This is Pythagoras on the triangle of the Earth's centre, the eye and the
+ * horizon, less a term in h² that is far too small to matter.
+ */
 export function horizonDistanceKm(eyeM, k = 0) {
   const r = effectiveRadiusKm(k);
   return Number.isFinite(r) ? Math.sqrt((2 * r * Math.max(0, eyeM)) / 1000) : Infinity;
 }
 
-/** How far below eye level the horizon appears on the globe, in degrees. */
+/**
+ * How far below eye level the horizon appears on the globe, in degrees, from the same triangle:
+ *   √(2 × h ÷ R′)      in radians
+ */
 export function dipDeg(eyeM, k = 0) {
   const r = effectiveRadiusKm(k);
   return Number.isFinite(r) ? Math.sqrt((2 * Math.max(0, eyeM)) / 1000 / r) / DEG : 0;
@@ -83,6 +106,9 @@ export function dipDeg(eyeM, k = 0) {
  * Where the line of the horizon crosses something standing at a distance,
  * measured up from its base, in metres. Nearer than the horizon, this is sea
  * seen behind it. Beyond the horizon, it is the part that is hidden.
+ * With d the distance to it and d₀ the distance to the horizon:
+ *   (d − d₀)² ÷ 2R′
+ * which is the horizon formula turned round: the height that would have its own horizon d − d₀ away.
  */
 export function horizonLineM(eyeM, distanceKm, k = 0) {
   const r = effectiveRadiusKm(k);
@@ -99,6 +125,8 @@ export function hiddenHeightM(eyeM, distanceKm, k = 0) {
  * The air the flat model would need to hide what the globe hides.
  * On a flat surface the light itself would have to curve upward, away from the
  * ground, as sharply as the globe's surface curves away from its light.
+ * That is a coefficient one less than the globe's, and `lapse` is the change
+ * of temperature with height (°C per metre) that it would take.
  */
 export function flatNeeds(k, air = STANDARD_GROUND_AIR) {
   return { k: k - 1, lapse: lapseForCoefficient(k - 1, air) };
@@ -124,6 +152,7 @@ export function sunSinkDegPerHour(lat, sunLat) {
 /**
  * Seconds between the sun setting for an eye at one height and setting again
  * for a higher one: the extra drop of the horizon, over how fast the sun sinks.
+ *   (dip from the higher eye − dip from the lower) ÷ rate
  */
 export function secondSunsetSeconds(lowM, highM, lat, sunLat, k = K_STANDARD) {
   const rate = sunSinkDegPerHour(lat, sunLat);

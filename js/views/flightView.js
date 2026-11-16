@@ -1,9 +1,13 @@
 // Drawings for "Level flight": one lap speeded up, and a stretch of flight
 // drawn to true scale. Each is used once per model.
 //
-// A scene is what flightScene() returns, plus `phase` (how far round the lap
-// the speeded-up aircraft is, 0 to 1) and functions that turn numbers into
-// text in the user's units.
+// These drawings decide nothing. A scene is what flightScene() in js/flight.js
+// returns, already worked out: how far the aircraft flies, how far its nose has
+// to come down, how far the ground drops. Added to it by js/main.js are
+// `phase` (how far round the lap the speeded-up aircraft is, 0 to 1) and
+// functions that turn numbers into text in the user's units.
+//
+// The lap is a diagram, not to scale. The stretch is to true scale, in km.
 import { EARTH_RADIUS_KM } from '../astro.js';
 
 const INK = {
@@ -17,6 +21,7 @@ const INK = {
   path: '#45d6c8',
 };
 
+/** Writing on a drawing, with a dark edge so that it can be read over anything. */
 function text(ctx, string, x, y, colour = INK.text, align = 'left', weight = 400, size = 11) {
   ctx.font = `${weight} ${size}px system-ui, -apple-system, 'Segoe UI', sans-serif`;
   ctx.textAlign = align;
@@ -122,6 +127,7 @@ function instrument(ctx, x, y, r, noseDown, title, reading, align) {
   text(ctx, reading, edge, y + r + 24, INK.text, align, 600, 11);
 }
 
+/** The dark sky behind both drawings. */
 function backdrop(ctx, w, h) {
   const sky = ctx.createLinearGradient(0, 0, 0, h);
   sky.addColorStop(0, '#060c16');
@@ -130,7 +136,18 @@ function backdrop(ctx, w, h) {
   ctx.fillRect(0, 0, w, h);
 }
 
-/** One whole lap, speeded up, with the size of the aircraft and its height exaggerated. */
+/**
+ * One whole lap, speeded up, with the size of the aircraft and its height
+ * exaggerated. A real cruising height of 10 km is a 640th of the Earth's
+ * radius, too thin a gap to draw, so the aircraft is drawn a fixed distance
+ * above the ground whatever its height.
+ *
+ * Three arrows start at the aircraft: where its nose points now (white), where
+ * it pointed at the start, which is a fixed direction against the stars
+ * (violet, dashed), and which way is down (orange). On the globe the aircraft
+ * has gone `phase` of the way round, so the nose and "down" have both turned
+ * by phase × 360°. On the flat model neither has turned at all.
+ */
 function drawLap(ctx, w, h, model, s) {
   backdrop(ctx, w, h);
   const compact = h < 230;
@@ -152,7 +169,7 @@ function drawLap(ctx, w, h, model, s) {
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
-    // Starts over the top and goes round clockwise.
+    // Starts over the top and goes round clockwise. Angles are in radians, measured clockwise from pointing right.
     const around = -Math.PI / 2 + s.phase * Math.PI * 2;
     ctx.strokeStyle = 'rgba(69, 214, 200, 0.35)';
     ctx.lineWidth = 1;
@@ -163,8 +180,8 @@ function drawLap(ctx, w, h, model, s) {
     ctx.setLineDash([]);
     px = cx + Math.cos(around) * (r + 16);
     py = cy + Math.sin(around) * (r + 16);
-    nose = around + Math.PI / 2;
-    down = around + Math.PI;
+    nose = around + Math.PI / 2; // along the circle
+    down = around + Math.PI; // toward the middle of the ball
   } else {
     const ground = top + (h - top - bottom) * 0.72;
     ctx.fillStyle = INK.ground;
@@ -202,10 +219,24 @@ function drawLap(ctx, w, h, model, s) {
   const y = top + r + 4;
   instrument(ctx, 12 + r, y, r, 0, 'artificial horizon', 'level', 'left');
   instrument(ctx, w - 12 - r, y, r, (turned * Math.PI) / 180, 'a gyro left free', turned < 0.5 ? 'level' : `nose ${turned.toFixed(0)}° down`, 'right');
-  return null;
 }
 
-/** A stretch of flight to true scale: the same number of pixels per kilometre across and up. */
+/**
+ * A stretch of flight to true scale: the same number of pixels per kilometre
+ * across and up.
+ *
+ * Heights are in km above the level line through the ground under the start,
+ * and x is the distance along that line. With R the Earth's radius and a the
+ * aircraft's height:
+ *
+ *   the globe's ground          √(R² − x²) − R            it falls away, by about x² ÷ 2R
+ *   level flight on the globe   √((R + a)² − x²) − R      a circle about the same centre, a further out
+ *   on the flat model           0 and a                   both stay where they are
+ *
+ * A dead straight line, nose held still against the stars, stays at a on this
+ * drawing in both models. On the globe the level flight leaves it and follows
+ * the ground down.
+ */
 function drawStretch(ctx, w, h, model, s) {
   backdrop(ctx, w, h);
   const compact = h < 230;
@@ -267,12 +298,12 @@ function drawStretch(ctx, w, h, model, s) {
 
   const size = Math.max(8, Math.min(14, plotW * 0.025));
   aircraft(ctx, X(0), Y(altKm), 0, size);
+  // By the end the aircraft has gone this far round the Earth, and its nose is down by as much: asin(x ÷ (R + a)).
   const endAngle = curved ? Math.asin(Math.min(1, s.distanceKm / (radius + altKm))) : 0;
   aircraft(ctx, X(s.distanceKm), Y(level(s.distanceKm)), endAngle, size);
 
   text(ctx, 'start', X(0), Y(altKm) - 14, INK.muted, 'left');
   text(ctx, `${s.fmtTime(s.minutes)} later`, X(s.distanceKm), Y(level(s.distanceKm)) + 16, INK.muted, 'right');
-  return null;
 }
 
 export class FlightView {

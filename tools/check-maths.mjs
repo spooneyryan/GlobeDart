@@ -1,4 +1,22 @@
-// Sanity checks for the sun and model maths: `node tools/check-maths.mjs`.
+// Checks on the sums the app does: `node tools/check-maths.mjs`.
+//
+// Each check is a statement that has to be true, with the figure it was judged
+// on printed beside it. They are of three kinds:
+//
+//   - a sum against a case with a known answer, such as the sun standing
+//     straight overhead at the place the almanac says it is overhead, or a
+//     triangle on the flat map that can be done by hand
+//   - one way of working something out against another, such as light followed
+//     step by step through the air against the surveyors' short formula
+//   - the app's own claims, such as "no one height for the flat sun fits every
+//     city": if that stopped being true of the model as coded, a check here
+//     would fail and say so
+//
+// Where the globe model is held to the almanac, the check only shows that the
+// code does the sum right: the two rest on the same astronomy, so their
+// agreeing is not evidence.
+//
+// The script ends "All checks passed", or with the number that failed.
 import { readFileSync } from 'node:fs';
 import { deflateRawSync } from 'node:zlib';
 import { EXPLAIN } from '../js/explain.js';
@@ -51,6 +69,13 @@ import {
   wrap180,
   DEG,
   EARTH_RADIUS_KM,
+  moonPoint,
+  observedMoon,
+  moonPhase,
+  nextFullMoon,
+  nextLunarEclipse,
+  lunarEclipses,
+  publishedEclipse,
 } from '../js/astro.js';
 import { STARS, PLANETS, SKY_BODIES, STAR_LINES, starIndex, MAX_CATALOGUE_STARS, addCatalogueStar, catalogueName, catalogueNamesIn } from '../js/stars.js';
 import { ROUTES, routeStats, greatCirclePath, blockHours, globeDistanceKm } from '../js/distances.js';
@@ -76,7 +101,6 @@ import {
   moonShadowGlobe,
   moonShadowFlat,
 } from '../js/models.js';
-import { moonPoint, observedMoon, moonPhase, nextFullMoon, nextLunarEclipse, lunarEclipses, publishedEclipse } from '../js/astro.js';
 import { CITIES, REF_CITIES } from '../js/cities.js';
 import {
   shadowToElevation,
@@ -92,11 +116,12 @@ import {
 } from '../js/measurements.js';
 
 let failures = 0;
+/** One check: what has to be true, whether it is, and the figure it was judged on. */
 function check(name, ok, detail) {
   if (!ok) failures++;
   console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${detail ? '  ' + detail : ''}`);
 }
-const f = (n, d = 3) => n.toFixed(d);
+const f = (n, d = 3) => n.toFixed(d); // a figure for printing
 const near = (value, expected, tolerance) => Math.abs(value - expected) <= tolerance;
 
 const s = seasons(2026);
@@ -673,7 +698,7 @@ check('a step of it can be moved one place earlier or later, and stays put at ei
     moveTourStep(['ship', 'sunset'], 'air', 1).join() === 'ship,sunset');
 check(`and is cut off at ${MAX_TOUR_STEPS} steps`, cleanTourSteps(ARGUMENTS.map((a) => a.id)).length === Math.min(MAX_TOUR_STEPS, ARGUMENTS.length));
 
-// 14-and-a-bit. The scenery under the observer's sky is sorted by place.
+// 14a. The scenery under the observer's sky is sorted by place.
 {
   const land = JSON.parse(readFileSync(new URL('../data/land-110m.json', import.meta.url), 'utf8'));
   const expected = [
@@ -690,7 +715,7 @@ check(`and is cut off at ${MAX_TOUR_STEPS} steps`, cleanTourSteps(ARGUMENTS.map(
     SCENERY.every((kind) => typeof SCENERY_NAMES[kind] === 'string') && sceneryAt(null, 45, 10) === 'sea' && onLand(land, 47, 2) && !onLand(land, 0, -30));
 }
 
-// 14a. Controls that belong to an argument.
+// 14b. Controls that belong to an argument.
 const faults = ARGUMENTS.flatMap(controlFaults);
 check(`the ${ARGUMENTS.filter((a) => a.controls?.length).length} arguments with controls of their own describe them properly`, faults.length === 0, faults.join('; '));
 {
@@ -939,7 +964,7 @@ check('and the flat model hides nothing over cold water', traceView(coldAir, { .
 const nearer = traceView(warmAir, { ...sizes, distanceKm: 10, curved: false }).hiddenM;
 check('on flat ground the warm-water hiding grows in step with distance', near(warmFlat.hiddenM / nearer, 2, 0.35), `${f(nearer, 1)} m at 10 km, ${f(warmFlat.hiddenM, 1)} m at 20 km`);
 
-// 18. The moon.
+// 17. The moon.
 let worstMoon = 0;
 let worstMoonFar = 0;
 for (let day = 0; day < 30; day += 3) {
@@ -1016,7 +1041,7 @@ check('the next total eclipse is found, and the moon is wholly inside the shadow
 check("the Earth's shadow at the moon is between 2.5 and 3 times the moon's width", totalShadow.shadowDeg / totalShadow.moonDeg > 2.5 && totalShadow.shadowDeg / totalShadow.moonDeg < 3,
   f(totalShadow.shadowDeg / totalShadow.moonDeg, 2));
 
-// 17. The explanations the app shows, and the code they describe.
+// 18. The explanations the app shows, and the code they describe.
 // The flat model's formulas, as the info boxes give them, against plain vectors on the map.
 let worstMap = 0;
 for (const a of REF_CITIES) {

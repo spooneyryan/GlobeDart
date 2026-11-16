@@ -1,8 +1,23 @@
+// The ice wall: how far is it round the far south?
+//
+// No almanac figure is used. Each model says how long a line of latitude is,
+// and the two answers are set side by side. What is measured is in ships' logs
+// and flight times, which the reader is sent to.
 import { EARTH_RADIUS_KM, DEG } from '../astro.js';
 import { flatPoleDistanceKm } from '../models.js';
 
-/** Once round a line of latitude, on each model, in km. */
+/**
+ * Once round a line of latitude φ on the globe, in km. The line is a circle
+ * whose radius is the distance from the Earth's axis, R cos φ:
+ *   2π × R × cos φ
+ */
 export const roundGlobeKm = (lat) => 2 * Math.PI * EARTH_RADIUS_KM * Math.cos(lat * DEG);
+/**
+ * Once round the same line on the flat map, in km. There it is a circle
+ * centred on the north pole, and its radius is the distance to the pole along
+ * the ground, R × (90° − φ) with the angle in radians:
+ *   2π × R × (90° − φ)
+ */
 export const roundFlatKm = (lat) => 2 * Math.PI * flatPoleDistanceKm(lat);
 
 // Lines of latitude to compare, in degrees south. The one chosen with the slider is added to them.

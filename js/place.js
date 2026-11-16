@@ -29,7 +29,13 @@ const DESERTS = [
 
 const inBox = ([south, north, west, east], lat, lon) => lat >= south && lat <= north && lon >= west && lon <= east;
 
-/** Whether a place is inside the land polygons of the map the app draws. */
+/**
+ * Whether a place is inside the land polygons of the map the app draws.
+ *
+ * Each polygon is a list of rings, and each ring a flat list of longitude,
+ * latitude pairs. The test is the usual one: go due east from the place and
+ * count the edges crossed. An odd count means it started inside.
+ */
 export function onLand(land, lat, lon) {
   for (const polygon of land?.polygons ?? []) {
     let inside = false;
@@ -49,7 +55,7 @@ export function onLand(land, lat, lon) {
  * as land if anywhere within about 50 km of it is.
  */
 export function sceneryAt(land, lat, lon) {
-  const near = 0.45;
+  const near = 0.45; // degrees of latitude: about 50 km. A degree of longitude is shorter away from the equator, so it is widened to match.
   const widen = near / Math.max(0.2, Math.cos((lat * Math.PI) / 180));
   const dry = [[0, 0], [near, 0], [-near, 0], [0, widen], [0, -widen]].some(([dLat, dLon]) => onLand(land, Math.max(-89.9, Math.min(89.9, lat + dLat)), lon + dLon));
   // Ice: Antarctica, the far north (sea ice included), and Greenland.

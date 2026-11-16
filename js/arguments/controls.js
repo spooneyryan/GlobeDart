@@ -23,6 +23,7 @@
 /** How many places a slider on a log scale has. */
 export const SLIDER_STEPS = 1000;
 
+/** An argument's controls, or an empty list if it has none. */
 export const controlsOf = (argument) => argument?.controls ?? [];
 
 /** The values an argument's controls start at. */
@@ -30,6 +31,7 @@ export function defaultsFor(argument) {
   return Object.fromEntries(controlsOf(argument).map((c) => [c.id, c.value]));
 }
 
+/** A number rounded to six places, to clear the stray last digits that adding up steps leaves (0.1 + 0.2 is 0.30000000000000004). */
 const round = (v, places = 6) => Number(v.toFixed(places));
 /** A number to three significant figures, which is as fine as a log slider needs. */
 const threeFigures = (v) => Number(v.toPrecision(3));
@@ -51,6 +53,11 @@ export function cleanValue(control, raw) {
 export function cleanOwn(argument, raw = {}) {
   return Object.fromEntries(controlsOf(argument).map((c) => [c.id, cleanValue(c, raw?.[c.id] ?? c.value)]));
 }
+
+// A log scale gives each doubling of the value the same length of slider, so that 10 m to 100 m takes as
+// much room as 10 km to 100 km. With the slider's place counted from 0 to SLIDER_STEPS:
+//   place = SLIDER_STEPS × ln(value ÷ min) ÷ ln(max ÷ min)
+//   value = min × (max ÷ min)^(place ÷ SLIDER_STEPS)
 
 /** Where a slider on a log scale sits for a value, from 0 to SLIDER_STEPS. */
 export function sliderPosition(control, value) {

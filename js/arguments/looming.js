@@ -1,7 +1,16 @@
+// Things seen from "too far away".
+//
+// No almanac figure is used. The same view is worked out on two kinds of day
+// by following rays of light through air whose temperature changes with height
+// (js/raytrace.js). The one routine serves both models: only the ground under
+// the rays differs, curved for the globe and level for the flat model.
 import { K_STANDARD, hiddenHeightM } from '../horizon.js';
 import { makeAir, traceView } from '../raytrace.js';
 
+// The view: an eye 2 m up, and a building 150 m tall, 45 km away across water.
 const SIZES = { eyeM: 2, targetM: 150, distanceKm: 45 };
+// The cold-water day: air at 15 °C over water at 9 °C, which chills the bottom 15 m of the air. On the
+// ordinary day the water is at 15 °C as well.
 const COLD_WATER = { tempC: 15, surfaceC: 9, layerM: 15 };
 
 export default {
@@ -26,7 +35,7 @@ export default {
       airC: COLD_WATER.tempC,
       waterC: cold ? COLD_WATER.surfaceC : COLD_WATER.tempC,
       layerM: COLD_WATER.layerM,
-      lapse100: -0.65,
+      lapse100: -0.65, // above that layer the air cools by the standard 0.65 °C for each 100 m of height
       sailing: false,
     });
   },

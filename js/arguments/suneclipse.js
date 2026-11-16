@@ -1,6 +1,24 @@
+// Eclipses of the sun: where the moon's shadow falls.
+//
+// What is published, and taken from the almanac (astro.js): the date, kind and
+// middle of each eclipse and the place the middle of the shadow then is, and,
+// at any moment, the places on the Earth the sun and the moon are overhead and
+// how far away each is. The "measured" sun and moon in an observer's sky are
+// the almanac's too.
+//
+// What each model works out for itself, from those places and distances alone:
+//
+//   globe   the straight line from the middle of the sun through the middle of the moon, and where
+//           it meets a ball of the Earth's radius (models.js, moonShadowGlobe). It is not told the
+//           published place: the two are compared
+//   flat    the same line, from a sun and a moon at the heights the flat model gives them above its
+//           map (models.js, moonShadowFlat). Nothing in that model fixes the moon's height, so it
+//           opens with the height that brings its shadow nearest this eclipse's published place:
+//           the most generous choice there is
 import { DEG, EARTH_RADIUS_KM, MOON_RADIUS_KM, wrap180, observedSun, observedMoon, nextSolarEclipse, solarEclipses, newMoons } from '../astro.js';
 import { globeAngleDeg, globePredict, globePredictNear, flatBendPerKm, discCovered, sunCovered, eclipseDepth, globePlace, moonShadowFlat, bestFlatMoonHeightKm } from '../models.js';
 import { keep, publishedAt, moment, middleOf, trackOf, flatCentre } from '../shadowpath.js';
+import { INK as SHARED_INK, label, day } from './sketch.js';
 
 // The eclipses offered. Each of the dated ones is the first total eclipse on or after the day given.
 // An entry of this list that is the same eclipse as "the next" is left off it (see LISTED, further down).
@@ -12,25 +30,20 @@ const ALL_LISTED = [
 ];
 const FROM = { 2026: Date.UTC(2026, 7, 1), 2024: Date.UTC(2024, 3, 1), 2017: Date.UTC(2017, 7, 1) };
 
-const INK = {
-  text: '#e6edf5',
-  muted: '#93a4b8',
-  globe: '#7fb4ff',
-  flat: '#ffb224',
-  real: '#45d6c8',
-  sun: '#ffe08a',
-  moon: '#0b1118',
-  edge: '#3b4c60',
-  sea: '#0e1722',
-  land: '#223346',
-  panel: 'rgba(255, 255, 255, 0.045)',
-};
+const MINUTE_MS = 60000;
+const HOUR_MS = 3600000;
+const DAY_MS = 86400000;
 
+// The shared colours, with three more for the map and for the moon's dark disc.
+const INK = { ...SHARED_INK, moon: SHARED_INK.dark, sea: '#0e1722', land: '#223346' };
+
+// The astronomers' name for an eclipse that leaves a ring of sun is "annular". The app says "ring-shaped".
 const KIND = { total: 'total', annular: 'ring-shaped', partial: 'partial' };
 
+/** The distance between two places over the surface of the real Earth, in km: the angle between them at its centre, times its radius. */
 const kmBetween = (a, b) => globeAngleDeg(a.lat, a.lon, b.lat, b.lon) * DEG * EARTH_RADIUS_KM;
 const placeName = (p) => `${Math.abs(p.lat).toFixed(1)}° ${p.lat >= 0 ? 'N' : 'S'}, ${Math.abs(p.lon).toFixed(1)}° ${p.lon >= 0 ? 'E' : 'W'}`;
-const day = (date, month = 'long') => date.toLocaleDateString('en-GB', { timeZone: 'UTC', day: 'numeric', month, year: 'numeric' });
+/** A share of the sun's disc as a percentage. Anything between none and all of it is written as 1% to 99%. */
 const share = (fraction) => (fraction <= 0 ? 'none' : fraction >= 1 ? '100%' : `${Math.min(99, Math.max(1, Math.round(fraction * 100)))}%`);
 
 /** What the flat model is told about its sun, its moon and its light, from the app's settings. */
@@ -42,7 +55,7 @@ const flatOf = (state) => ({
 
 /** The published eclipse an entry of the list stands for. "Next" means the next after today. */
 function listed(which) {
-  const from = FROM[which] ?? Math.floor(Date.now() / 86400000) * 86400000;
+  const from = FROM[which] ?? Math.floor(Date.now() / DAY_MS) * DAY_MS;
   return keep(`listed ${from}`, () => nextSolarEclipse(new Date(from), true));
 }
 
@@ -52,17 +65,7 @@ const LISTED = ALL_LISTED.filter(([which]) => which === 'next' || listed(which).
 const SAMPLE_YEARS = [2020, 2035];
 const everyNewMoon = () => keep('new moons', () => newMoons(...SAMPLE_YEARS).map(moment));
 
-function label(ctx, string, x, y, colour = INK.muted, align = 'left', weight = 400) {
-  ctx.font = `${weight} 12px system-ui, -apple-system, 'Segoe UI', sans-serif`;
-  ctx.textAlign = align;
-  ctx.textBaseline = 'middle';
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = 'rgba(4, 8, 14, 0.85)';
-  ctx.strokeText(string, x, y);
-  ctx.fillStyle = colour;
-  ctx.fillText(string, x, y);
-}
-
+/** A filled circle with a thin outline. `r` is its radius in pixels. */
 function disc(ctx, x, y, r, fill, stroke = null) {
   ctx.beginPath();
   ctx.arc(x, y, Math.max(0.5, r), 0, Math.PI * 2);
@@ -75,10 +78,21 @@ function disc(ctx, x, y, r, fill, stroke = null) {
   }
 }
 
-/** The sun with the moon where one account puts it, as if through eclipse glasses. */
+/**
+ * The sun with the moon where one account puts it, as if through eclipse
+ * glasses. `sun` and `moon` are each a bearing `az`, a height `el` and a width
+ * `sizeDeg`. The sun is in the middle, and the moon is drawn where it stands
+ * from the sun in the sky:
+ *
+ *   across  = (moon's bearing − sun's bearing) × cos(sun's height)
+ *   up      = moon's height − sun's height
+ *
+ * The cos is there because lines of bearing draw together higher in the sky:
+ * a degree of bearing is a full degree across only on the horizon.
+ */
 function glasses(ctx, cx, cy, side, sun, moon, cover) {
   const half = side / 2;
-  const perDeg = side / 1.3; // the square is 1.3° across
+  const perDeg = side / 1.3; // pixels to a degree: the square is 1.3° across, and the sun about 0.53°
   ctx.save();
   ctx.beginPath();
   ctx.rect(cx - half, cy - half, side, side);
@@ -141,6 +155,7 @@ export default {
       return;
     }
     // ----- through eclipse glasses -----
+    // Three squares side by side, all to the one scale: the sun and moon as measured, and as each model has them.
     const rowH = Math.min(118, h * 0.4);
     const side = Math.max(20, Math.min(w / 3 - 10, rowH - 34));
     const views = [
@@ -158,6 +173,9 @@ export default {
     });
 
     // ----- the map -----
+    // A plain chart of the world, twice as wide as it is tall: longitude across from 180° west to 180° east,
+    // latitude up from 90° south to 90° north, each at the same number of pixels to a degree. It is only a
+    // way of showing places. No distance is measured on it.
     const top = 17 + side + 24;
     const room = h - top - 18;
     if (room < 40) return;
@@ -172,6 +190,7 @@ export default {
     ctx.fillStyle = INK.sea;
     ctx.fill();
     ctx.clip();
+    // The land. Each outline is a flat list of numbers: longitude, latitude, longitude, latitude, and so on.
     ctx.fillStyle = INK.land;
     for (const polygon of land?.polygons ?? []) {
       ctx.beginPath();
@@ -184,6 +203,7 @@ export default {
       }
       ctx.fill('evenodd');
     }
+    // A track: a line through a list of places, one for every three minutes of the eclipse.
     const path = (places, colour) => {
       ctx.strokeStyle = colour;
       ctx.lineWidth = 2;
@@ -202,6 +222,7 @@ export default {
     const eclipse = publishedAt(state.date);
     const flat = flatOf(state);
     if (eclipse && eclipse.lat !== null) {
+      // Both tracks are worked out at the same moments from the same overhead places: only the model differs.
       const track = trackOf(eclipse);
       path(track.map((at) => flatCentre(at, flat)), INK.flat);
       path(track.map((at) => at.globe.centre), INK.globe);
@@ -238,14 +259,16 @@ export default {
     const { cover, shade } = m;
     const flat = flatOf(state);
     const eclipse = publishedAt(state.date);
+    // True when the line through the sun and the moon meets the ground, so that there is a published place for it.
     const central = eclipse && eclipse.lat !== null;
-    const minutes = eclipse ? (state.date.getTime() - eclipse.peak.getTime()) / 60000 : 0;
+    const minutes = eclipse ? (state.date.getTime() - eclipse.peak.getTime()) / MINUTE_MS : 0;
     const named = eclipse ? `the ${KIND[eclipse.kind]} eclipse of the sun of ${day(eclipse.peak)}` : '';
     const opening = !eclipse
       ? 'There is no eclipse of the sun at this moment. Choose one from the list above.'
       : Math.abs(minutes) < 1
       ? `This is the middle of ${named}.${central && kmBetween(state, eclipse) < 30 ? ' The observer is standing where the middle of the shadow is.' : ''}`
       : `This is ${fmtTime(Math.abs(minutes))} ${minutes < 0 ? 'before' : 'after'} the middle of ${named}.`;
+    // A cell of the table is marked as wrong when it is further from the measured figure than `limit`.
     const out = (a, b, limit) => (Math.abs(a - b) > limit ? ' class="bad"' : '');
     const seen = `
     <table class="data"><thead><tr><th></th><th class="measured">Measured</th><th class="globe">Globe</th><th class="flat">Flat</th></tr></thead><tbody>
@@ -275,6 +298,8 @@ export default {
     // ----- the flat model -----
     const f = shade.flat;
     const heights = `its sun ${km(flat.sunHeightKm)} up and its moon ${km(flat.moonHeightKm)}`;
+    // The height for the flat moon that brings its shadow nearest the published place at the middle of this
+    // eclipse, and whether the model is set to it now.
     const best = mid ? bestFlatMoonHeightKm(mid.sub, mid.moon, eclipse, flat) : null;
     const tuned = best && Math.abs(best.heightKm - flat.moonHeightKm) < 0.6;
     let flatNow;
@@ -294,6 +319,7 @@ export default {
           f.offMap ? ', which is beyond the rim of the map.' : `, at <b class="f">${placeName(f.centre)}</b>.`
         } ${apart === null ? '' : `At this moment that is <b class="f">${km(apart)}</b> from the globe's place.`}</p>`;
     }
+    // The two ends of the real track: how far the flat shadow is from the globe's at the first and the last moment of it.
     let along = '';
     const track = central ? trackOf(eclipse) : [];
     if (track.length > 1 && f.centre) {
@@ -302,7 +328,7 @@ export default {
         return p ? `<b class="f">${km(kmBetween(p, at.globe.centre))}</b> away` : '<b class="f">nowhere on the map</b>';
       });
       along = `<p>The moon cannot change height part way through. The real shadow takes
-        ${hoursMinutes((track[track.length - 1].date - track[0].date) / 3600000)} to cross the Earth, from a place where the sun
+        ${hoursMinutes((track[track.length - 1].date - track[0].date) / HOUR_MS)} to cross the Earth, from a place where the sun
         is rising to one where it is setting. Where it starts, the flat model's shadow is ${ends[0]}. Where it ends, it is
         ${ends[1]}.</p>`;
     }
@@ -316,6 +342,7 @@ export default {
         <b class="g">${moons.filter((at) => at.globe.centre).length}</b> of them, which is how many total and ring-shaped
         eclipses there were.</p>`
       : '';
+    // One row for each eclipse in the list, oldest first, with the flat moon left at the height it has now.
     const seenAlready = new Set();
     const rows = LISTED.map(([which]) => listed(which))
       .filter((e) => !seenAlready.has(e.peak.getTime()) && seenAlready.add(e.peak.getTime()))
@@ -378,7 +405,9 @@ export default {
         const moon = globePredictNear(at.moon, place.lat, place.lon, null);
         return eclipseDepth(sun.sizeDeg / 2, moon.sizeDeg / 2, sunCovered(sun, moon).sepDeg);
       };
-      // How far a place is from the line through the sun and the moon, measured square to it.
+      // How far a place is from the line through the sun and the moon, measured square to it, in km. With P the
+      // place measured from the moon and u the direction of the line:
+      //   √(|P|² − (P · u)²)
       const sunAt = globePlace(at.sub.lat, at.sub.lon, at.sub.distKm);
       const moonAt = globePlace(at.moon.lat, at.moon.lon, at.moon.distKm);
       const gap = Math.hypot(...moonAt.map((v, i) => v - sunAt[i]));
@@ -393,6 +422,9 @@ export default {
       for (let step = -60; step <= 60; step += 4) {
         places.push({ lat: at.globe.centre.lat + step * 0.9, lon: at.globe.centre.lon }, { lat: at.globe.centre.lat, lon: at.globe.centre.lon + step });
       }
+      // The edge of the wider shadow, from the cone the sun and moon make: its radius where the middle of the
+      // shadow meets the ground. The cone goes on widening beyond there, so places within 80 km of the edge
+      // are left out of the comparison.
       const edge = at.globe.penumbraKm;
       const clear = places.filter((p) => Math.abs(fromLine(p) - edge) > 80 && Math.abs(p.lat) < 88);
       const wrong = clear.filter((p) => depthAt(p) > 0 !== fromLine(p) < edge);
@@ -417,9 +449,10 @@ export default {
         }
         return best;
       };
-      const rough = nearest(moon.getTime() - 8 * 3600000, moon.getTime() + 8 * 3600000, 600000);
-      const fine = nearest(rough.date.getTime() - 600000, rough.date.getTime() + 600000, 60000);
-      const match = published.find((e) => Math.abs(e.peak.getTime() - fine.date.getTime()) < 6 * 3600000);
+      const rough = nearest(moon.getTime() - 8 * HOUR_MS, moon.getTime() + 8 * HOUR_MS, 10 * MINUTE_MS);
+      const fine = nearest(rough.date.getTime() - 10 * MINUTE_MS, rough.date.getTime() + 10 * MINUTE_MS, MINUTE_MS);
+      // The sum's verdict at that moment against the published eclipse within six hours of it, if there is one.
+      const match = published.find((e) => Math.abs(e.peak.getTime() - fine.date.getTime()) < 6 * HOUR_MS);
       if (fine.globe.kind !== 'none') found++;
       if (fine.globe.kind !== (match?.kind ?? 'none')) wrong++;
     }
@@ -429,10 +462,14 @@ export default {
     const offs = central.map((e) => kmBetween(middleOf(e).globe.centre, e));
     check('solar eclipse argument: in the 24 where the line meets the ground, it does so within 65 km of the published place',
       central.length === 24 && Math.max(...offs) < 65, `worst ${Math.max(...offs).toFixed(1)} km`);
-    // The same line met with the Earth as it really is: 6,378.137 km across the equator, 6,356.752 km through the poles.
+    // The same line met with the Earth as it really is: 6,378.137 km from the centre to the equator and
+    // 6,356.752 km from the centre to a pole. These are the radii of the standard figure of the Earth, WGS 84.
     const onFlattened = (at) => {
       const [a, b] = [6378.137, 6356.752];
-      const squash = a / b; // stretching the polar axis by this much turns the flattened Earth into a ball of radius a
+      // Stretching everything along the polar axis by a ÷ b turns the flattened Earth into a ball of radius a,
+      // and keeps straight lines straight. So the line is met with that ball, by the same sum as
+      // moonShadowGlobe uses, and the place found is squeezed back afterwards.
+      const squash = a / b;
       const place = (p, distKm) => {
         const [lat, lon] = [p.lat * DEG, p.lon * DEG];
         return [distKm * Math.cos(lat) * Math.cos(lon), distKm * Math.sin(lat) * squash, -distKm * Math.cos(lat) * Math.sin(lon)];
@@ -441,10 +478,14 @@ export default {
       const moon = place(at.moon, at.moon.distKm);
       const gap = Math.hypot(moon[0] - sun[0], moon[1] - sun[1], moon[2] - sun[2]);
       const dir = moon.map((v, i) => (v - sun[i]) / gap);
+      // With M the moon's place and u the direction of the light, the line meets the ball after
+      //   t = −(M · u) − √((M · u)² − (|M|² − a²))      km beyond the moon
       const along = moon[0] * dir[0] + moon[1] * dir[1] + moon[2] * dir[2];
       const t = -along - Math.sqrt(along * along - (moon[0] ** 2 + moon[1] ** 2 + moon[2] ** 2 - a * a));
       const hit = moon.map((v, i) => v + dir[i] * t);
-      // Latitude as maps give it: the tilt of the ground there, not the angle at the Earth's centre.
+      // Latitude as maps give it: the tilt of the ground there, not the angle at the Earth's centre. With y the
+      // true height above the plane of the equator (the stretched one ÷ a/b) and ρ the distance from the axis:
+      //   tan(latitude) = (a ÷ b)² × y ÷ ρ
       return { lat: Math.atan2((hit[1] / squash) * squash * squash, Math.hypot(hit[0], hit[2])) / DEG, lon: Math.atan2(-hit[2], hit[0]) / DEG };
     };
     const offsFlattened = central.map((e) => kmBetween(onFlattened(middleOf(e)), e));
@@ -480,6 +521,8 @@ export default {
     check('solar eclipse argument: and straight beneath the sun it throws it straight down',
       near(moonShadowFlat(sub, sub, { sunHeightKm: 5000, moonHeightKm: 4000 }).centre.lat, 60, 1e-9));
     // With bending light the place found has to be one from which a single curved path passes through both.
+    // A path that leaves the ground at slope s is s × x + c × x² ÷ 2 up after a distance x. The slope is set so
+    // that it passes through the moon, and the check is that it is then at the sun's height when it is under the sun.
     const bend = flatBendPerKm({ sunHeightKm: 5000, bendSetKm: 10000 });
     const close = { lat: 60, lon: 0.5 };
     const bent = moonShadowFlat(sub, close, { sunHeightKm: 5000, moonHeightKm: 4900, bendPerKm: bend });

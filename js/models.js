@@ -5,8 +5,40 @@
 //
 // Each prediction is worked out as plain geometry (`trueEl`) and then lifted by
 // the same air as the measurement (`el`).
+//
+// Nothing in this file looks anything up. Every answer is a sum on the inputs,
+// written out above the function that does it, so that it can be done again by
+// hand or on a calculator. Angles are in degrees and distances in km unless a
+// name says otherwise.
+//
+// Positions in space are [x, y, z]. On the globe the origin is the Earth's
+// centre, y points out through the north pole, x through latitude 0 at
+// longitude 0, and −z through latitude 0 at longitude 90° east. On the flat
+// map the origin is the north pole, y is straight up, and the longitudes run
+// the same way round.
 import { DEG, EARTH_RADIUS_KM, SUN_RADIUS_KM, MOON_RADIUS_KM, wrap360 } from './astro.js';
 import { STANDARD_AIR, lift } from './refraction.js';
+
+/** Rounding can leave a sine or cosine a hair outside −1 to 1, where asin and acos have no answer. This holds it inside. */
+const within1 = (x) => Math.min(1, Math.max(-1, x));
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const minus = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const times = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
+
+/**
+ * The angle in degrees between two directions, each given by a pair of angles:
+ * one up from a level plane (p) and one round it (q). A bearing and a height
+ * in the sky are such a pair. So are a latitude and a longitude.
+ *
+ *   acos(sin p₁ sin p₂ + cos p₁ cos p₂ cos(q₁ − q₂))
+ *
+ * This is the geometry of directions and belongs to neither model: it is the
+ * rule a navigator's sight tables are built on.
+ */
+function angleApartDeg(p1, q1, p2, q2) {
+  const cosAngle = Math.sin(p1 * DEG) * Math.sin(p2 * DEG) + Math.cos(p1 * DEG) * Math.cos(p2 * DEG) * Math.cos((q2 - q1) * DEG);
+  return Math.acos(within1(cosAngle)) / DEG;
+}
 
 /** Unit vector for a latitude/longitude on the globe (y = north pole). */
 export function globeVec(lat, lon) {
@@ -46,7 +78,10 @@ export function flatFrame(lat, lon) {
   };
 }
 
-/** Direction in a local frame for an azimuth (clockwise from north) and elevation. */
+/**
+ * Direction in a local frame for an azimuth a (clockwise from north) and elevation e:
+ *   cos e sin a  to the east,   cos e cos a  to the north,   sin e  upward
+ */
 export function frameDirection(frame, azDeg, elDeg) {
   const a = azDeg * DEG;
   const e = elDeg * DEG;
@@ -62,11 +97,7 @@ export function frameDirection(frame, azDeg, elDeg) {
  * This is the "miss" between where a model puts something and where it is measured.
  */
 export function skySeparation(a, b) {
-  const e1 = a.el * DEG;
-  const e2 = b.el * DEG;
-  const c =
-    Math.sin(e1) * Math.sin(e2) + Math.cos(e1) * Math.cos(e2) * Math.cos((a.az - b.az) * DEG);
-  return Math.acos(Math.min(1, Math.max(-1, c))) / DEG;
+  return angleApartDeg(a.el, a.az, b.el, b.az);
 }
 
 // The symbols used below, and in the explanations the app shows (js/explain.js):
@@ -82,10 +113,7 @@ export function skySeparation(a, b) {
  * Multiplied by the Earth's radius it is the shortest distance between them.
  */
 export function globeAngleDeg(lat1, lon1, lat2, lon2) {
-  const phi1 = lat1 * DEG;
-  const phi2 = lat2 * DEG;
-  const cosAngle = Math.sin(phi1) * Math.sin(phi2) + Math.cos(phi1) * Math.cos(phi2) * Math.cos((lon2 - lon1) * DEG);
-  return Math.acos(Math.min(1, Math.max(-1, cosAngle))) / DEG;
+  return angleApartDeg(lat1, lon1, lat2, lon2);
 }
 
 /**
@@ -126,7 +154,7 @@ export function globePredict(sub, lat, lon, air = STANDARD_AIR) {
   const delta = sub.lat * DEG;
   const dLambda = (sub.lon - lon) * DEG;
   const sinHeight = Math.sin(phi) * Math.sin(delta) + Math.cos(phi) * Math.cos(delta) * Math.cos(dLambda);
-  const trueEl = Math.asin(Math.min(1, Math.max(-1, sinHeight))) / DEG;
+  const trueEl = Math.asin(within1(sinHeight)) / DEG;
   const east = Math.cos(delta) * Math.sin(dLambda);
   const north = Math.cos(phi) * Math.sin(delta) - Math.sin(phi) * Math.cos(delta) * Math.cos(dLambda);
   const az = wrap360(Math.atan2(east, north) / DEG);
@@ -164,15 +192,18 @@ export function globePredict(sub, lat, lon, air = STANDARD_AIR) {
  */
 export function flatPredict(sub, lat, lon, params, air = STANDARD_AIR) {
   const heightKm = params.sunHeightKm;
-  const bend = flatBendPerKm(params);
+  const bend = flatBendPerKm(params); // nothing, unless the bending-light version is switched on
+  // Where the place under the sun is on the map, from the observer.
   const a = flatPoleDistanceKm(lat);
   const b = flatPoleDistanceKm(sub.lat);
   const dLambda = (sub.lon - lon) * DEG;
   const north = a - b * Math.cos(dLambda);
   const east = b * Math.sin(dLambda);
   const groundKm = Math.hypot(north, east);
+  // The direction to a sun that high over that place.
   const trueEl = Math.atan2(heightKm - (bend * groundKm * groundKm) / 2, groundKm) / DEG;
   const az = wrap360(Math.atan2(east, north) / DEG);
+  // How wide it should then look from here.
   const slantKm = Math.hypot(groundKm, heightKm);
   const sunWidthKm = 2 * heightKm * Math.tan((sub.sizeDeg / 2) * DEG);
   const sizeDeg = (2 * Math.atan(sunWidthKm / 2 / slantKm)) / DEG;
@@ -184,6 +215,7 @@ export function flatPredict(sub, lat, lon, params, air = STANDARD_AIR) {
     groundKm,
     slantKm,
     sunWidthKm,
+    // The model's own account of night: the sun's light reaches only so far over the map.
     lit: groundKm <= params.lightRangeKm,
   };
 }
@@ -253,13 +285,12 @@ export function globePredictNear(sub, lat, lon, air = STANDARD_AIR) {
   return { az: far.az, el: trueEl + lift(trueEl, air), trueEl, sizeDeg };
 }
 
-const minus = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-const times = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
-
-/** The angle in degrees between two directions given as vectors. */
+/**
+ * The angle in degrees between two directions given as vectors:
+ *   acos(a · b ÷ (|a| × |b|))
+ */
 export function angleBetweenDeg(a, b) {
-  const dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-  return Math.acos(Math.min(1, Math.max(-1, dot / (Math.hypot(...a) * Math.hypot(...b))))) / DEG;
+  return Math.acos(within1(dot(a, b) / (Math.hypot(...a) * Math.hypot(...b)))) / DEG;
 }
 
 /** A position in space on the globe model, in km from the Earth's centre. */
@@ -408,15 +439,16 @@ export function moonShadowGlobe(sub, moon) {
   const moonAt = globePlace(moon.lat, moon.lon, moon.distKm);
   const gapKm = Math.hypot(...minus(moonAt, sunAt));
   const dir = times(minus(moonAt, sunAt), 1 / gapKm);
-  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
   const b = dot(moonAt, dir);
   const missKm = Math.sqrt(Math.max(0, dot(moonAt, moonAt) - b * b));
   const partlyDark = (t) => MOON_RADIUS_KM + (t * (SUN_RADIUS_KM + MOON_RADIUS_KM)) / gapKm;
   if (missKm >= EARTH_RADIUS_KM) {
+    // The line misses the Earth. The wider, partly dark shadow may still catch the edge of it.
     const penumbraKm = partlyDark(-b);
     return { missKm, centre: null, darkKm: 0, penumbraKm, kind: missKm < EARTH_RADIUS_KM + penumbraKm ? 'partial' : 'none' };
   }
   const t = -b - Math.sqrt(EARTH_RADIUS_KM * EARTH_RADIUS_KM - missKm * missKm);
+  // The point on the ground, and its latitude and longitude (globeVec, turned round).
   const at = [0, 1, 2].map((i) => moonAt[i] + dir[i] * t);
   const centre = { lat: Math.asin(at[1] / EARTH_RADIUS_KM) / DEG, lon: Math.atan2(-at[2], at[0]) / DEG };
   const darkKm = MOON_RADIUS_KM - (t * (SUN_RADIUS_KM - MOON_RADIUS_KM)) / gapKm;
@@ -449,16 +481,20 @@ export function moonShadowFlat(sub, moon, params) {
   const gapKm = Math.hypot(moonAt[0] - sunAt[0], moonAt[2] - sunAt[2]);
   const none = { gapKm, centre: null, fromMoonKm: null, offMap: false };
   if (!(h < H)) return none;
+  // With the moon straight under the sun (no gap) the shadow is straight under both, and x stays 0.
   let x = 0;
   if (gapKm > 1e-9) {
     const B = (H - h) / gapKm - (c * gapKm) / 2;
     const inside = B * B - 2 * c * h;
     if (B <= 0 || inside < 0) return none;
+    // With straight light c is nothing and B is the slope (H − h) ÷ g, so this is the similar triangles above.
     x = c > 0 ? (B - Math.sqrt(inside)) / c : h / B;
   }
+  // That far beyond the place under the moon, on the line from the place under the sun.
   const along = gapKm > 1e-9 ? x / gapKm : 0;
   const px = moonAt[0] + (moonAt[0] - sunAt[0]) * along;
   const pz = moonAt[2] + (moonAt[2] - sunAt[2]) * along;
+  // Back from a spot on the map to a latitude and longitude (flatVec, turned round). Past 180° it is beyond the rim.
   const fromPoleDeg = Math.hypot(px, pz) / EARTH_RADIUS_KM / DEG;
   return {
     gapKm,
@@ -529,11 +565,21 @@ export function flatPullShare(body, heightKm, lat, lon) {
   return Math.pow(heightKm / Math.hypot(groundKm, heightKm), 3);
 }
 
+// ---------- scoring a model ----------
+//
+// The same score is used for both models. The globe's is small by
+// construction: the almanac it is marked against rests on the same astronomy.
+// It is shown for comparison and is not the evidence. What the score tests is
+// whether any one height for the flat model's sun fits every observer at once.
+
 /**
  * A model's score against a list of observations: the root-mean-square miss,
  *   √(average of miss²)
  * in degrees on the sky, counting only moments when the sun (or star) is
- * really above the horizon for that observer.
+ * really above the horizon for that observer. Squaring first makes one large
+ * miss count for more than several small ones. Each sample is the place the
+ * sun is overhead (`sub`), an observer (`lat`, `lon`) and what is measured
+ * there (`obs`). `predict` is either model.
  */
 export function rmsMiss(samples, predict) {
   let sum = 0;
@@ -547,7 +593,14 @@ export function rmsMiss(samples, predict) {
   return n ? Math.sqrt(sum / n) : null;
 }
 
-/** RMS miss of the flat model for a sweep of sun heights. Returns the curve and its minimum. */
+/**
+ * RMS miss of the flat model for a sweep of sun heights. Returns the curve and
+ * its minimum: the height that suits the flat model best.
+ *
+ * Nothing fixes the height of the flat model's sun, so every height is tried,
+ * from 100 km to a million km, each about a ninth above the one before
+ * (90 equal steps of the logarithm).
+ */
 export function flatFitCurve(samples, params, air, minKm = 100, maxKm = 1e6, steps = 90) {
   const curve = [];
   let best = null;

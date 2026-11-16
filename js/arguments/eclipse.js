@@ -1,3 +1,12 @@
+// Eclipses of the moon.
+//
+// Published, from the almanac: the date of the next total eclipse, which sets
+// the scene, and whether the moon is in the Earth's shadow at the moment on
+// show (`m.published`). The globe's own answer is `m.shadow`, by earthShadow in
+// js/models.js: the width of the Earth's shadow out at the moon, and how far
+// the moon is from the middle of it, from nothing but where the sun and the
+// moon are overhead and how far away they are. The flat model has the sun and
+// the moon both above the ground, so it has no shadow of the Earth to offer.
 export default {
   id: 'eclipse',
   group: 'moon',

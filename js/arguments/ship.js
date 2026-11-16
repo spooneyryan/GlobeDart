@@ -1,3 +1,10 @@
+// A ship going over the horizon.
+//
+// No almanac figure is used. The globe's answer is geometry: how far off the
+// horizon is for an eye at a given height, and how much of something beyond it
+// the sea hides (js/horizon.js), with the standard amount of bending by the
+// air allowed for. The flat model's answer is that nothing is ever hidden.
+// What is observed is the "check" below, which anyone by the sea can make.
 import { K_STANDARD, horizonDistanceKm, hiddenHeightM } from '../horizon.js';
 
 export default {
@@ -34,6 +41,7 @@ export default {
   checks({ check, near }) {
     check('ship argument: the horizon is about 5.1 km off for an eye at 1.7 m in standard air',
       near(horizonDistanceKm(1.7, K_STANDARD), 5.11, 0.01));
+    // The ship's top goes out of sight where the eye's horizon and the top's own horizon meet: the two distances added.
     check('ship argument: a 50 m ship is gone by about 32.8 km',
       near(horizonDistanceKm(1.7, K_STANDARD) + horizonDistanceKm(50, K_STANDARD), 32.8, 0.1) &&
         hiddenHeightM(1.7, 33, K_STANDARD) > 50);

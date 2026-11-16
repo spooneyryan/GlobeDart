@@ -1,3 +1,11 @@
+// Two sunsets, one lying down and one standing up.
+//
+// From the almanac: the latitude the sun is overhead today, which sets how
+// fast it sinks as it sets. The rest is the globe's geometry (js/horizon.js):
+// the horizon is lower for a higher eye, so the sun sets later for it, by
+//   (drop of the horizon from the higher eye − drop from the lower) ÷ rate the sun sinks
+// The flat model's horizon is at eye level from any height, so it has no
+// second sunset. The measurement is the reader's own stopwatch.
 import { subsolarPoint } from '../astro.js';
 import { K_STANDARD, dipDeg, sunSinkDegPerHour, secondSunsetSeconds } from '../horizon.js';
 
@@ -13,6 +21,7 @@ export default {
   pair: 'outside',
   apply({ state, nearKm }) {
     Object.assign(state, { shape: 'ship', targetM: 50, eyeM: 1.7, k: K_STANDARD, layers: false, sailing: false });
+    // An eye 0.2 m up lying down and 1.7 m up standing, and no timing entered yet.
     Object.assign(state, { sunsetLowM: 0.2, sunsetHighM: 1.7, sunsetSeconds: null });
     state.targetKm = nearKm() * 3;
   },
@@ -25,6 +34,7 @@ export default {
       return `<p>At this latitude the sun does not set on this date. Change the latitude under "Two sunsets" in the
       results to try the experiment somewhere it does.</p>`;
     }
+    // The wait between the two sunsets for the two eye heights set, and from the foot to the top of a 555 m tower.
     const wait = secondSunsetSeconds(low, high, state.lat, sunLat, hz.k);
     const tower = secondSunsetSeconds(2, 555, state.lat, sunLat, hz.k);
     return `

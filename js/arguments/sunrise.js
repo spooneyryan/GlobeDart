@@ -1,3 +1,9 @@
+// The direction of sunrise.
+//
+// Measured: the compass bearing of the rising sun at Quito on the September
+// equinox, as the almanac has it (`c.obs.az`). Each model is handed only the
+// place on the Earth the sun is overhead at that moment, and works out the
+// bearing and height from Quito for itself (`c.flat`, by js/models.js).
 export default {
   id: 'sunrise',
   group: 'sun',
@@ -11,6 +17,7 @@ export default {
   apply({ state, city, setObserver, sunEvents, seasons, SUN_DEMO }) {
     setObserver(city('Quito'), true);
     const equinox = seasons(state.date.getUTCFullYear()).sepEquinox;
+    // Two and a half minutes after the published sunrise on that day.
     const ev = sunEvents(equinox, state.lat, state.lon);
     state.date = ev.rise ? new Date(ev.rise.getTime() + 150000) : equinox;
     Object.assign(state, SUN_DEMO);

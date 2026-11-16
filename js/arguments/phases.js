@@ -1,3 +1,12 @@
+// The phases of the moon.
+//
+// Measured: the share of the moon's face that is lit, as published in the
+// almanac (`m.lit.measured`). Each model works its own share out by one rule
+// (litFraction in js/models.js): a ball lit on the side facing the sun shows
+//   (1 + cos angle) ÷ 2
+// of its face lit, with the angle at the moon between the sun and the viewer.
+// Only the places differ: the globe has the sun and moon at their published
+// distances, and the flat model has both at the heights set in the panel.
 export default {
   id: 'phases',
   group: 'moon',
@@ -16,6 +25,7 @@ export default {
   body(c, { state, km, percent, MOON_OFF }) {
     const m = c.moon;
     if (!m) return MOON_OFF;
+    // The cities with the moon above their horizon, and the share lit that the flat model gives each of them.
     const seen = m.cities.filter((x) => x.obs.el > 0);
     const lits = seen.map((x) => x.litFlat);
     return `

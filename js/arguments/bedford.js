@@ -1,3 +1,11 @@
+// The Bedford Level: the flat-earth side's best-known experiment, and the repeat of it.
+//
+// There is no almanac figure here. What was measured is what the two
+// experimenters reported, in their own words and units. The globe's sums are
+// the surveyors' ones in js/horizon.js: how much is hidden beyond the curve
+// (hiddenHeightM), and how far a middle mark stands above the line between two
+// end marks (middleMarkRiseM), each with a chosen amount of bending by the air.
+// The flat model's answer to both is nothing hidden and no rise.
 import { K_STANDARD, hiddenHeightM, middleMarkRiseM, lapseForCoefficient } from '../horizon.js';
 import { impliedCoefficient } from '../observations.js';
 
@@ -7,7 +15,9 @@ import { impliedCoefficient } from '../observations.js';
 const FOOT_M = 0.3048;
 const MILE_KM = 1.609344;
 const SIX_MILES_KM = 6 * MILE_KM;
+// Rowbotham's eye 8 inches above the water, and his flag 5 feet above it.
 const ROWBOTHAM = { eyeM: (8 / 12) * FOOT_M, flagM: 5 * FOOT_M };
+// Wallace's three marks 13 feet 3 inches above the water, and the 5 feet he expected the middle one to stand high by.
 const WALLACE = { markM: (13 + 3 / 12) * FOOT_M, expectedM: 5 * FOOT_M };
 
 export default {
@@ -37,6 +47,8 @@ export default {
     const marksKm = own.miles * MILE_KM;
     const d = SIX_MILES_KM;
     const eye = ROWBOTHAM.eyeM;
+    // How strongly the air would have to bend light for the globe to hide no more than that, as a coefficient k
+    // (see js/horizon.js): just the flag's top in view, and then the whole boat down to the waterline.
     const kFlag = impliedCoefficient(eye, d, ROWBOTHAM.flagM);
     const kBoat = impliedCoefficient(eye, d, 0);
     // The figures as the experimenters gave them, with metres alongside for anyone working in metres.

@@ -225,7 +225,8 @@ export const EXPLAIN = {
       <p>The line beneath the chart asks the other question: for every one of those city-hours, night included,
       does the model have the sun visible or not? The flat model is given its own rule for that. With straight
       light the sun counts as visible wherever its light is said to reach. With curving light it counts as
-      visible until it sets.</p>
+      visible until it sets. For the almanac and for both models alike, the sun has set once the whole of its
+      disc is below the horizon: its middle more than half its own width down.</p>
       <p>The globe's own figures here, its typical miss and its count of city-hours, are true by construction. What
       counts as right in both is the almanac, and the almanac rests on the same astronomy as the globe model. So
       they are not evidence for the globe, and are not offered as any. The evidence is that the almanac matches

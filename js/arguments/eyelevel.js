@@ -1,3 +1,12 @@
+// The horizon and eye level.
+//
+// No almanac figure is used. The globe's answer is how far below eye level
+// the horizon lies for an eye h up, and how far off it is (js/horizon.js):
+//   drop      = √(2 × h ÷ R′)   as an angle
+//   distance  = √(2 × R′ × h)
+// with R′ the Earth's radius made a little larger to allow for the air bending
+// light. The flat model's answer is no drop from any height. What is observed
+// is the "check" below, from a window seat.
 import { K_STANDARD, dipDeg, horizonDistanceKm } from '../horizon.js';
 
 // Places to stand, with the height of the eye above the sea in metres.

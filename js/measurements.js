@@ -13,7 +13,7 @@ import { STANDARD_AIR, AIR_LIMITS } from './refraction.js';
 
 export const MAX_MEASUREMENTS = 40;
 
-/** Sun elevation from a vertical stick and the length of its shadow on level ground. */
+/** Sun elevation from a vertical stick and the length of its shadow on level ground: atan(stick ÷ shadow). */
 export function shadowToElevation(stickHeight, shadowLength) {
   return Math.atan2(stickHeight, shadowLength) / DEG;
 }
@@ -77,7 +77,12 @@ export function scoreMeasurement(m, flatParams, air = STANDARD_AIR) {
 
 const rms = (values) => (values.length ? Math.sqrt(values.reduce((a, v) => a + v * v, 0) / values.length) : null);
 
-/** The one flat-model height that fits a set of scored measurements best, and how far it still misses. */
+/**
+ * The one flat-model height that fits a set of scored measurements best, and
+ * how far it still misses. This is the flat model at its most favourable: the
+ * height is whatever suits the user's own readings, and can differ from the
+ * one set in the app.
+ */
 function bestHeight(scored, flatParams, minKm, maxKm, steps) {
   const heightAt = (x) => minKm * Math.pow(maxKm / minKm, x);
   const missAt = (x) =>
@@ -86,7 +91,9 @@ function bestHeight(scored, flatParams, minKm, maxKm, steps) {
         measurementMiss(s.m, flatPredict(s.sub, s.m.lat, s.m.lon, { ...flatParamsFor(s.m, flatParams), sunHeightKm: heightAt(x) }, s.air)),
       ),
     );
-  // Coarse sweep over the whole range, then narrow in around the best step.
+  // Heights are tried at equal steps of the logarithm, so 100 to 1,000 km gets as many tries as
+  // 100,000 to a million. First a coarse sweep over the whole range, then narrowing in around the
+  // best step: the stretch is cut by a third from whichever end is the worse, 40 times over.
   let bestStep = 0;
   let bestMiss = Infinity;
   for (let i = 0; i <= steps; i++) {

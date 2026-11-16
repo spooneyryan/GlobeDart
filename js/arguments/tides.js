@@ -1,48 +1,82 @@
+// The tides.
+//
+// Most coasts have two high waters each time the moon comes round, and the
+// biggest tides at new moon and at full moon. This demonstration works out the
+// rhythm each account gives.
+//
+// There is no measured column here: the app holds no tide tables. What is
+// taken from the almanac is where the sun and the moon are overhead at each
+// moment and how far away they are (astro.js), and the dates of the moon's
+// phases. Both accounts are handed the same places:
+//
+//   globe   the stretch a far-off body puts on a sea covering a ball (models.js, tideHeightM), from
+//           the moon and from the sun, added together. In metres
+//   flat    the flat model has no gravity and no agreed account of the tides. It is given the only
+//           pull its layout allows: straight toward its moon, and toward its sun (models.js,
+//           flatPullShare). That is a share of the pull straight underneath, not a height in metres,
+//           so only its rhythm is compared with the globe's, never its size
 import { subsolarPoint, moonPoint, moonQuarters, EARTH_RADIUS_KM } from '../astro.js';
 import { tideHeightM, flatPullShare, MOON_MASS, SUN_MASS } from '../models.js';
-import { INK, label, disc, line, day } from './sketch.js';
+import { INK, label, disc, line, day, keeper } from './sketch.js';
 
+const MINUTE_MS = 60000;
 const HOUR_MS = 3600000;
-const LUNAR_DAY_MS = 24.8412 * HOUR_MS; // from one time the moon is highest to the next, on average
+// From one time the moon is highest to the next, on average: 24 hours 50 minutes. The moon moves on about
+// 13° a day among the stars, so the turning of the sky takes that much longer to bring it back.
+const LUNAR_DAY_MS = 24.8412 * HOUR_MS;
 const MONTH_DAYS = 30;
-// The sun's share of the tide against the moon's, at their average distances. The flat model's sun is given the same.
-const SUN_SHARE = (SUN_MASS / MOON_MASS) * Math.pow(384400 / 149597870.7, 3);
+// The average distances of the moon and the sun from the Earth, in km.
+const MOON_AVERAGE_KM = 384400;
+const SUN_AVERAGE_KM = 149597870.7;
+// The sun's share of the tide against the moon's, at their average distances. The stretch goes as mass ÷ distance³:
+//   (sun's mass ÷ moon's mass) × (moon's distance ÷ sun's distance)³ = 0.46
+// The flat model has no figure of its own, so its sun is given the same share.
+const SUN_SHARE = (SUN_MASS / MOON_MASS) * Math.pow(MOON_AVERAGE_KM / SUN_AVERAGE_KM, 3);
 const PHASES = ['new moon', 'first quarter', 'full moon', 'last quarter'];
 
-const kept = new Map();
-function keep(key, make) {
-  if (!kept.has(key)) {
-    if (kept.size > 12) kept.clear();
-    kept.set(key, make());
-  }
-  return kept.get(key);
-}
+const keep = keeper();
 
-/** What each account makes of the sea at one place and moment. */
+/**
+ * What each account makes of the sea at one place and moment.
+ *
+ *   fromMoon, fromSun   the globe's stretch from each body alone, in metres above or below the average
+ *   globe               the two added together
+ *   flatMoon            the flat model: one pull upward toward its moon, as a share of what it is straight beneath
+ *   flat                that with a second pull toward its sun added, for the month
+ */
 function at(t, lat, lon, flat) {
   const date = new Date(t);
   const sun = subsolarPoint(date);
   const moon = moonPoint(date);
   const fromMoon = tideHeightM(moon, MOON_MASS, lat, lon);
   const fromSun = tideHeightM(sun, SUN_MASS, lat, lon);
+  const flatMoon = flatPullShare(moon, flat.moonHeightKm, lat, lon);
   return {
     t,
     fromMoon,
     fromSun,
     globe: fromMoon + fromSun,
-    // The flat model: one pull upward toward its moon. And that with a second, toward its sun, for the month.
-    flatMoon: flatPullShare(moon, flat.moonHeightKm, lat, lon),
-    flat: flatPullShare(moon, flat.moonHeightKm, lat, lon) + SUN_SHARE * flatPullShare(sun, flat.sunHeightKm, lat, lon),
+    flatMoon,
+    flat: flatMoon + SUN_SHARE * flatPullShare(sun, flat.sunHeightKm, lat, lon),
   };
 }
 
+/** That, at one place, every `stepMin` minutes for a number of hours. */
 function series(from, hours, stepMin, lat, lon, flat) {
   const list = [];
-  for (let t = from; t <= from + hours * HOUR_MS; t += stepMin * 60000) list.push(at(t, lat, lon, flat));
+  for (let t = from; t <= from + hours * HOUR_MS; t += stepMin * MINUTE_MS) list.push(at(t, lat, lon, flat));
   return list;
 }
 
-/** The moments a curve tops out, each found between samples by fitting a curve through three of them. */
+/**
+ * The moments a curve tops out: its high waters. A sample that is higher than
+ * the one before and no lower than the one after has a top near it. The top is
+ * placed by the curve y = p + q x + r x² through those three samples, a, b and
+ * c, one step apart:
+ *
+ *   shift   = ½ (a − c) ÷ (a − 2b + c)     how far from the middle sample the top is, in steps
+ *   height  = b − ¼ (a − c) × shift        how high the curve is there
+ */
 function highs(list, key) {
   const found = [];
   for (let i = 1; i + 1 < list.length; i++) {
@@ -54,7 +88,10 @@ function highs(list, key) {
   return found;
 }
 
-/** How far a curve rises and falls in each passage of the moon, over a month. */
+/**
+ * How far a curve rises and falls in each passage of the moon, over a month:
+ * the highest less the lowest of its samples, taken every half hour.
+ */
 function monthOf(from, lat, lon, flat) {
   const days = [];
   for (let d = 0; d < MONTH_DAYS; d++) {
@@ -65,11 +102,16 @@ function monthOf(from, lat, lon, flat) {
   return days;
 }
 
+/** Of a month's passages of the moon, the one whose middle is nearest a moment. */
+const dayNearest = (days, t) => days.reduce((a, b) => (Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a));
+
+/** What the flat model is told about its sun and moon, from the app's settings. */
 const flatOf = (state) => ({ sunHeightKm: state.sunHeightKm, moonHeightKm: state.moonHeightKm });
 // The sums are done for the place on the equator on the observer's own line of longitude. The moon is highest
 // there at the same moment as for the observer, and the two high waters are alike there, which they are not
 // further north or south.
 const LAT = 0;
+// What the kept answers depend on besides the time: where the observer is, east to west, and the flat model's two heights.
 const placeKey = (state) => `${state.lon.toFixed(2)} ${state.sunHeightKm} ${state.moonHeightKm}`;
 
 /** Two days round the moment on show, every ten minutes: kept for the hour. */
@@ -108,25 +150,30 @@ export default {
     const now = state.date.getTime();
     const two = twoDays(state);
     const [x0, x1] = [4, w - 4];
+    // Each curve is drawn from its own lowest point to its own highest, filling the height of its panel. The
+    // globe's is in metres and the flat model's is a share of a pull, so the two cannot share a scale up and
+    // down. What the drawing compares is when each rises and falls, and how often.
     const scaleTo = (list, key) => {
       const [lo, hi] = [Math.min(...list.map((p) => p[key])), Math.max(...list.map((p) => p[key]))];
       return (v) => (hi > lo ? (v - lo) / (hi - lo) : 0.5);
     };
 
     // ----- two days -----
+    // Time runs across: 48 hours, starting six hours before the hour on show.
     const [top, bottom] = [30, Math.max(74, h * 0.42)];
     const X = (t) => x0 + ((t - two[0].t) / (48 * HOUR_MS)) * (x1 - x0);
     label(ctx, `The sea on the equator due ${state.lat >= 0 ? 'south' : 'north'} of here`, x0, 7, INK.text, 'left', 600);
     ctx.fillStyle = INK.panel;
     ctx.fillRect(x0, top - 10, x1 - x0, bottom - top + 20);
-    const draw = (key, colour, width, dash) => {
+    const curve = (key, colour, width, dash) => {
       const share = scaleTo(two, key);
       line(ctx, two.map((p) => [X(p.t), bottom - share(p[key]) * (bottom - top)]), colour, width, dash);
       return share;
     };
-    draw('flatMoon', INK.flat, 1.5, [5, 4]);
-    const share = draw('globe', INK.globe, 2.5);
-    // High water by the globe's sum, and the moments the moon is highest and lowest.
+    curve('flatMoon', INK.flat, 1.5, [5, 4]);
+    const share = curve('globe', INK.globe, 2.5);
+    // High water by the globe's sum, as dots. The marks along the top are the moments the moon's own stretch is
+    // greatest, which is when the moon is highest in the sky there and when it is furthest beneath.
     for (const high of highs(two, 'globe')) disc(ctx, X(high.t), bottom - share(high.height) * (bottom - top), 3.5, INK.globe, INK.dark);
     for (const up of highs(two, 'fromMoon')) line(ctx, [[X(up.t), top - 10], [X(up.t), top - 4]], INK.text, 1.5);
     line(ctx, [[X(now), top - 10], [X(now), bottom + 10]], 'rgba(230, 237, 245, 0.4)', 1, [3, 3]);
@@ -140,6 +187,8 @@ export default {
     label(ctx, '| moon over, or under', x0, 19, INK.muted, 'left', 400, 11);
 
     // ----- a month -----
+    // One bar for each passage of the moon: how far the globe's sum rises and falls in it. The tallest bar
+    // fills the panel. The flat model's line is scaled the same way, to its own greatest rise and fall.
     const m = month(state);
     const [mTop, mBottom] = [bottom + 46, h - 22];
     if (mBottom - mTop < 30) return;
@@ -173,26 +222,35 @@ export default {
     const flat = flatOf(state);
     const here = at(now, LAT, state.lon, flat);
     // One passage of the moon from now, with a little either side so that a high water at either end is still found.
-    const turn = series(now - 20 * 60000, (LUNAR_DAY_MS + 40 * 60000) / HOUR_MS, 10, LAT, state.lon, flat);
-    const inTurn = (list) => list.filter((x) => x.t >= now && x.t < now + LUNAR_DAY_MS);
-    const [globeHighs, flatHighs] = [inTurn(highs(turn, 'globe')), inTurn(highs(turn, 'flatMoon'))];
+    const passage = series(now - 20 * MINUTE_MS, (LUNAR_DAY_MS + 40 * MINUTE_MS) / HOUR_MS, 10, LAT, state.lon, flat);
+    const inPassage = (list) => list.filter((x) => x.t >= now && x.t < now + LUNAR_DAY_MS);
+    const [globeHighs, flatHighs] = [inPassage(highs(passage, 'globe')), inPassage(highs(passage, 'flatMoon'))];
+    // How long the globe's sum has between its next two high waters, in hours.
     const two = twoDays(state);
     const pair = highs(two, 'globe');
     const gap = pair.length > 1 ? (pair[1].t - pair[0].t) / HOUR_MS : null;
+    // The month ahead: the passages of the moon with the biggest and the smallest rise and fall by the globe's
+    // sum, and the phase of the moon nearest each. Phases are numbered 0 new, 1 first quarter, 2 full, 3 last quarter.
     const m = month(state);
     const big = m.days.reduce((a, b) => (b.globe > a.globe ? b : a));
     const small = m.days.reduce((a, b) => (b.globe < a.globe ? b : a));
     const nearest = (t, wanted) => m.quarters.filter((q) => wanted.includes(q.quarter)).reduce((a, b) => (!a || Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a), null);
     const bigAt = nearest(big.t, [0, 2]);
-    // The sum has big tides at new moon and at full moon alike: the table says so when this month shows both.
-    const rangeAt = (q) => m.days.reduce((a, b) => (Math.abs(b.t - q.t) < Math.abs(a.t - q.t) ? b : a)).globe;
+    // The sum has big tides at new moon and at full moon alike: the table says so when this month shows both,
+    // each with a rise and fall over three quarters of the month's biggest.
+    const rangeAt = (q) => dayNearest(m.days, q.t).globe;
     const atBoth = [0, 2].every((quarter) => m.quarters.some((q) => q.quarter === quarter && rangeAt(q) > 0.75 * big.globe));
     const smallAt = nearest(small.t, [1, 3]);
+    // The flat model's rise and fall, with both of its pulls, at the first new moon and the first full moon of the month.
     const flatAt = (quarter) => {
       const q = m.quarters.find((x) => x.quarter === quarter);
-      return q ? m.days.reduce((a, b) => (Math.abs(b.t - q.t) < Math.abs(a.t - q.t) ? b : a)).flat : null;
+      return q ? dayNearest(m.days, q.t).flat : null;
     };
     const [flatNew, flatFull] = [flatAt(0), flatAt(2)];
+    // The most each body can raise a settled sea from low water to high, in metres, at its distance right now.
+    // The (3 cos² γ − 1) ÷ 2 of tideHeightM runs from 1 straight beneath the body to −½ a quarter of the way
+    // round, so from low to high is 1½ times
+    //   m × R × (R ÷ d)³
     const moonMost = MOON_MASS * EARTH_RADIUS_KM * 1000 * Math.pow(EARTH_RADIUS_KM / c.moon.point.distKm, 3) * 1.5;
     const sunMost = SUN_MASS * EARTH_RADIUS_KM * 1000 * Math.pow(EARTH_RADIUS_KM / c.sub.distKm, 3) * 1.5;
     const times = (list) => list.map((x) => `${new Date(x.t).toISOString().slice(11, 16)} UTC`).join(' and ');
@@ -241,13 +299,15 @@ export default {
     "now" crosses the drawing. Then move the observer east or west and watch the high waters move with the moon.</p>`;
   },
   checks({ check, near }) {
-    const moon = { lat: 0, lon: 0, distKm: 384400 };
-    const sun = { lat: 0, lon: 0, distKm: 149597870.7 };
+    const moon = { lat: 0, lon: 0, distKm: MOON_AVERAGE_KM };
+    const sun = { lat: 0, lon: 0, distKm: SUN_AVERAGE_KM };
     const under = tideHeightM(moon, MOON_MASS, 0, 0);
     const side = tideHeightM(moon, MOON_MASS, 0, 90);
     check('tides argument: the moon at its average distance raises a settled sea 0.36 m beneath it and on the far side, and lowers it 0.18 m half way between',
       near(under, 0.358, 0.002) && near(tideHeightM(moon, MOON_MASS, 0, 180), under, 1e-12) && near(side, -under / 2, 1e-12), `${under.toFixed(3)} and ${side.toFixed(3)} m`);
     check("tides argument: the sun's stretch is 46% of the moon's", near(tideHeightM(sun, SUN_MASS, 0, 0) / under, 0.46, 0.005) && near(SUN_SHARE, 0.46, 0.005), SUN_SHARE.toFixed(4));
+    // The moon is 30° up where the distance over the map is √3 times its height. It is then twice its height
+    // away in a straight line, and (1 ÷ 2)³ is an eighth. The place is that far from the pole, with the moon over the pole.
     check('tides argument: a flat pull is whole straight beneath its moon and an eighth where the moon is 30° up',
       near(flatPullShare(moon, 5000, 0, 0), 1, 1e-12) && near(flatPullShare({ lat: 90, lon: 0 }, 5000, 90 - (5000 * Math.sqrt(3) / EARTH_RADIUS_KM) * (180 / Math.PI), 0), 1 / 8, 1e-9));
     // A month at a place on the equator.
@@ -261,7 +321,7 @@ export default {
       globeHighs.length === 57 && near(mean, 12.42, 0.02) && (flatHighs.length === 28 || flatHighs.length === 29), `${globeHighs.length} at ${mean.toFixed(2)} h, and ${flatHighs.length}`);
     const month = monthOf(from, 0, -30, flat);
     const quarters = moonQuarters(new Date(from), 30);
-    const dayNear = (q) => month.reduce((a, b) => (Math.abs(b.t - q.t) < Math.abs(a.t - q.t) ? b : a));
+    const dayNear = (q) => dayNearest(month, q.t);
     const springs = quarters.filter((q) => q.quarter % 2 === 0).map((q) => dayNear(q).globe);
     const neaps = quarters.filter((q) => q.quarter % 2 === 1).map((q) => dayNear(q).globe);
     check('tides argument: by the sum the rise and fall at each new and full moon that month is over twice what it is at each quarter',

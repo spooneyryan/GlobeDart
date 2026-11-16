@@ -1,7 +1,12 @@
-// Shared three.js plumbing: a base view with its own renderer, HTML labels
-// that track 3D points, and builders for the map texture and line work.
+// Drawing tools shared by the three.js views: a base view with its own
+// renderer, labels in HTML that follow points in the 3D scene, and builders for
+// the map, the coastlines and the grid.
+//
+// Nothing in this file works out where anything is. It is handed positions that
+// js/models.js and the rest have already worked out, and puts them on screen.
 import * as THREE from 'three';
 
+/** One colour for each kind of thing, the same in every view and in the tables beside them. */
 export const COLORS = {
   measured: 0x45d6c8, // what observers actually record
   globe: 0x7fb4ff, // globe-model prediction
@@ -10,11 +15,40 @@ export const COLORS = {
   observer: 0xff5d6c,
   coast: 0xcfe0ec,
   grid: 0x7f93a8,
-  terminator: 0xff7847,
+  terminator: 0xff7847, // the real edge between day and night
   star: 0xf4f7ff,
   route: 0xf2f6fa, // the real route between two places
 };
 
+// ---------- small sums used by more than one view ----------
+
+export const add3 = (a, b, s = 1) => [a[0] + b[0] * s, a[1] + b[1] * s, a[2] + b[2] * s];
+export const scale3 = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
+
+/**
+ * A smooth step from 0 at a to 1 at b, for fading one thing into another:
+ *   t = (x − a) ÷ (b − a), held between 0 and 1
+ *   3t² − 2t³
+ * It is only ever used for how a drawing looks, never for where something is.
+ */
+export const smooth = (a, b, x) => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+
+/** A distance as text, to the nearest km. */
+export const kmText = (n) => `${Math.round(n).toLocaleString('en-US')} km`;
+
+/**
+ * How large a star's dot is in the two outside views, in CSS pixels. A star's
+ * magnitude is lower the brighter it is, so the dot shrinks as the magnitude
+ * rises, down to a smallest size. The chosen star is drawn largest of all.
+ */
+export const outsideStarSize = (mag, chosen) => (chosen ? 6.5 : Math.max(1.8, 4.2 - 0.9 * mag));
+
+// ---------- labels ----------
+
+/** Labels made of HTML, laid over a view and moved to follow points in its scene. */
 export class LabelLayer {
   constructor(container) {
     this.root = document.createElement('div');
@@ -24,6 +58,11 @@ export class LabelLayer {
     this.v = new THREE.Vector3();
   }
 
+  /**
+   * Adds a label. The view sets `pos` to the point it belongs to, `visible` to
+   * show or hide it, and may give a `test(camera)` that hides it when, say, its
+   * point is round the back of the globe.
+   */
   add(text, className = '') {
     const el = document.createElement('div');
     el.className = `label ${className}`;
@@ -34,10 +73,12 @@ export class LabelLayer {
     return item;
   }
 
+  /** Moves every label to where the camera now sees its point, and hides those that are out of the picture. */
   update(camera, width, height) {
     for (const item of this.items) {
       let show = item.visible && (!item.test || item.test(camera));
       if (show) {
+        // The camera turns the point into a place on screen: x and y from −1 to 1 across the picture, z its depth.
         this.v.copy(item.pos).project(camera);
         show = this.v.z > -1 && this.v.z < 1 && Math.abs(this.v.x) < 1.05 && Math.abs(this.v.y) < 1.05;
         if (show) {
@@ -52,6 +93,13 @@ export class LabelLayer {
   }
 }
 
+// ---------- the base of every three.js view ----------
+
+/**
+ * A view with its own canvas, scene and labels. A view that extends this makes
+ * `this.camera`, and may have a `fitCamera()` that is called when its panel
+ * changes shape. It is redrawn only when `dirty` has been set.
+ */
 export class View3D {
   constructor(container) {
     this.container = container;
@@ -102,6 +150,7 @@ export class View3D {
     });
     const release = (e, cancelled) => {
       down = Math.max(0, down - 1);
+      // How far, in pixels, a press may wander and still count as a click. A finger is less steady than a mouse.
       const slop = e.pointerType === 'touch' ? 12 : 5;
       if (!cancelled && start && Math.hypot(e.clientX - start[0], e.clientY - start[1]) < slop) handler(e);
       start = null;
@@ -110,7 +159,7 @@ export class View3D {
     el.addEventListener('pointercancel', (e) => release(e, true));
   }
 
-  /** Normalised device coordinates for a pointer event. */
+  /** Where a pointer is in the picture, from −1 to 1 across and up, as three.js wants it for finding what was clicked. */
   ndc(e) {
     const r = this.renderer.domElement.getBoundingClientRect();
     return new THREE.Vector2(
@@ -120,7 +169,14 @@ export class View3D {
   }
 }
 
-/** Paints land polygons onto an equirectangular canvas (lon -180..180, lat 90..-90). */
+// ---------- the map ----------
+//
+// The land is one picture, shared by both outside views: a plain grid of
+// longitude across (−180° to 180°) and latitude down (90° to −90°). Each view's
+// shader looks up the colour of a place in it by that place's latitude and
+// longitude, so both models are painted from the same coastlines.
+
+/** Paints land polygons onto that picture. Each ring is a list of longitude, latitude, longitude, latitude... */
 export function makeLandCanvas(land, width = 2048) {
   const height = width / 2;
   const canvas = document.createElement('canvas');
@@ -146,6 +202,7 @@ export function makeLandCanvas(land, width = 2048) {
   return canvas;
 }
 
+/** The picture of the land as a texture. It repeats sideways, so that it joins up at longitude 180°. */
 export function makeLandTexture(canvas) {
   const tex = new THREE.CanvasTexture(canvas);
   tex.wrapS = THREE.RepeatWrapping;
@@ -155,6 +212,11 @@ export function makeLandTexture(canvas) {
   return tex;
 }
 
+// Lines on the map are given as latitudes and longitudes. Each view supplies
+// `project(lat, lon)`, which says where that place is in its own scene: on the
+// ball for the globe, on the disc for the flat map. A line is cut into pieces
+// no more than `stepDeg` long, so that it follows the ball's curve, or the
+// curve this flat map gives a line of latitude.
 function pushSegment(out, project, lat1, lon1, lat2, lon2, stepDeg = 2) {
   const n = Math.max(1, Math.ceil(Math.max(Math.abs(lat2 - lat1), Math.abs(lon2 - lon1)) / stepDeg));
   let prev = project(lat1, lon1);
@@ -166,7 +228,11 @@ function pushSegment(out, project, lat1, lon1, lat2, lon2, stepDeg = 2) {
   }
 }
 
-/** Coastline segments. Skips the artificial seams at the antimeridian and the south pole. */
+/**
+ * Coastline segments. The map data cuts the land along longitude ±180° and
+ * closes Antarctica along the south pole. Those edges are not coasts, so they
+ * are left out.
+ */
 export function buildCoastPositions(land, project) {
   const out = [];
   for (const polygon of land.polygons) {
@@ -182,7 +248,7 @@ export function buildCoastPositions(land, project) {
   return out;
 }
 
-/** Latitude circles and meridians every `step` degrees, stopping short of the poles. */
+/** Circles of latitude and lines of longitude every `step` degrees. The lines of longitude stop at `latLimit`, short of the poles. */
 export function buildGraticulePositions(project, step = 30, latLimit = 90) {
   const out = [];
   for (let lat = -90 + step; lat < 90; lat += step) {
@@ -195,12 +261,16 @@ export function buildGraticulePositions(project, step = 30, latLimit = 90) {
   return out;
 }
 
+/** One circle of latitude, all the way round. */
 export function buildLatitudePositions(project, lat) {
   const out = [];
   pushSegment(out, project, lat, -180, lat, 180);
   return out;
 }
 
+// ---------- lines and points ----------
+
+/** Fixed line segments from a flat list of x, y, z, six numbers to a segment. */
 export function lineSegments(positions, color, opacity = 1) {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
@@ -208,7 +278,18 @@ export function lineSegments(positions, color, opacity = 1) {
   return new THREE.LineSegments(geo, mat);
 }
 
-/** Line segments whose endpoints are rewritten every update. */
+/** A white dot at each city, placed by the view's own `project(lat, lon)`. */
+export function cityDots(cities, project) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(cities.flatMap((c) => project(c.lat, c.lon))), 3));
+  return new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xffffff, size: 4, sizeAttenuation: false }));
+}
+
+/**
+ * Line segments whose ends are set afresh at every update: `begin()`, then
+ * `add(a, b)` for each segment, then `end()`. Segments beyond the number made
+ * room for are left out.
+ */
 export class DynamicSegments {
   constructor(maxSegments, color, opacity = 1) {
     this.array = new Float32Array(maxSegments * 6);
@@ -237,7 +318,11 @@ export class DynamicSegments {
   }
 }
 
-/** Round points whose positions and sizes (in CSS pixels) are rewritten every update. */
+/**
+ * Round dots whose places and sizes are set afresh at every update, in the same
+ * way: `begin()`, `add(place, size)`, `end(opacity)`. Sizes are in CSS pixels
+ * and do not shrink with distance, so a dot is a mark, not a thing with a width.
+ */
 export class PointCloud {
   constructor(max, color, { depthTest = false } = {}) {
     this.max = max;
@@ -251,7 +336,7 @@ export class PointCloud {
       uniforms: {
         uColor: { value: new THREE.Color(color) },
         uOpacity: { value: 1 },
-        uScale: { value: Math.min(window.devicePixelRatio || 1, 2) },
+        uScale: { value: Math.min(window.devicePixelRatio || 1, 2) }, // screen pixels to a CSS pixel
       },
       transparent: true,
       depthTest,
@@ -267,6 +352,7 @@ export class PointCloud {
         uniform vec3 uColor;
         uniform float uOpacity;
         void main() {
+          // Each dot is drawn as a square. This cuts it to a circle and softens the outer part of it.
           float d = length(gl_PointCoord - 0.5);
           if (d > 0.5) discard;
           gl_FragColor = vec4(uColor, uOpacity * (1.0 - smoothstep(0.3, 0.5, d)));
@@ -297,7 +383,7 @@ export class PointCloud {
   }
 }
 
-/** Soft radial glow sprite. */
+/** A soft round glow, brightest in the middle and fading to nothing at its edge. `color` is red, green, blue out of 255. */
 export function makeGlowSprite(color = '255, 220, 140') {
   const size = 128;
   const canvas = document.createElement('canvas');
@@ -318,6 +404,3 @@ export function makeGlowSprite(color = '255, 220, 140') {
   });
   return new THREE.Sprite(mat);
 }
-
-export const add3 = (a, b, s = 1) => [a[0] + b[0] * s, a[1] + b[1] * s, a[2] + b[2] * s];
-export const scale3 = (a, s) => [a[0] * s, a[1] * s, a[2] * s];

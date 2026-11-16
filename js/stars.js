@@ -112,6 +112,9 @@ Segin|Cas|01 54 24|+63 40 12|3.38
 Sigma Octantis|Oct|21 08 47|-88 57 23|5.47
 `;
 
+// Each row: name | constellation | right ascension (h m s) | declination (° ′ ″) | brightness (magnitude: lower is brighter).
+
+/** "06 45 09" as 6 + 45/60 + 9/3600: hours, minutes and seconds (or degrees and their sixtieths) as one number. */
 function sexagesimal(text) {
   const sign = text.trim().startsWith('-') ? -1 : 1;
   const [a, b, c] = text.replace(/[+-]/, '').trim().split(/\s+/).map(Number);
@@ -206,5 +209,9 @@ export const FEATURED_STARS = [
   ['Dubhe', 'the Plough / Big Dipper'],
 ];
 
-/** Degrees the sky turns in one minute of clock time. */
+/**
+ * Degrees the sky turns in one minute of clock time. In a day of 1,440 minutes
+ * it turns a little more than once, 360.99°, which is why each star rises four
+ * minutes earlier every night. Anyone can time that with a watch.
+ */
 export const SKY_TURN_DEG_PER_MIN = 360.98564737 / 1440;

@@ -1,3 +1,10 @@
+// Sunset.
+//
+// Measured: where the almanac puts the sun in London's sky a few minutes before
+// it sets (`c.obs`). Each model is handed only the place on the Earth the sun
+// is overhead at that moment, and works out for itself how high and how wide
+// the sun should look from London: `c.globe` and `c.flat`, by the sums in
+// js/models.js. The flat model's sun is at the height set in the panel.
 export default {
   id: 'sunset',
   group: 'sun',
@@ -10,12 +17,15 @@ export default {
   pair: 'sky',
   apply({ state, city, setObserver, sunEvents, SUN_DEMO }) {
     setObserver(city('London'), true);
+    // Two and a half minutes before the published sunset, while part of the sun's disc is still showing.
     const ev = sunEvents(state.date, state.lat, state.lon);
     if (ev.set) state.date = new Date(ev.set.getTime() - 150000);
     Object.assign(state, SUN_DEMO);
   },
   body(c, { state, deg, km }) {
     // The height at which this model's light gives out: the sun seen from the edge of the patch it lights.
+    // With H the flat sun's height and the reach of its light as the distance over the map, in degrees:
+    //   atan(H ÷ reach)
     const fadesAt = Math.atan2(state.sunHeightKm, state.lightRangeKm) * (180 / Math.PI);
     const bent = state.flatLight === 'bent';
     const reach = bent
@@ -29,7 +39,11 @@ export default {
         } But by that account night falls with the sun still <b class="f">${deg(fadesAt)}</b> up, going dim in the
         middle of the sky. What is seen is a sun at full size and full brightness going down behind the horizon,
         bottom edge first.</p>`;
-    // What height would put the flat sun where each city measures it.
+    // What height would put the flat sun where each city measures it. For the observer, with d the distance
+    // over the flat map to the place under the sun and e the measured height of the sun:
+    //   H = d × tan(e)
+    // The other cities' answers come ready-made, by the same sum (`implied`, from js/models.js). The observer's
+    // own city is left out of them, so that it is not counted twice.
     const here = c.obs.el > 0 ? c.flat.groundKm * Math.tan((c.obs.el * Math.PI) / 180) : null;
     const elsewhere = (x) => Math.abs(x.lat - state.lat) > 0.05 || Math.abs(x.lon - state.lon) > 0.05;
     const others = c.cities.filter((x) => elsewhere(x) && x.obs.el > 0 && x.implied !== null).map((x) => x.implied);

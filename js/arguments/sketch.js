@@ -1,5 +1,12 @@
 // Small helpers shared by the arguments that draw a picture of their own.
+//
+// Nothing here works anything out about the Earth or the sky. It is pens,
+// colours, and two small conveniences for dates and directions.
 
+/**
+ * The colours the drawings share. Throughout the app teal is what is measured
+ * (the published figure), blue is the globe model and amber is the flat model.
+ */
 export const INK = {
   text: '#e6edf5',
   muted: '#93a4b8',
@@ -25,6 +32,7 @@ export function label(ctx, string, x, y, colour = INK.muted, align = 'left', wei
   ctx.fillText(string, x, y);
 }
 
+/** A filled circle, an outlined one, or both. `r` is its radius in pixels. */
 export function disc(ctx, x, y, r, fill, stroke = null) {
   ctx.beginPath();
   ctx.arc(x, y, Math.max(0.5, r), 0, Math.PI * 2);
@@ -64,5 +72,26 @@ export function line(ctx, points, colour, width = 2, dash = []) {
 export const day = (date, month = 'long', year = 'numeric') =>
   new Date(date).toLocaleDateString('en-GB', { timeZone: 'UTC', day: 'numeric', month, ...(year ? { year } : {}) });
 
-/** The shorter way round from one direction to another, in degrees: positive is onward. */
+/**
+ * The shorter way round from one direction to another, in degrees: positive is
+ * onward. Directions go round a circle, so 359° to 1° is a turn of +2°, not
+ * −358°. The answer is always from −180° up to, but not including, +180°.
+ */
 export const turn = (from, to) => ((((to - from + 180) % 360) + 360) % 360) - 180;
+
+/**
+ * A place to keep answers that take a while to work out, such as a planet's
+ * path day by day. `keep(key, make)` hands back what was kept under `key`, and
+ * runs `make` only the first time. Once it holds more than `limit` answers it
+ * is emptied and starts again. Each argument has a store of its own.
+ */
+export function keeper(limit = 12) {
+  const kept = new Map();
+  return (key, make) => {
+    if (!kept.has(key)) {
+      if (kept.size > limit) kept.clear();
+      kept.set(key, make());
+    }
+    return kept.get(key);
+  };
+}

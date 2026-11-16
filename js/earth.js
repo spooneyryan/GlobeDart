@@ -140,7 +140,12 @@ ${parts.join('\n')}
 `;
 }
 
-/** The length of a path of {lat, lon} points over the globe, in km. */
+/**
+ * The length of a path of {lat, lon} points over the globe, in km. It is used
+ * only to decide how far out Google Earth's camera starts. Each step is by the
+ * haversine rule, which keeps its accuracy over short steps:
+ *   2R × asin(√(sin²(Δφ ÷ 2) + cos φ₁ cos φ₂ sin²(Δλ ÷ 2)))
+ */
 function sightLengthKm(track) {
   const rad = Math.PI / 180;
   let total = 0;

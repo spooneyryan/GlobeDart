@@ -1,3 +1,10 @@
+// December daylight in the far south.
+//
+// Measured: the height of the sun at McMurdo Station at midnight on the
+// December solstice, as the almanac has it (`c.obs.el`). The flat map opens
+// shaded by where the almanac says the sun is really up at this moment, not by
+// the flat model's own spotlight, so that the two can be compared: "Flat map
+// shading" in the panel switches between them.
 export default {
   id: 'december',
   group: 'sun',
@@ -11,6 +18,7 @@ export default {
   apply({ state, city, setObserver, sunEvents, seasons, SUN_DEMO }) {
     setObserver(city('McMurdo Station'), true);
     const solstice = seasons(state.date.getUTCFullYear()).decSolstice;
+    // Midnight by the sun there: twelve hours after the sun is highest.
     const noon = sunEvents(solstice, state.lat, state.lon).noon ?? solstice;
     state.date = new Date(noon.getTime() + 12 * 3600000);
     Object.assign(state, SUN_DEMO, { flatLighting: 'observed' });

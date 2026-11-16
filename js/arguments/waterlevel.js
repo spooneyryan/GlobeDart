@@ -1,8 +1,16 @@
+// Water finds its level.
+//
+// No almanac figure is used. The one sum is how far the middle of a stretch
+// of still water on a globe stands above the straight line between its ends.
+// The flat model's answer is nothing, at any length. What is observed is the
+// "check" below: a long sight line across open water.
 import { K_STANDARD, middleMarkRiseM } from '../horizon.js';
 
 /**
  * How far the surface of still water stands above a straight line joining two
- * points on it, at the middle, in metres: d² ÷ 8R for a stretch d across.
+ * points on it, at the middle, in metres: d² ÷ 8R for a stretch d across. No
+ * bending by the air is allowed for: this is the shape of the water itself,
+ * not what is seen across it.
  */
 export const bulgeM = (distanceKm) => middleMarkRiseM(distanceKm, 0);
 
@@ -15,7 +23,7 @@ const STRETCHES = [
   ['50 km', 50],
 ];
 
-/** A small height in words, since these run from thousandths of a millimetre to tens of metres. */
+/** A small height in words, since these run from thousandths of a millimetre to tens of metres. `fmtH` writes out the larger ones. */
 function small(m, fmtH) {
   if (m >= 0.01) return fmtH(m);
   const mm = m * 1000;

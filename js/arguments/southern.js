@@ -1,3 +1,10 @@
+// Southern stars: everyone looks south.
+//
+// Measured: the compass bearing of the star nearest the south pole of the sky
+// from three southern cities at one moment, as the star's catalogued place and
+// the almanac give it (`obs.az`). Beside each is the bearing the flat model
+// works out for the same star from the same city (`flat.az`, js/models.js),
+// given only the place on the Earth the star is overhead.
 export default {
   id: 'southern',
   group: 'stars',

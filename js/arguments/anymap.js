@@ -1,4 +1,20 @@
+// Any flat map: a test that needs no map at all.
+//
+// It takes the six distances between four cities, and asks whether four points
+// on a flat sheet can be that far apart. The distances used are the shortest
+// ones over a ball of the Earth's radius (distances.js, globeDistanceKm). That
+// is a fair thing to doubt, so two of the three sets are of cities joined by
+// non-stop flights, and their notes say how many of the six legs are flown. A
+// flown leg can be checked against a timetable, which is what "Southern
+// flights" does.
+//
+// Nothing here uses the usual flat-earth map except one sentence that quotes
+// what it makes of the sixth distance. The test is of every flat sheet, however
+// the places are arranged on it. The sums are in distances.js: flatSheetLayout
+// puts the whole misfit on one distance, and flatSheetBestFit shares it out
+// among all six, which is the kinder way to the flat sheet.
 import { globeDistanceKm, flatDistanceKm, flatSheetLayout, flatSheetBestFit } from '../distances.js';
+import { label as sketchLabel } from './sketch.js';
 
 // Sets of four cities. The first three are laid out flat; the fourth is the one that will not fit.
 const SETS = {
@@ -16,26 +32,27 @@ function spreadOf(setId, six) {
   return spreadKept.get(setId);
 }
 
-/** The four cities of a set, their six distances, and where a flat sheet would have to put them. */
+/**
+ * The four cities of a set, A, B, C and D, and their six distances.
+ *
+ *   sides    the five distances that fix a flat layout: AB, AC, BC, AD and BD
+ *   real     the sixth, from C to D
+ *   sheet    where a flat sheet with those five right has to put the four, and what that makes of the sixth
+ *   spread   the best a flat sheet can do with the misfit shared out among all six
+ *
+ * `city` turns a name into a place with a latitude and a longitude.
+ */
 function work(setId, city) {
-  const names = (SETS[setId] ?? SETS.north).cities;
+  const id = SETS[setId] ? setId : 'north';
+  const names = SETS[id].cities;
   const [a, b, c, d] = names.map(city);
-  const km = (p, q) => globeDistanceKm(p, q);
-  const sides = { ab: km(a, b), ac: km(a, c), bc: km(b, c), ad: km(a, d), bd: km(b, d) };
-  const real = km(c, d);
-  return { names, places: [a, b, c, d], sides, real, sheet: flatSheetLayout(sides), spread: spreadOf(SETS[setId] ? setId : 'north', { ...sides, cd: real }) };
+  const sides = { ab: globeDistanceKm(a, b), ac: globeDistanceKm(a, c), bc: globeDistanceKm(b, c), ad: globeDistanceKm(a, d), bd: globeDistanceKm(b, d) };
+  const real = globeDistanceKm(c, d);
+  return { names, places: [a, b, c, d], sides, real, sheet: flatSheetLayout(sides), spread: spreadOf(id, { ...sides, cd: real }) };
 }
 
-function label(ctx, string, x, y, colour = INK.text, align = 'center', weight = 400) {
-  ctx.font = `${weight} 11px system-ui, -apple-system, 'Segoe UI', sans-serif`;
-  ctx.textAlign = align;
-  ctx.textBaseline = 'middle';
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = 'rgba(4, 8, 14, 0.85)';
-  ctx.strokeText(string, x, y);
-  ctx.fillStyle = colour;
-  ctx.fillText(string, x, y);
-}
+/** Text with a dark edge, centred and a size smaller than the shared kind. */
+const label = (ctx, string, x, y, colour = INK.text, align = 'center', weight = 400) => sketchLabel(ctx, string, x, y, colour, align, weight, 11);
 
 export default {
   id: 'anymap',
@@ -63,10 +80,13 @@ export default {
   /** The first three cities laid out flat, and the two places the sheet allows for the fourth. */
   draw(ctx, { w, h }, c, { city, km }, own) {
     const { names, sides, sheet, real } = work(own.set, city);
+    // The sheet's own layout, in km: the first three cities, and the two places it allows for the fourth.
     const [A, B, C] = [sheet.a, sheet.b, sheet.c];
     const all = [A, B, C, ...sheet.d];
     const xs = all.map((p) => p[0]);
     const ys = all.map((p) => p[1]);
+    // One scale both ways, in pixels to a km, so that the layout is to scale: the largest that fits all five
+    // points inside the margin. The layout is then centred in the drawing.
     const pad = 34;
     const scale = Math.min((w - 2 * pad) / (Math.max(...xs) - Math.min(...xs)), (h - 2 * pad) / (Math.max(...ys) - Math.min(...ys)));
     const X = (p) => w / 2 + (p[0] - (Math.max(...xs) + Math.min(...xs)) / 2) * scale;
@@ -88,11 +108,12 @@ export default {
       ctx.arc(X(centre), Y(centre), radius * scale, 0, Math.PI * 2);
       ctx.stroke();
     }
+    // The triangle of the first three, which any flat sheet can hold.
     ctx.lineWidth = 2;
     line(A, B, INK.line);
     line(A, C, INK.line);
     line(B, C, INK.line);
-    // From the third city to each place the sheet allows for the fourth.
+    // From the third city to each place the sheet allows for the fourth, with the distance that would make it.
     sheet.d.forEach((D, i) => {
       line(C, D, INK.bad, [5, 4]);
       const along = i === 0 ? 0.4 : 0.72; // the two labels sit at different places, so they do not run into each other
@@ -117,7 +138,9 @@ export default {
   body(c, { city, km }, own) {
     const { names, places, sides, sheet, real, spread } = work(own.set, city);
     const [a, b, cc, d] = names;
+    // What the usual flat-earth map makes of the sixth distance, for comparison only.
     const usual = flatDistanceKm(places[2], places[3]);
+    // Of the two distances the sheet allows from the third city to the fourth, the one nearer the real one.
     const nearest = sheet.cd.reduce((best, v) => (Math.abs(v - real) < Math.abs(best - real) ? v : best));
     const row = (p, q, v) => `<tr><td>${p} to ${q}</td><td>${km(v)}</td></tr>`;
     return `
@@ -157,6 +180,7 @@ export default {
     const real = globeDistanceKm(place.C, place.D);
     check('any flat map argument: a pole and three places on the equator cannot be drawn flat: the sixth distance is thousands of km out',
       near(real, q, 1e-6) && sheet.cd.every((v) => Math.abs(v - real) > 1000), `${Math.round(real)} against ${sheet.cd.map((v) => Math.round(v)).join(' or ')}`);
+    // The three sets on offer, with the cities' latitudes and longitudes written out here so that the check stands alone.
     for (const [id, set] of Object.entries(SETS)) {
       const cities = { London: [51.51, -0.13], 'New York': [40.71, -74.01], Tokyo: [35.68, 139.69], 'Los Angeles': [34.05, -118.24], Sydney: [-33.87, 151.21], Johannesburg: [-26.2, 28.05], Santiago: [-33.45, -70.67], Perth: [-31.95, 115.86] };
       const w = work(id, (name) => ({ lat: cities[name][0], lon: cities[name][1] }));

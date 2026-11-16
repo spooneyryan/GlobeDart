@@ -28,7 +28,14 @@ export function flatDistanceKm(a, b) {
   return flatMapDistanceKm(a.lat, a.lon, b.lat, b.lon);
 }
 
-/** Points along the great circle from a to b, as { lat, lon }. */
+/**
+ * Points along the great circle from a to b, as { lat, lon }: the shortest way
+ * over a globe, which is the path a stretched string takes on one.
+ *
+ * With p and q the two places as directions from the Earth's centre and γ the
+ * angle between them, the point a share t of the way along is
+ *   (sin((1 − t) γ) × p + sin(t γ) × q) ÷ sin γ
+ */
 export function greatCirclePath(a, b, steps = 64) {
   const p = globeVec(a.lat, a.lon);
   const q = globeVec(b.lat, b.lon);
@@ -36,7 +43,7 @@ export function greatCirclePath(a, b, steps = 64) {
   const out = [];
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
-    // Spherical interpolation; falls back to a straight blend for two nearly identical points.
+    // For two places all but on top of each other sin γ is nothing, and a straight blend does.
     const wa = angle < 1e-9 ? 1 - t : Math.sin((1 - t) * angle) / Math.sin(angle);
     const wb = angle < 1e-9 ? t : Math.sin(t * angle) / Math.sin(angle);
     const v = [0, 1, 2].map((k) => p[k] * wa + q[k] * wb);
@@ -116,7 +123,11 @@ export const ROUTES = TIMETABLE.map(([from, to, airline, out, home]) => ({
   home,
 }));
 
-/** Distances for a pair of places, and the speeds a known flight time would need. */
+/**
+ * Distances for a pair of places, and the speeds a known flight time would need:
+ * each model's distance over the timetable's hours. The timetable is the
+ * measurement here. Neither model is told it.
+ */
 export function routeStats(a, b, hours = null) {
   const globeKm = globeDistanceKm(a, b);
   const flatKm = flatDistanceKm(a, b);
@@ -144,6 +155,10 @@ export function routeStats(a, b, hours = null) {
  * distance from C to each: first the one on C's side, then the other.
  */
 export function flatSheetLayout({ ab, ac, bc, ad, bd }) {
+  // A place at given distances from A and B. How far along the line AB it is, by the cosine rule:
+  //   x = (AB² + toA² − toB²) ÷ (2 × AB)
+  // and how far off the line, by Pythagoras:
+  //   y = √(toA² − x²)
   const along = (toA, toB) => (ab * ab + toA * toA - toB * toB) / (2 * ab);
   const off = (toA, x) => Math.sqrt(Math.max(0, toA * toA - x * x));
   const cx = along(ac, bc);
@@ -175,9 +190,13 @@ export function flatSheetLayout({ ab, ac, bc, ad, bd }) {
 export function flatSheetBestFit({ ab, ac, bc, ad, bd, cd }) {
   const want = [ab, ac, bc, ad, bd, cd];
   const pairs = [[0, 1], [0, 2], [1, 2], [0, 3], [1, 3], [2, 3]];
+  // An arrangement p is eight numbers: x and y for each of A, B, C and D. Its misses are the six
+  // distances as they come out on the sheet, less the six that were asked for.
   const misses = (p) => pairs.map(([i, j], k) => Math.hypot(p[2 * i] - p[2 * j], p[2 * i + 1] - p[2 * j + 1]) - want[k]);
   const worst = (p) => Math.max(...misses(p).map(Math.abs));
-  // A fixed list of directions to nudge in, so that the search gives the same answer every time.
+  // A fixed list of directions to nudge in, so that the search gives the same answer every time:
+  // each of the eight numbers on its own, then 40 mixtures of all eight. The mixtures come from a
+  // simple repeating sum, not from chance, so anyone who runs this gets the same 40.
   let seed = 12345;
   const next = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648) * 2 - 1;
   const directions = [];
@@ -192,6 +211,8 @@ export function flatSheetBestFit({ ab, ac, bc, ad, bd, cd }) {
   for (const d of layout.d) {
     let p = [...layout.a, ...layout.b, ...layout.c, ...d];
     let score = worst(p);
+    // Nudges start at an eighth of the longest distance. Whenever none of them helps they are halved,
+    // down to 10 metres.
     for (let step = Math.max(...want) / 8; step > 0.01; ) {
       let moved = false;
       for (const dir of directions) {

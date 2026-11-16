@@ -1,3 +1,11 @@
+// The pole star from many latitudes.
+//
+// Measured: the height of Polaris above the horizon from the observer and from
+// a list of cities, as the star's catalogued place and the almanac give it.
+// Each model is handed only the place on the Earth the star is overhead. The
+// flat model puts it at the height set for its stars in the panel, and each
+// city's measured angle also gives a height of its own, by the same sum as
+// for the sun: H = d × tan(e) (`implied`, js/models.js).
 export default {
   id: 'polaris',
   group: 'stars',
@@ -16,6 +24,7 @@ export default {
   body(c, { state, deg, km, REF_CITIES, STARS_OFF }) {
     if (!c.stars) return STARS_OFF;
     const i = c.stars.selected;
+    // The cities from which the star is measured below the horizon, and the heights the rest give it.
     const south = c.stars.cities.filter((x) => x.obs.el < 0);
     const heights = c.stars.cities.map((x) => x.implied).filter((h) => h !== null);
     return `

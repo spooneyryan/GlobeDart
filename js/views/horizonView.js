@@ -1,8 +1,15 @@
 // Drawings for "Over the horizon": the scene from the side, and what the
 // observer sees through a telescope. Each is used once per model.
 //
-// A scene is what horizonScene() returns, plus `shape` and two functions that
-// turn metres and kilometres into text in the user's units.
+// These drawings decide nothing. A scene is what horizonScene() in
+// js/horizon.js returns: how much is hidden, how far the horizon is and the
+// rest, already worked out. Added to it by js/main.js are the target's `shape`
+// and `name`, `horizonLineM`, how much the flat model hides (`flatHiddenM`),
+// the user's own sightings (`owns`), and functions that turn metres and
+// kilometres into text in the user's units. With layered air there is also
+// `traced`, the rays followed through it by js/raytrace.js.
+//
+// Heights are in metres and distances along the ground in kilometres.
 import { EARTH_RADIUS_KM } from '../astro.js';
 
 const INK = {
@@ -20,6 +27,15 @@ const INK = {
 
 // How wide each target is compared with its height.
 const WIDTH = { ship: 3.6, building: 0.34, lighthouse: 0.3, mountain: 2.6 };
+
+// The sky and the sea through the telescope, each from its top to its bottom.
+const SCOPE_SKY = ['#5f9bd0', '#cfe2f1'];
+const SCOPE_SEA = ['#2f6f9f', '#173f62'];
+
+const FONT = "system-ui, -apple-system, 'Segoe UI', sans-serif";
+
+/** How much of the target a model hides, from the bottom up, in metres. */
+const hiddenOf = (model, s) => (model === 'globe' ? s.hiddenM : s.flatHiddenM);
 
 const CONTAINER_COLOURS = ['#c8553d', '#3d7ac8', '#d9a441', '#5aa469', '#8e6bbf', '#d0d6dd'];
 
@@ -97,8 +113,9 @@ function niceStep(max, count) {
   return (n < 1.5 ? 1 : n < 3.5 ? 2 : n < 7.5 ? 5 : 10) * pow;
 }
 
+/** Writing on a drawing, with a dark edge so that it can be read over anything. */
 function text(ctx, string, x, y, colour = INK.text, align = 'left', weight = 400, size = 11) {
-  ctx.font = `${weight} ${size}px system-ui, -apple-system, 'Segoe UI', sans-serif`;
+  ctx.font = `${weight} ${size}px ${FONT}`;
   ctx.textAlign = align;
   ctx.textBaseline = 'middle';
   ctx.lineWidth = 3;
@@ -108,7 +125,41 @@ function text(ctx, string, x, y, colour = INK.text, align = 'left', weight = 400
   ctx.fillText(string, x, y);
 }
 
-/** The scene from the side, with heights stretched so that the curve can be seen. */
+/** A label in a dark box against the right-hand edge of a drawing `w` wide, the box starting `top` down. */
+function tag(ctx, label, w, top, colour, backing) {
+  ctx.font = `600 11px ${FONT}`;
+  const wide = ctx.measureText(label).width + 10;
+  ctx.fillStyle = backing;
+  ctx.fillRect(w - wide - 6, top, wide, 18);
+  ctx.fillStyle = colour;
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, w - 11, top + 9);
+}
+
+/**
+ * The scene from the side, with heights stretched so that the curve can be
+ * seen. Returns how many times they are stretched.
+ *
+ * Heights are drawn above the straight line that joins the foot of the
+ * observer to the foot of the target, d apart. Here x is the distance from the
+ * observer, R the Earth's radius and k how much the air bends light (see
+ * js/horizon.js). With x, d and R in km, each of these is in metres once it is
+ * multiplied by 1,000:
+ *
+ *   the globe's water above that line   x × (d − x) ÷ 2R      most half way, where it is d² ÷ 8R
+ *   the flat model's water              0
+ *   light bent down by the air          k × x² ÷ 2R           the same air in both models
+ *   the observer's own level            x × d ÷ 2R above that line on the globe, 0 on the flat model
+ *
+ * So a ray that leaves the eye, e up, at a slope s is at
+ *
+ *   e + s × x − k × x² ÷ 2R + (the observer's own level)
+ *
+ * The slope is set so that the ray ends at the foot of the target. On the
+ * globe, when the target is beyond the horizon, it is the ray that just grazes
+ * the water instead: s = −√(2e ÷ R′), with R′ = R ÷ (1 − k).
+ */
 function drawSide(ctx, w, h, model, s) {
   const compact = h < 230;
   // The observer and the target stand the same distance in from either side.
@@ -129,8 +180,9 @@ function drawSide(ctx, w, h, model, s) {
   // What that change of baseline adds to a height measured from the observer's own level.
   const tilt = (x) => (model === 'globe' ? ((x * s.distanceKm) / (2 * EARTH_RADIUS_KM)) * 1000 : 0);
   const ground = model === 'globe' ? arc : () => 0;
-  const base = 0;
+  const base = 0; // the target's foot is on the line
   // The light: grazing the horizon if the target is beyond it, otherwise aimed at the target's foot.
+  // The slope is in metres of height for each km along.
   const beyond = model === 'globe' && s.distanceKm > s.horizonKm;
   const slope = beyond
     ? -Math.sqrt((2 * s.eyeM) / 1000 / s.radiusKm) * 1000
@@ -138,9 +190,10 @@ function drawSide(ctx, w, h, model, s) {
   const ray = (x) => s.eyeM + slope * x - bend(x) + tilt(x);
 
   // Both models share one scale, set by the globe, so the two drawings can be compared.
+  // The crest is how far the globe's water stands above the line half way along: d² ÷ 8R.
   const crest = ((s.distanceKm * s.distanceKm) / (8 * EARTH_RADIUS_KM)) * 1000;
   const top = Math.max(s.eyeM, s.targetM, crest) * 1.08;
-  const lowest = Math.min(((from * (s.distanceKm - from)) / (2 * EARTH_RADIUS_KM)) * 1000, 0);
+  const lowest = Math.min(arc(from), 0);
   const bottom = lowest - (top - lowest) * 0.06;
   const X = (x) => pad.l + (x / xMax) * plotW;
   const Y = (y) => pad.t + ((top - y) / (top - bottom)) * plotH;
@@ -176,7 +229,7 @@ function drawSide(ctx, w, h, model, s) {
 
   // The target: the part in view, and the part that is hidden.
   const tx = X(s.distanceKm);
-  const hidden = model === 'globe' ? s.hiddenM : s.flatHiddenM;
+  const hidden = hiddenOf(model, s);
   const bar = 9;
   ctx.fillStyle = '#e6edf5';
   ctx.fillRect(tx - bar / 2, Y(base + s.targetM), bar, Y(base + hidden) - Y(base + s.targetM));
@@ -257,8 +310,8 @@ function drawSide(ctx, w, h, model, s) {
   }
   text(ctx, `${s.fmtD(s.distanceKm)} away`, tx, h - (compact ? 10 : 14), INK.muted, 'center');
 
-  const stretch = plotH / (top - bottom) / (plotW / (xMax * 1000));
-  return stretch;
+  // Pixels to a metre upward, over pixels to a metre along.
+  return plotH / (top - bottom) / (plotW / (xMax * 1000));
 }
 
 // The target drawn plainly, kept so it can be copied into the view a row at a time.
@@ -292,12 +345,11 @@ function drawTracedScope(ctx, w, h, model, s) {
   const anchor = Math.round(h * 0.8);
   const yOf = (angle) => anchor - (angle - (t.bottom + t.size)) * perRadian;
   const strip = ((t.top - t.bottom) / t.rows.length) * perRadian;
-  const seaTop = '#2f6f9f';
-  const seaLow = '#173f62';
+  const [seaTop, seaLow] = SCOPE_SEA;
 
   const sky = ctx.createLinearGradient(0, 0, 0, h);
-  sky.addColorStop(0, '#5f9bd0');
-  sky.addColorStop(1, '#cfe2f1');
+  sky.addColorStop(0, SCOPE_SKY[0]);
+  sky.addColorStop(1, SCOPE_SKY[1]);
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, w, h);
   // Below everything that was traced, it is sea if the lowest ray met the sea.
@@ -321,9 +373,18 @@ function drawTracedScope(ctx, w, h, model, s) {
   });
 }
 
-/** What the observer sees, zoomed in until the target fills the view. */
+/**
+ * What the observer sees, zoomed in until the target fills the view. The line
+ * of the horizon crosses the target `horizonLineM` above its base on the globe
+ * (js/horizon.js), and level with the eye on the flat model. Beyond the
+ * horizon the sea is in front of the target and covers what is below that
+ * line. Nearer than it, the target stands in front of the sea.
+ */
 function drawScope(ctx, w, h, model, s) {
-  if (s.traced) return drawTracedScope(ctx, w, h, model, s);
+  if (s.traced) {
+    drawTracedScope(ctx, w, h, model, s);
+    return;
+  }
   const size = Math.min(h * 0.46, (w * 0.64) / WIDTH[s.shape]);
   const scale = size / s.targetM; // pixels per metre at the target's distance
   const cx = w / 2;
@@ -334,15 +395,15 @@ function drawScope(ctx, w, h, model, s) {
   const horizon = Math.max(-2, base - lineM * scale);
 
   const sky = ctx.createLinearGradient(0, 0, 0, Math.max(1, horizon));
-  sky.addColorStop(0, '#5f9bd0');
-  sky.addColorStop(1, '#cfe2f1');
+  sky.addColorStop(0, SCOPE_SKY[0]);
+  sky.addColorStop(1, SCOPE_SKY[1]);
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, w, h);
 
   const sea = () => {
     const water = ctx.createLinearGradient(0, horizon, 0, h);
-    water.addColorStop(0, '#2f6f9f');
-    water.addColorStop(1, '#173f62');
+    water.addColorStop(0, SCOPE_SEA[0]);
+    water.addColorStop(1, SCOPE_SEA[1]);
     ctx.fillStyle = water;
     ctx.fillRect(0, horizon, w, h - horizon);
     ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
@@ -369,7 +430,7 @@ function drawScope(ctx, w, h, model, s) {
 
   // A height scale beside the target.
   const rx = Math.max(46, cx - (WIDTH[s.shape] * size) / 2 - 22);
-  const hidden = model === 'globe' ? s.hiddenM : s.flatHiddenM;
+  const hidden = hiddenOf(model, s);
   ctx.strokeStyle = 'rgba(8, 13, 20, 0.75)';
   ctx.lineWidth = 1.5;
   ctx.beginPath();
@@ -411,14 +472,7 @@ function drawScope(ctx, w, h, model, s) {
       ctx.lineTo(w, y);
       ctx.stroke();
       ctx.setLineDash([]);
-      ctx.font = "600 11px system-ui, -apple-system, 'Segoe UI', sans-serif";
-      const wide = ctx.measureText(label).width + 10;
-      ctx.fillStyle = 'rgba(8, 13, 20, 0.8)';
-      ctx.fillRect(w - wide - 6, y - 9, wide, 18);
-      ctx.fillStyle = '#ffffff';
-      ctx.textAlign = 'right';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(label, w - 11, y);
+      tag(ctx, label, w, y - 9, '#ffffff', 'rgba(8, 13, 20, 0.8)');
     }
   }
   // The user's own observations: the line below which they could not see it.
@@ -432,18 +486,11 @@ function drawScope(ctx, w, h, model, s) {
     ctx.moveTo(rx, y);
     ctx.lineTo(w, y);
     ctx.stroke();
-    ctx.font = "600 11px system-ui, -apple-system, 'Segoe UI', sans-serif";
-    const wide = ctx.measureText(label).width + 10;
-    ctx.fillStyle = 'rgba(8, 13, 20, 0.85)';
-    ctx.fillRect(w - wide - 6, y + 4, wide, 18);
-    ctx.fillStyle = INK.own;
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(label, w - 11, y + 13);
+    tag(ctx, label, w, y + 4, INK.own, 'rgba(8, 13, 20, 0.85)');
   }
-  return null;
 }
 
+/** A small angle as text. Below a tenth of a degree it is given in sixtieths of a degree. */
 const angle = (degrees) => (degrees >= 0.1 ? `${degrees.toFixed(2)}°` : `${(degrees * 60).toFixed(1)} sixtieths of a degree`);
 
 export class HorizonView {
@@ -486,9 +533,8 @@ export class HorizonView {
     const ctx = this.canvas.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
-    const globe = this.model === 'globe';
-    const hidden = globe ? s.hiddenM : s.flatHiddenM;
-    const what =
+    const hidden = hiddenOf(this.model, s);
+    this.readout.textContent =
       hidden <= 0
         ? `All ${s.fmtH(s.targetM)} of the ${s.name} is in view`
         : hidden >= s.targetM
@@ -496,13 +542,11 @@ export class HorizonView {
           : `The bottom ${s.fmtH(hidden)} is hidden, the top ${s.fmtH(s.targetM - hidden)} shows`;
     if (this.kind === 'side') {
       const stretch = drawSide(ctx, w, h, this.model, s);
-      this.readout.textContent = what;
       const times = stretch >= 10 ? Math.round(stretch).toLocaleString('en-US') : stretch.toFixed(1);
       this.note.textContent =
         stretch >= 3 ? `Heights stretched ${times} times. Drawn to scale it would look flat` : `Heights stretched ${times} times`;
     } else {
       drawScope(ctx, w, h, this.model, s);
-      this.readout.textContent = what;
       const t = s.traced?.[this.model];
       this.note.textContent = t
         ? `Light followed through layers of air${t.upsideDown ? '. Part of the image is upside down: a mirage' : ''}`

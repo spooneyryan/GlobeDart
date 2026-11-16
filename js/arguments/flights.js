@@ -1,3 +1,10 @@
+// Southern flights.
+//
+// The measurement here is an airline timetable: how long a real non-stop
+// flight is scheduled to take each way (js/distances.js lists the flights).
+// Neither model is told it. Each gives its own distance between the two
+// cities, and the distance over the scheduled hours is the speed the aircraft
+// would have to average on that model (`c.route`, from routeStats).
 export default {
   id: 'flights',
   group: 'travel',

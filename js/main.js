@@ -1,3 +1,39 @@
+// The page itself: what is set, what is worked out from it, and what is written into the tables.
+//
+// No sum about the sky or the ground is done in this file. It calls the ones in the modules beside it:
+//
+//   js/astro.js       what is measured: the published almanac (Astronomy Engine), for any time and place
+//   js/models.js      the two models, each a few lines of geometry
+//   js/refraction.js  how much the air lifts things in the sky, one function shared by all three
+//   js/horizon.js     what the sea hides, js/flight.js for level flight, js/distances.js for routes
+//
+// The one thing to check, if you doubt the result. In `compute` below both models are handed the same two
+// things: the place on Earth where the sun is overhead at that moment, and where the observer stands. Each
+// works out from those where the sun should be in the observer's sky. Neither is handed the answer. The
+// "Measured" figure they are marked against comes from the almanac in js/astro.js and from neither model.
+// The stars and the moon are done the same way.
+//
+// The almanac rests on the same astronomy as the globe model, so the globe matching it is true by
+// construction. It is not the evidence, and the page says so. The evidence is that the almanac matches what
+// anyone measures: "Your own measurements" puts a reading of yours against both models.
+//
+// In the order they come:
+//
+//   state                        everything that can be set
+//   formatting                   numbers into words
+//   the user's own measurements
+//   model evaluation             `compute`: the almanac and both models, for the moment on show
+//   the moon, the stars          the same for those
+//   distances and the score      routes between cities, and the day of hourly sun positions each model is scored on
+//   over the horizon, two sunsets, level flight, the user's own horizon observations
+//   Google Earth                 files out and in, and the line of sight on the map
+//   demonstrations               what each one in js/arguments/ is handed
+//   showing the working, moving about the page, the guided tour
+//   views and the update         `update`: one pass from state to screen
+//   result panels                the tables
+//   controls                     the settings, the time controls above the views, the menu on the observer's sky
+//   shareable state              the link: everything set, written after the # and read back
+//   start
 import {
   subsolarPoint,
   observedSun,
@@ -85,7 +121,6 @@ import {
   SKY_TURN_DEG_PER_MIN,
   MAX_CATALOGUE_STARS,
   addCatalogueStar,
-  catalogueName,
   catalogueNamesIn,
 } from './stars.js';
 import { ROUTES, CRUISE_KMH, SOUND_KMH, routeStats, greatCirclePath, globeDistanceKm } from './distances.js';
@@ -107,9 +142,31 @@ import { VIEWS, viewSizes, viewById } from './presets.js';
 const $ = (id) => document.getElementById(id);
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 
+const MINUTE_MS = 60000;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
+
+// The flat model's sun, moon and stars can be put at any height in this range, and every search for a height
+// that suits it best covers the whole of it. The settings start at 5,000 km.
 const MIN_HEIGHT_KM = 100;
 const MAX_HEIGHT_KM = 1e6;
 
+// The sun counts as up while any of its disc shows above the horizon: while its middle, as it appears, is
+// no more than half its own width below level.
+//
+//   up while   height + width ÷ 2 > 0
+//
+// The height is the one on show, with whatever lift the air is set to give already in it, and the width is the
+// one that source gives the sun from here: the almanac's for the measured sun, each model's own for its own.
+// An almanac's times of sunrise and sunset are the same rule put another way. Its usual 0.833° is half the
+// sun's width (0.27°) plus the air's lift at the horizon (0.57°), to be set against a height with no lift in it.
+const sunUp = (sun) => sun.el + sun.sizeDeg / 2 > 0;
+// A sun that is up, in words. Its middle can be a little below the horizon with its top edge still showing.
+const sunHeightText = (el) => (el >= 0 ? `${deg(el)} above the horizon` : `on the horizon, its middle ${deg(-el)} below`);
+
+// ---------- state ----------
+
+// Everything that can be set. The link written after the # carries it (see "shareable state").
 const state = {
   date: new Date(),
   lat: 51.51,
@@ -170,7 +227,8 @@ const state = {
 // ---------- formatting ----------
 
 const deg = (n, d = 1) => `${n.toFixed(d)}°`;
-const km = (n) => `${Math.round(n).toLocaleString('en-US')} km`;
+const whole = (n) => Math.round(n).toLocaleString('en-US');
+const km = (n) => `${whole(n)} km`;
 const COMPASS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
 const compass = (az) => COMPASS[Math.round(az / 22.5) % 16];
 // Rounded first, so a bearing a hair west of north reads 0.0 and not 360.0.
@@ -185,7 +243,11 @@ const hhmm = (minutes) => {
 const utcMinutes = (d) => d.getUTCHours() * 60 + d.getUTCMinutes() + d.getUTCSeconds() / 60;
 const isoDay = (d) => d.toISOString().slice(0, 10);
 const niceHeight = (h) => (h >= 100000 ? `${(h / 1000).toFixed(0)},000 km` : km(h));
-const kmh = (n) => `${Math.round(n).toLocaleString('en-US')} km/h`;
+const kmh = (n) => `${whole(n)} km/h`;
+const percent = (fraction) => `${Math.round(fraction * 100)}%`;
+/** A height in the sky, in words when it is under the horizon. */
+const heightOrBelow = (el) => (el > 0 ? deg(el) : `${deg(-el)} below`);
+const toDegrees = (radians) => (radians * 180) / Math.PI;
 const hoursMinutes = (h) => {
   const m = Math.round(h * 60);
   return m % 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m / 60} h`;
@@ -195,12 +257,16 @@ const hoursMinutes = (h) => {
 const FT = 0.3048;
 const MI = 1.609344;
 const imperial = () => state.units === 'imperial';
-const heightNumber = (m) => (imperial() ? m / FT : m);
-const distanceNumber = (k) => (imperial() ? k / MI : k);
+// The unit on show, in metres and in kilometres.
+const heightUnit = () => (imperial() ? FT : 1);
+const distanceUnit = () => (imperial() ? MI : 1);
+const heightNumber = (m) => m / heightUnit();
+const distanceNumber = (k) => k / distanceUnit();
+// Three figures or so: enough to read, and no more than the sums are good for.
 const tidy = (v) => Number(v.toFixed(v >= 100 ? 0 : v >= 10 ? 1 : 2));
 const fmtH = (m) => `${tidy(heightNumber(m)).toLocaleString('en-US')} ${imperial() ? 'ft' : 'm'}`;
 const fmtD = (k) => `${tidy(distanceNumber(k)).toLocaleString('en-US')} ${imperial() ? 'mi' : 'km'}`;
-const fmtSpeed = (v) => (imperial() ? `${Math.round(v / MI).toLocaleString('en-US')} mph` : kmh(v));
+const fmtSpeed = (v) => (imperial() ? `${whole(v / MI)} mph` : kmh(v));
 const fmtAngle = (a) => `${a.toFixed(a >= 10 ? 1 : a >= 1 ? 2 : 3)}°`;
 const fmtTime = (minutes) => (minutes < 1 ? 'under a minute' : minutes < 90 ? `${Math.round(minutes)} min` : hoursMinutes(minutes / 60));
 // What can be set, in metres and kilometres.
@@ -231,30 +297,30 @@ function toast(text) {
 
 // ---------- the user's own measurements ----------
 
+// Readings the user has taken of the sun or a star: its height above the horizon and, if they have it, its
+// bearing, at a time and a place. They are kept on this device and carried in the link. js/measurements.js
+// puts each one against both models.
 const STORE_KEY = 'globedart.measurements';
 let measurements = [];
 
-function loadStoredMeasurements() {
+/** A list kept on this device under a name, or an empty one. */
+function storedList(key) {
   try {
-    const stored = JSON.parse(localStorage.getItem(STORE_KEY) ?? '[]');
+    const stored = JSON.parse(localStorage.getItem(key) ?? '[]');
     return Array.isArray(stored) ? stored : [];
   } catch {
+    // Storage can be unavailable (private windows, blocked site data). The link still carries them.
     return [];
   }
 }
 
-function saveMeasurements() {
-  try {
-    localStorage.setItem(STORE_KEY, JSON.stringify(measurements));
-  } catch {
-    // Storage can be unavailable (private windows, blocked site data). The link still carries them.
-  }
-}
+const saveMeasurements = () => remember(STORE_KEY, measurements);
 
 const sameMoment = (m, ms) => Math.abs(m.t - state.date.getTime()) <= ms;
+// Within 0.006° each way, which is under 700 m.
 const samePlace = (m) => Math.abs(m.lat - state.lat) < 0.006 && Math.abs(wrap180(m.lon - state.lon)) < 0.006;
 /** True when the views are showing the time and place this measurement was taken. */
-const isShown = (m) => sameMoment(m, 60000) && samePlace(m);
+const isShown = (m) => sameMoment(m, MINUTE_MS) && samePlace(m);
 
 /**
  * The measurement to mark in the two skies: one taken at the time and place on
@@ -269,18 +335,35 @@ function shownMeasurement(sunObs, air) {
 }
 
 // ---------- model evaluation ----------
+//
+// The names used from here on, for the sun and then again for the moon and each star:
+//
+//   sub     the place on Earth it is directly overhead, from the almanac. Both models are given this.
+//   obs     where the almanac puts it in the observer's sky: a bearing `az` and a height `el`, in degrees,
+//           with the lift from the air in the height. This is the "Measured" column.
+//   globe   where the globe model puts it, worked out from `sub` and the observer's place alone
+//   flat    where the flat model puts it, from the same two things and the height it is set to
+//   miss    the angle on the sky between a model's place for it and the almanac's ("Off by")
 
+/** Whether the flat model's light is set to curve upward as it travels, so that its sun can set. */
+const bentLight = () => state.flatLight === 'bent';
+
+/**
+ * The flat model's settings. Nothing in the model fixes any of them, so all of them are the user's to choose:
+ * how high its sun and its stars are, how far its sun's light reaches, and whether that light curves.
+ */
 const flatParams = () => ({
   sunHeightKm: state.sunHeightKm,
   lightRangeKm: state.lightRangeKm,
   starHeightKm: state.starHeightKm,
   // With bending light the sun is seen on the horizon from exactly as far as its light reaches.
-  bendSetKm: state.flatLight === 'bent' ? state.lightRangeKm : 0,
+  bendSetKm: bentLight() ? state.lightRangeKm : 0,
 });
 /** How much the flat model's light curves, per km. The moon and the stars are seen by the same light as the sun. */
 const flatBend = () => flatBendPerKm(flatParams());
 
 // The air the measurement and both models are seen through: none, standard, or the user's own.
+// All three get the same air, so the lift it gives cannot favour one of them.
 function currentAir() {
   if (state.refraction === 'off') return null;
   if (state.refraction === 'custom') return { tempC: state.tempC, pressureHpa: state.pressureHpa };
@@ -288,13 +371,17 @@ function currentAir() {
 }
 const airKey = () => (state.refraction === 'custom' ? `${state.tempC}|${state.pressureHpa}` : state.refraction);
 
+/** Everything the sky tool shows, for the moment and the place that are set. */
 function compute() {
   const { date, lat, lon } = state;
   const air = currentAir();
+  // From the almanac: the place the sun is overhead, and where it stands in the observer's sky.
   const sub = subsolarPoint(date);
   const obs = observedSun(date, lat, lon, air);
+  // From each model: where it says the sun should stand. Both are given `sub` and the observer's place, not `obs`.
   const globe = globePredict(sub, lat, lon, air);
   const flat = flatPredict(sub, lat, lon, flatParams(), air);
+  // The same moment from each of the reference cities.
   const cities = REF_CITIES.map((city) => {
     const o = observedSun(date, city.lat, city.lon, air);
     const f = flatPredict(sub, city.lat, city.lon, flatParams(), air);
@@ -303,6 +390,11 @@ function compute() {
       obs: o,
       flat: f,
       miss: skySeparation(o, f),
+      // The height the flat sun would have to be at for this city's measured height to come out right:
+      //   H = d × tan(height)
+      // with d the distance on the flat map from the city to the place under the sun. One sun has one
+      // height, so on a flat earth every city would give the same figure. Null when the sun is not up
+      // there, or when no height would do.
       implied: impliedSunHeightKm(sub, city.lat, city.lon, o.el, flatParams()),
     };
   });
@@ -337,7 +429,7 @@ function compute() {
     // The user's measurement for this moment and place, and every one of theirs
     // (from anywhere) taken within five minutes that has a bearing to draw.
     own: shownMeasurement(obs, air),
-    ownLines: measurements.filter((m) => m.az !== null && sameMoment(m, 300000)),
+    ownLines: measurements.filter((m) => m.az !== null && sameMoment(m, 5 * MINUTE_MS)),
   };
 }
 
@@ -346,7 +438,7 @@ function compute() {
 // The published answer to "is there an eclipse now?" takes a search, so it is kept for the minute it was asked about.
 const eclipseCache = { key: null, kind: 'none' };
 function eclipseNow() {
-  const key = Math.floor(state.date.getTime() / 60000);
+  const key = Math.floor(state.date.getTime() / MINUTE_MS);
   if (eclipseCache.key !== key) Object.assign(eclipseCache, { key, kind: publishedEclipse(state.date) });
   return eclipseCache.kind;
 }
@@ -356,12 +448,17 @@ function eclipseNow() {
 function computeMoon(sub, sunObs, sunGlobe, sunFlat) {
   const { date, lat, lon } = state;
   const air = currentAir();
+  // From the almanac: the place the moon is overhead (with its distance), and where it stands in the observer's sky.
   const point = moonPoint(date);
+  // The flat model's moon is its sun's sum over again, with the moon's own height. It gives off no light of
+  // its own to run out of reach, and is seen by light that curves as much as the sun's does.
   const dome = { sunHeightKm: state.moonHeightKm, lightRangeKm: Infinity, bendPerKm: flatBend() };
   const obs = observedMoon(date, lat, lon, air);
   const globe = globePredictNear(point, lat, lon, air);
   const flat = flatPredict(point, lat, lon, dome, air);
   // Where everything is in space, under each model, for working out what is lit and who sees which face.
+  // On the globe (g) the sun and moon are at their published distances from the Earth's centre. On the
+  // flat model (f) each is over the same place on the map, at the height it is set to. All in km.
   const g = { sun: globePlace(sub.lat, sub.lon, sub.distKm), moon: globePlace(point.lat, point.lon, point.distKm) };
   const f = { sun: flatPlace(sub.lat, sub.lon, state.sunHeightKm), moon: flatPlace(point.lat, point.lon, state.moonHeightKm) };
   const phase = moonPhase(date);
@@ -377,6 +474,10 @@ function computeMoon(sub, sunObs, sunGlobe, sunFlat) {
     globe,
     flat,
     phase,
+    // How much of the moon's face is lit. The almanac's figure, and then each model's own, from one rule
+    // for a ball lit from one side, with only the positions differing:
+    //   lit = (1 + cos(angle)) ÷ 2
+    // where the angle is the one at the moon between the sun and the person looking.
     lit: {
       measured: phase.fraction,
       globe: litFraction(g.sun, g.moon, here.globe),
@@ -388,14 +489,19 @@ function computeMoon(sub, sunObs, sunGlobe, sunFlat) {
       globe: brightSideDeg(globe, sunGlobe),
       flat: brightSideDeg(flat, sunFlat),
     },
+    // An eclipse of the moon. `shadow` is the globe's own sum: whether the moon is inside the Earth's shadow.
+    // `published` is what the almanac says is happening. The flat model has nothing to cast a shadow on its moon.
     shadow: earthShadow(sub, point),
     published: eclipseNow(),
     // An eclipse of the sun: how much of the sun the moon hides from here, and where the middle of its shadow falls.
+    // Each is two discs on the sky, a bearing, a height and a width apiece, and the same sum for how far they overlap.
+    // The flat model's moon hides nothing unless it is the nearer of the two to the observer.
     cover: {
       measured: sunCovered(sunObs, obs),
       globe: sunCovered(sunGlobe, globe),
       flat: sunCovered(sunFlat, flat, flat.slantKm < sunFlat.slantKm),
     },
+    // Where the middle of the moon's shadow meets the ground: on the line from the sun through the moon, as each model has them.
     shade: {
       globe: moonShadowGlobe(sub, point),
       flat: moonShadowFlat(sub, point, flatHeights),
@@ -414,7 +520,9 @@ function computeMoon(sub, sunObs, sunGlobe, sunFlat) {
         obs: o,
         flat: fl,
         miss: skySeparation(o, fl),
+        // The height this city's measurement would put the flat moon at, as for the sun in `compute`.
         implied: impliedSunHeightKm(point, place.lat, place.lon, o.el, { bendPerKm: flatBend() }),
+        // How much of the moon's face each model has lit for someone in this city.
         litGlobe: litFraction(g.sun, g.moon, globePlace(place.lat, place.lon)),
         litFlat: litFraction(f.sun, f.moon, flatPlace(place.lat, place.lon)),
         // How far round the moon this city's view is from the observer's.
@@ -432,16 +540,18 @@ function cityUnderMoon(date) {
   );
 }
 
-const percent = (fraction) => `${Math.round(fraction * 100)}%`;
-
+/** The moon's table: the almanac, then each model, and what each city sees of its face. */
 function renderMoon(c) {
   const m = c.moon;
   $('moon-panel').hidden = !m;
   if (!m) return;
   const up = m.obs.el > 0;
-  const height = (el) => (el > 0 ? deg(el) : `${deg(-el)} below`);
+  const height = heightOrBelow;
+  // "Off by": the angle on the sky between where a model puts the moon and where the almanac does.
   const flatMiss = skySeparation(m.obs, m.flat);
   const globeMiss = skySeparation(m.obs, m.globe);
+  // A share (of the face lit, of the sun hidden) is marked wrong when it is more than 5 points out.
+  // A height or a bearing is marked wrong at more than 1°, and a width at more than 0.03°.
   const off = (a, b) => (Math.abs(a - b) > 0.05 ? 'bad' : '');
   const shadow = (kind) => (kind === 'none' ? 'no' : `yes, ${kind}`);
   // How much of the sun's disc the moon covers, for an eclipse of the sun.
@@ -486,12 +596,15 @@ function renderMoon(c) {
 
 // ---------- stars ----------
 
-const TRAIL_STEPS = 36;
-const TRAIL_STEP_MIN = 10;
-const starDome = () => ({ sunHeightKm: state.starHeightKm, lightRangeKm: Infinity, bendPerKm: flatBend() });
-
 // Every star is treated exactly like the sun: both models are told the point on
 // Earth it is overhead, and each predicts where the observer should see it.
+
+// A star's trail is where it has been over the last six hours, a point every ten minutes.
+const TRAIL_STEPS = 36;
+const TRAIL_STEP_MIN = 10;
+// The flat model's stars are its sun's sum over again, all at one height of their own, seen from any distance.
+const starDome = () => ({ sunHeightKm: state.starHeightKm, lightRangeKm: Infinity, bendPerKm: flatBend() });
+
 // ---------- the background stars ----------
 
 // Every star the eye can see: the Bright Star Catalogue, read from data/ the first time the stars are shown.
@@ -506,7 +619,9 @@ async function readStarField() {
   try {
     const d = await (await fetch('data/bright-stars.json')).json();
     const named = STARS.map((s) => ({ ra: s.ra * 15, dec: s.dec }));
-    // The named stars are drawn already, so they are left out here.
+    // The named stars are drawn already, so they are left out here. One is taken to be the same star when it
+    // is within 0.05° north to south and 0.05° east to west on the sky (the cosine allows for the lines of
+    // right ascension drawing together toward the poles).
     const isNamed = (ra, dec) =>
       named.some((n) => Math.abs(n.dec - dec) < 0.05 && Math.abs(wrap180(n.ra - ra)) * Math.cos((dec * Math.PI) / 180) < 0.05);
     const stars = [];
@@ -585,7 +700,7 @@ function computeStarField(air, dome) {
   }
   const { date, lat, lon } = state;
   // A star's place among the stars drifts too slowly to matter within a day. How far the sky has turned does not.
-  const day = Math.floor(date.getTime() / 86400000);
+  const day = Math.floor(date.getTime() / DAY_MS);
   if (starField.day !== day) {
     starField.ofDate = starPoints(date, starField.stars).map((p) => ({ ra: p.ra, dec: p.dec }));
     starField.day = day;
@@ -596,6 +711,10 @@ function computeStarField(air, dome) {
   const flat = new Array(n);
   for (let i = 0; i < n; i++) {
     const star = starField.ofDate[i];
+    // The place on Earth the star is overhead. Its latitude is the star's declination. Its longitude is
+    // the star's right ascension less how far the sky has turned, both in hours, at 15° to the hour:
+    //   longitude = (right ascension − sidereal time) × 15
+    // Both models are then given that place, as they are for the sun.
     const overhead = { lat: star.dec, lon: wrap180((star.ra - turned) * 15), sizeDeg: 0 };
     globe[i] = globePredict(overhead, lat, lon, air);
     flat[i] = flatPredict(overhead, lat, lon, dome, air);
@@ -603,11 +722,13 @@ function computeStarField(air, dome) {
   return { globe, flat, mags: starField.mags };
 }
 
+/** The named stars and the planets: the almanac's place for each, and each model's, with the chosen one seen from every city. */
 function computeStars() {
   const { date, lat, lon } = state;
   const air = currentAir();
   const dome = starDome();
   // The named stars and then the planets, which are placed in each model's sky in just the same way.
+  // `points` is the place on Earth each one is overhead at this moment, from the almanac.
   const points = starPoints(date, SKY_BODIES);
   const selected = Math.max(0, starIndex(state.star));
   let globeTrails = null;
@@ -619,7 +740,8 @@ function computeStars() {
       const g = [];
       const f = [];
       for (let k = 0; k <= TRAIL_STEPS; k++) {
-        // Earlier on, the star stood over a point further east.
+        // Earlier on, the star stood over a point further east: the place under it moves west by a
+        // quarter of a degree a minute (360.99° in 24 hours), on either model.
         const then = { ...point, lon: point.lon + k * TRAIL_STEP_MIN * SKY_TURN_DEG_PER_MIN };
         g.push(globePredict(then, lat, lon, air));
         f.push(flatPredict(then, lat, lon, dome, air));
@@ -655,8 +777,14 @@ function computeStars() {
   };
 }
 
-// Every star from every reference city at one moment. The sky turns as a whole,
-// so the result barely depends on which moment is used.
+// The stars' score. Every named star from every reference city at one moment, counting only the stars that
+// are above that city's horizon. The sky turns as a whole, so the result barely depends on which moment is used.
+//
+//   typical miss = √(average of miss²)     the miss being the angle between a model's place for a star and the almanac's
+//
+// `globeRms` is the globe's. `curve` is the flat model's at each of 61 heights for its stars from 100 km to
+// 1,000,000 km, and `best` the lowest point on it: the height that suits the flat model best is found for it.
+// As with the sun, the globe's figure is marked against the almanac and is true by construction.
 const starFitCache = { key: null };
 function getStarFit() {
   const key = airKey();
@@ -685,7 +813,18 @@ function getStarFit() {
 
 const presetRoute = (a, b) =>
   ROUTES.find((r) => (r.from === a && r.to === b) || (r.from === b && r.to === a)) ?? null;
+/** The point half way along a path. */
+const midPoint = (path) => path[path.length >> 1];
 
+/**
+ * The route on show: the shortest distance between its two places on each model, and the speed a flight of
+ * known length would need to cover it.
+ *
+ *   speed = distance ÷ scheduled time
+ *
+ * The time is the average of the two directions, so that the wind helping one way and hindering the other
+ * drops out. The times are from published timetables (docs/flight-times.md).
+ */
 function computeRoute() {
   if (!state.route) return null;
   const a = city(state.route.from);
@@ -696,17 +835,34 @@ function computeRoute() {
   return { a, b, preset, ...routeStats(a, b, hours), path: greatCirclePath(a, b, 72) };
 }
 
-// One day of hourly observations from every reference city, cached per date.
+// The sun's score ("How well does each model fit?"). One day of hourly positions from every reference city,
+// kept until the date, the air or the flat model's light changes.
+//
+// A sample is one city at one hour: where the sun is overhead then (`sub`) and where the almanac puts it in
+// that city's sky (`obs`). Each model is asked for its own place for the sun from `sub` and the city alone.
+//
+//   miss         = the angle on the sky between the model's place and the almanac's
+//   typical miss = √(average of miss²)     over the samples with the sun above the horizon
+//
+// Nights are left out of the typical miss. That helps the flat model, whose sun never goes below the
+// horizon with straight light and would be far out all night.
+//
+// `globeRms` is the globe's typical miss. `curve` is the flat model's at each of 91 sun heights from 100 km
+// to 1,000,000 km, and `best` is the lowest point on that curve. So the flat model is scored twice: at the
+// height it is set to, and at the height that suits it best.
+//
+// The globe's figure is close to nothing, and that is true by construction: the almanac it is marked against
+// rests on the same astronomy as the globe. It is not the evidence. What the score tests is the flat model.
 const fitCache = { key: null };
 function getFit() {
   // With curving light the best sun height depends on how far the light is said to reach, so that is part of the key.
-  const key = `${isoDay(state.date)}|${airKey()}|${state.flatLight === 'bent' ? state.lightRangeKm : 'straight'}`;
+  const key = `${isoDay(state.date)}|${airKey()}|${bentLight() ? state.lightRangeKm : 'straight'}`;
   if (fitCache.key !== key) {
     const air = currentAir();
     const day = Date.parse(`${isoDay(state.date)}T00:00:00Z`);
     const samples = [];
     for (let h = 0; h < 24; h++) {
-      const t = new Date(day + h * 3600000);
+      const t = new Date(day + h * HOUR_MS);
       const sub = subsolarPoint(t);
       for (const city of REF_CITIES) {
         samples.push({ lat: city.lat, lon: city.lon, sub, obs: observedSun(t, city.lat, city.lon, air) });
@@ -723,6 +879,10 @@ function getFit() {
 }
 
 // ---------- over the horizon ----------
+//
+// Something of a known height, a known distance away, seen from an eye a known height above the water.
+// The sums are in js/horizon.js (one figure k for how much the air bends light) and js/raytrace.js (light
+// followed through layers of air). The same air is given to both models.
 
 // Tracing is the slow part, so the last result is kept until something it depends on changes.
 const traceCache = { key: '', value: null };
@@ -739,6 +899,7 @@ function tracedViews() {
     });
     const sizes = { eyeM, targetM, distanceKm: targetKm };
     traceCache.key = key;
+    // The same air and the same sizes for both. The only difference is whether the water curves.
     traceCache.value = {
       globe: traceView(air, { ...sizes, curved: true }),
       flat: traceView(air, { ...sizes, curved: false }),
@@ -747,6 +908,7 @@ function tracedViews() {
   return traceCache.value;
 }
 
+/** Everything the horizon tool shows, for the sizes and the air that are set. */
 function computeHorizon() {
   const { eyeM, targetM, targetKm, k } = state;
   const scene = {
@@ -772,14 +934,22 @@ function computeHorizon() {
       visibleM: targetM - traced.globe.hiddenM,
       flatHiddenM: traced.flat.hiddenM,
       horizonKm: traced.globe.horizonKm ?? Infinity,
-      dipDeg: ((traced.globe.dipRad ?? 0) * 180) / Math.PI,
+      dipDeg: toDegrees(traced.globe.dipRad ?? 0),
       goneKm: null,
     });
   }
   return scene;
 }
 
-/** How far the target is sent before it stops: a little past the point where the globe hides all of it. */
+/**
+ * How far the target is sent before it stops: a little past the point where the globe hides all of it.
+ * That point is the eye's distance to its horizon and the distance from there at which the top of the target
+ * meets the same horizon, added together:
+ *
+ *   gone = √(2 × R′ × eye height) + √(2 × R′ × target height)
+ *
+ * with R′ the Earth's radius as the bending of light makes it seem (js/horizon.js).
+ */
 function sailLimitKm() {
   const gone = horizonDistanceKm(state.eyeM, state.k) + horizonDistanceKm(state.targetM, state.k);
   return Number.isFinite(gone) ? Math.min(HZ_LIMITS.targetKm[1], gone * 1.06) : HZ_LIMITS.targetKm[1];
@@ -791,8 +961,10 @@ function nearKm() {
   return clamp(Number.isFinite(horizon) ? horizon * 0.5 : 2, HZ_LIMITS.targetKm[0], 5);
 }
 
+// A change of temperature with height is kept in °C per metre and shown per 100 m.
 const perHundred = (lapse) => `${Math.abs(lapse * 100).toFixed(Math.abs(lapse * 100) < 10 ? 2 : 1)} °C`;
 
+/** What a bending figure k means as weather: the air that would give it, and how usual that air is. */
 function airInWords(k) {
   if (k <= 0) return 'No bending: light travels in straight lines.';
   const lapse = lapseForCoefficient(k);
@@ -803,6 +975,12 @@ function airInWords(k) {
   return `${air} ${Math.abs(k - K_STANDARD) < 0.006 ? 'This is the standard atmosphere.' : 'Close to the standard atmosphere.'}`;
 }
 
+/**
+ * The horizon tool's tables. There is no "Measured" column here: the two columns are what each model says
+ * should be seen, for the user to put beside what they see. With one bending for the whole path the flat
+ * model hides nothing, has no horizon and no dip. With layers of air its figures come from the same tracing
+ * as the globe's.
+ */
 function renderHorizon(hz) {
   const layered = !!hz.traced;
   const some = hz.hiddenM > 0;
@@ -811,7 +989,7 @@ function renderHorizon(hz) {
   const flatSome = hz.flatHiddenM > 0;
   const amount = (m) => (m > 0 ? fmtH(m) : 'none');
   const flatHorizon = layered && hz.traced.flat.horizonKm !== null ? fmtD(hz.traced.flat.horizonKm) : 'no limit';
-  const flatDip = layered ? ((hz.traced.flat.dipRad ?? 0) * 180) / Math.PI : 0;
+  const flatDip = layered ? toDegrees(hz.traced.flat.dipRad ?? 0) : 0;
   $('hz-table').tBodies[0].innerHTML = `
     <tr><td>Hidden from the bottom up${infoButton('hz.hidden', 'how much is hidden')}</td><td class="${some ? 'bad' : ''}">${amount(hz.hiddenM)}</td>
       <td class="${flatSome ? 'bad' : ''}">${amount(hz.flatHiddenM)}</td></tr>
@@ -884,6 +1062,19 @@ function renderHorizon(hz) {
 
 const seconds = (s) => (s < 90 ? `${s.toFixed(s < 20 ? 1 : 0)} s` : `${Math.floor(s / 60)} min ${Math.round(s % 60)} s`);
 
+/**
+ * Two sunsets: watch the sun set lying down, stand up at once, and watch it set again. On the globe the
+ * horizon is lower for the higher eye, by
+ *
+ *   dip = √(2 × eye height ÷ R′)
+ *
+ * so the sun has that much further to sink, at
+ *
+ *   15° an hour × √(cos² φ − sin² δ)     φ the observer's latitude, δ the latitude the sun is overhead
+ *
+ * On a flat surface the horizon is at eye level from any height, and there is no second sunset. A timing of
+ * the user's own, turned round, gives the size of the Earth. The sums are in js/horizon.js.
+ */
 function renderSunsets(hz) {
   const { sunsetLowM: low, sunsetHighM: high, lat } = state;
   const sunLat = subsolarPoint(state.date).lat;
@@ -906,6 +1097,13 @@ function renderSunsets(hz) {
 }
 
 // ---------- level flight ----------
+
+// An aircraft holding its height at a steady speed. On the globe it follows the ground round, so its nose
+// comes down at the rate it goes round:
+//
+//   speed ÷ (R + height)     in radians an hour, with the speed in km/h and the lengths in km
+//
+// On the flat model it does not turn at all. The sums are in js/flight.js.
 
 // How far round its speeded-up lap the aircraft is, 0 to 1.
 let flightPhase = 0;
@@ -946,26 +1144,14 @@ function renderFlight(fl) {
 
 // ---------- the user's own horizon observations ----------
 
+// What the user saw of something over water: how much of it was hidden, with the sizes it was seen at.
+// js/observations.js works out what air each model would need for that, and main.js puts it into words.
 const OBS_KEY = 'globedart.horizon';
 let observations = [];
 
-function loadStoredObservations() {
-  try {
-    const stored = JSON.parse(localStorage.getItem(OBS_KEY) ?? '[]');
-    return Array.isArray(stored) ? stored : [];
-  } catch {
-    return [];
-  }
-}
+const saveObservations = () => remember(OBS_KEY, observations);
 
-function saveObservations() {
-  try {
-    localStorage.setItem(OBS_KEY, JSON.stringify(observations));
-  } catch {
-    // Storage can be unavailable. The link still carries them.
-  }
-}
-
+// Two sizes count as the same when they are within half a percent.
 const sameSize = (a, b) => Math.abs(a - b) <= 0.005 * Math.max(a, b);
 /** True when the drawings show the sizes this observation was made with. */
 function obShown(o) {
@@ -977,7 +1163,11 @@ const gradient = (lapse) =>
     ? 'no colder or warmer for every 100 m of height'
     : `${perHundred(lapse)} ${lapse < 0 ? 'colder' : 'warmer'} for every 100 m of height`;
 
-/** What each model makes of one observation, in words. */
+/**
+ * What each model makes of one observation, in words. `s` is its score from js/observations.js: the bending
+ * k and the change of temperature with height that the globe would need for what was seen, what kind of air
+ * that is, and whether the flat model, which hides nothing, fits it.
+ */
 function observationWords(o, s) {
   const checkSizes = ' Otherwise, check the distance and the heights.';
   const w = s.waterMinusAir;
@@ -1117,6 +1307,9 @@ function currentKml() {
 /** The sight line belongs to the scene only while the distance on show is still the distance between its two ends. */
 const sightShown = () => !!state.sight && sameSize(globeDistanceKm(state.sight.from, state.sight.to), state.targetKm);
 
+/** One end of a line of sight: a name and a place, and nothing else that came with it. */
+const sightEnd = ({ name, lat, lon }) => ({ name, lat, lon });
+
 /** Puts the horizon tool's line of sight between two places, if they are a distance apart that the tool can show. */
 function setSight(from, to, waterM = 0) {
   const d = globeDistanceKm(from, to);
@@ -1125,7 +1318,7 @@ function setSight(from, to, waterM = 0) {
     toast(`Those places are ${fmtD(d)} apart. This tool shows from ${fmtD(least)} to ${fmtD(most)}.`);
     return false;
   }
-  state.sight = { from: { name: from.name, lat: from.lat, lon: from.lon }, to: { name: to.name, lat: to.lat, lon: to.lon }, waterM };
+  state.sight = { from: sightEnd(from), to: sightEnd(to), waterM };
   Object.assign(state, { targetKm: d, sailing: false });
   return true;
 }
@@ -1137,6 +1330,8 @@ function sightKml() {
   const d = state.targetKm;
   const sizes = { eyeM: state.eyeM, targetM: state.targetM, distanceKm: d };
   const track = greatCirclePath(from, to, steps);
+  // The line's height above the sea at each point along the way, as the globe has it: the height of the
+  // water there, and how far above the water the line of sight is (below zero where the sea is in the way).
   const line = (k) => track.map((p, i) => ({ ...p, altM: waterM + sightLineHeightM((d * i) / steps, sizes, k) }));
   const hidden = (k) => {
     const m = hiddenHeightM(state.eyeM, d, k);
@@ -1285,6 +1480,7 @@ function bindEarthControls() {
   });
 }
 
+/** The list of well-known long views (js/presets.js): picking one sets its sizes and its line on the map. */
 function bindViewControls() {
   $('hz-view-row').hidden = VIEWS.length === 0;
   $('hz-view').innerHTML = '<option value="">Choose one</option>' + VIEWS.map((v) => `<option value="${v.id}">${esc(v.name)}</option>`).join('');
@@ -1301,11 +1497,7 @@ function bindViewControls() {
       layers: false,
       sailing: false,
     });
-    state.sight = {
-      from: { name: view.from.name, lat: view.from.lat, lon: view.from.lon },
-      to: { name: view.to.name, lat: view.to.lat, lon: view.to.lon },
-      waterM: view.waterM,
-    };
+    state.sight = { from: sightEnd(view.from), to: sightEnd(view.to), waterM: view.waterM };
     if (state.demo && DEMOS[state.demo].tool === 'horizon') state.demo = null;
     requestUpdate();
   });
@@ -1318,16 +1510,15 @@ function bindSunsetControls() {
     if (e.target.value) Object.assign(state, { sunsetLowM: low, sunsetHighM: high, sunsetSeconds: null });
     requestUpdate();
   });
-  const feet = () => (imperial() ? FT : 1);
   // The two heights must stay in order, the lower one below the higher.
   $('ss-low').addEventListener('change', (e) => {
-    const v = Number(e.target.value) * feet();
+    const v = Number(e.target.value) * heightUnit();
     if (e.target.value.trim() !== '' && v >= 0) Object.assign(state, { sunsetLowM: clamp(v, 0, state.sunsetHighM * 0.99), sunsetSeconds: null });
     e.target.value = tidy(heightNumber(state.sunsetLowM));
     requestUpdate();
   });
   $('ss-high').addEventListener('change', (e) => {
-    const v = Number(e.target.value) * feet();
+    const v = Number(e.target.value) * heightUnit();
     if (e.target.value.trim() !== '' && v > 0) Object.assign(state, { sunsetHighM: clamp(v, state.sunsetLowM * 1.01 + 0.01, HZ_LIMITS.eyeM[1]), sunsetSeconds: null });
     e.target.value = tidy(heightNumber(state.sunsetHighM));
     requestUpdate();
@@ -1377,7 +1568,7 @@ function bindObservationForm() {
     const kind = $('ob-kind').value;
     let hiddenM = kind === 'all' ? 0 : state.targetM;
     if (kind === 'hidden' || kind === 'visible') {
-      const amount = Number($('ob-amount').value) * (imperial() ? FT : 1);
+      const amount = Number($('ob-amount').value) * heightUnit();
       if (!filled('ob-amount') || !Number.isFinite(amount) || amount <= 0 || amount > state.targetM * 1.001) {
         return toast(`Enter an amount between 0 and ${fmtH(state.targetM)}`);
       }
@@ -1430,16 +1621,18 @@ const SUN_DEMO = { follow: true, sightLines: false, flatLighting: 'model', stars
 const STAR_DEMO = { follow: true, sightLines: true, flatLighting: 'model', stars: true, trails: true, moon: false };
 const MOON_DEMO = { follow: true, sightLines: false, flatLighting: 'model', stars: false, trails: false, moon: true };
 
-/** The middle of the night at the observer, so the real sky is dark. */
+/** The middle of the night at the observer, so the real sky is dark: twelve hours on from the sun's highest. */
 function goToMidnight() {
   const noon = sunEvents(state.date, state.lat, state.lon).noon ?? state.date;
-  state.date = new Date(noon.getTime() + 12 * 3600000);
+  state.date = new Date(noon.getTime() + 12 * HOUR_MS);
 }
 
 const MOON_OFF = '<p>Turn on "Show the moon" in the panel on the left to carry on with this demonstration.</p>';
 const STARS_OFF = '<p>Turn on "Show the stars" in the panel on the left to carry on with this demonstration.</p>';
 
-// The arguments themselves live in js/arguments/, one file each. This is what they are handed.
+// The arguments themselves live in js/arguments/, one file each. This is what they are handed: the state,
+// ways to set the scene, and ways to write numbers. Each is also handed the result of `compute` (or of the
+// horizon or flight tool), so what its text quotes is the same figure the tables show.
 const DEMOS = ARGUMENT_BY_ID;
 const app = {
   state,
@@ -1677,6 +1870,10 @@ function bindFolds() {
 }
 
 // ---------- the guided tour ----------
+//
+// A tour is a list of demonstrations taken in order. Each step opens on a question and waits; "Show what
+// each model says" then sets the scene and gives the answer. The tours are listed in js/arguments/index.js, and one more can
+// be put together by the user.
 
 const TOUR_END = {
   title: 'What to go and check',
@@ -1868,14 +2065,19 @@ function renderDemoControls(argument, own) {
   }
 }
 
-// ---------- views ----------
+// ---------- views and the update ----------
+//
+// Nothing is redrawn when a setting changes. The change is noted with `requestUpdate`, and the loop in
+// `start` calls `update` once before the next frame is drawn. `update` works everything out afresh from
+// the state, hands the result to the views and writes the tables.
 
+// The four views of the sky tool: each model from outside, and each model's sky as the observer has it.
 let globeView;
 let flatView;
 let globeSky;
 let flatSky;
-let hzViews = [];
-let flViews = [];
+let hzViews = []; // the horizon tool's four
+let flViews = []; // the flight tool's four
 let needsUpdate = true;
 let hashTimer = null;
 
@@ -1910,11 +2112,17 @@ function setLook(look) {
 // to stand on, and more of it when what is followed is low.
 const groundInView = (top) => 14 + 6 * (1 - clamp(top / 30, 0, 1));
 
+/**
+ * Where the two skies look when they follow something: the sun, or the chosen star when the stars are on, or
+ * the moon when it is. Both skies are turned the same way, so that they can be compared side by side. This
+ * only aims the camera. It changes no figure.
+ */
 function followLook(c) {
-  // Keep the sun in view, or the chosen star when the stars are on, or the moon when it is.
   const s = c.stars;
   const obs = c.moon ? c.moon.obs : s ? s.measured[s.selected] : c.obs;
   const flat = c.moon ? c.moon.flat : s ? s.flat[s.selected] : c.flat;
+  // Where it is measured and where the flat model puts it are both kept in view while they are within 115°
+  // of each other round the horizon: the view looks half way between. Further apart, it looks at the measured one.
   const diff = wrap180(flat.az - obs.az);
   const together = Math.abs(diff) < 115;
   const az = together ? obs.az + diff / 2 : obs.az;
@@ -1928,6 +2136,17 @@ function followLook(c) {
   return { az, pitch: clamp(Math.max(fov / 2 - ground, top + 2 + (covered - 0.5) * fov), -10, 82), fov };
 }
 
+/** What every tool does last: the explanation, the workings behind the "i" buttons, the settings, and the link. */
+function finishUpdate(data) {
+  renderDemo(data);
+  showWorkings(data);
+  syncInputs();
+  // The link is rewritten a moment after things stop changing, not on every frame of a drag.
+  clearTimeout(hashTimer);
+  hashTimer = setTimeout(writeHash, 300);
+}
+
+/** One pass from the state to the screen, for whichever tool is on show. */
 function update() {
   $('views').dataset.mode = state.mode;
   document.body.dataset.mode = state.mode;
@@ -1935,11 +2154,7 @@ function update() {
     const fl = computeFlight();
     for (const v of flViews) v.update(fl);
     renderFlight(fl);
-    renderDemo(fl);
-    showWorkings(fl);
-    syncInputs();
-    clearTimeout(hashTimer);
-    hashTimer = setTimeout(writeHash, 300);
+    finishUpdate(fl);
     return;
   }
   if (state.mode === 'horizon') {
@@ -1948,13 +2163,10 @@ function update() {
     renderHorizon(hz);
     renderObservations();
     renderSunsets(hz);
-    renderDemo(hz);
-    showWorkings(hz);
-    syncInputs();
-    clearTimeout(hashTimer);
-    hashTimer = setTimeout(writeHash, 300);
+    finishUpdate(hz);
     return;
   }
+  // The sky tool. `c` holds the almanac's figures and both models' for this moment; all that follows shows them.
   const c = compute();
   globeView.update(state, c);
   flatView.update(state, c);
@@ -1965,17 +2177,17 @@ function update() {
   globeSky.setPlace(scenery);
   flatSky.setPlace(scenery);
 
-  const up = c.obs.el > -0.9;
+  // The lines of words in the corner of each sky: what that model says, in its own figures.
   const flatMiss = skySeparation(c.obs, c.flat);
-  let globeText = up
-    ? `Sun ${deg(c.globe.el)} above the horizon, bearing ${bearing(c.globe.az)}\nWidth ${deg(c.globe.sizeDeg, 2)}`
+  let globeText = sunUp(c.globe)
+    ? `Sun ${sunHeightText(c.globe.el)}, bearing ${bearing(c.globe.az)}\nWidth ${deg(c.globe.sizeDeg, 2)}`
     : `Sun is ${deg(-c.globe.el)} below the horizon\nIt has set: the ground is in the way`;
   // With straight light the flat sun is always above the horizon. With bending light it can set.
-  const flatSet = c.flat.el < -0.833;
+  const flatSet = !sunUp(c.flat);
   let flatText =
     (flatSet
       ? `Sun is ${deg(-c.flat.el)} below the horizon, bearing ${bearing(c.flat.az)}\n`
-      : `Sun ${deg(c.flat.el)} above the horizon, bearing ${bearing(c.flat.az)}\n`) +
+      : `Sun ${sunHeightText(c.flat.el)}, bearing ${bearing(c.flat.az)}\n`) +
     `Width ${deg(c.flat.sizeDeg, 2)}, and ${deg(flatMiss)} from where it is measured` +
     (flatSet ? '\nIt has set: its light curves away overhead' : c.flat.lit ? '' : '\nOut of its light: by this model it is dark here, with the sun still up');
   const s = c.stars;
@@ -2026,8 +2238,9 @@ function update() {
   for (const el of document.querySelectorAll('.sight-name')) el.textContent = c.sight.name;
 
   renderCompare(c, flatMiss);
+  const routeMiddle = c.route && midPoint(c.route.path);
   $('earth-link').href = c.route
-    ? earthUrl(c.route.path[c.route.path.length >> 1].lat, c.route.path[c.route.path.length >> 1].lon, c.route.globeKm * 1.6)
+    ? earthUrl(routeMiddle.lat, routeMiddle.lon, c.route.globeKm * 1.6)
     : earthUrl(state.lat, state.lon, 1500);
   $('earth-link').textContent = c.route ? 'Open this route in Google Earth' : 'Open this place in Google Earth';
   renderOwn();
@@ -2036,17 +2249,25 @@ function update() {
   renderStars(c);
   renderMoon(c);
   renderRoutes(c);
-  renderDemo(c);
-  showWorkings(c);
-  syncInputs();
-  clearTimeout(hashTimer);
-  hashTimer = setTimeout(writeHash, 300);
+  finishUpdate(c);
 }
 
 // ---------- result panels ----------
+//
+// The tables. In each, the first column of figures is the almanac's ("Measured"), the second the globe
+// model's and the third the flat model's. A model's figure is coloured as wrong when it is further from the
+// almanac's than the table's allowance: 1° for a height, a bearing or a miss at the observer, 0.03° for a
+// width, 2° in the tables of cities.
 
-// The lift the air really gives at this height, and the lift each model would
-// need for its plain geometry to land on the measurement.
+/**
+ * The row about the air. The lift the air really gives at this height (worked out once, in
+ * js/refraction.js, and added to the almanac and to both models alike), and the lift each model would need
+ * for its plain geometry to land on the measurement:
+ *
+ *   needs = measured height − the model's height by geometry alone
+ *
+ * A model fits when what it needs is within 0.1° of what the air gives.
+ */
 function bendingRow(obs, globe, flat, extra = '') {
   // Which way the air would have to move it is always said: up is a lift, down is the opposite.
   const show = (x, d) => (Math.abs(x) < 0.005 ? 'none' : `${deg(Math.abs(x), d)} ${x < 0 ? 'down' : 'up'}`);
@@ -2063,10 +2284,19 @@ function bendingRow(obs, globe, flat, extra = '') {
     <td class="${fits(flatNeed)}">${need(flatNeed, 1)}</td></tr>`;
 }
 
+/**
+ * The main table: the sun at the observer. `c.obs` is the almanac's, `c.globe` and `c.flat` each model's own.
+ * "Off by" is the angle on the sky between a model's sun and the almanac's:
+ *
+ *   acos(sin e₁ sin e₂ + cos e₁ cos e₂ cos(bearing₁ − bearing₂))     e the two heights
+ *
+ * The globe's column agrees with the almanac's because the almanac rests on the same astronomy. That is
+ * true by construction and is not the evidence. The column to read is the flat model's.
+ */
 function renderCompare(c, flatMiss) {
   const globeMiss = skySeparation(c.obs, c.globe);
   const cls = (miss) => (miss > 1 ? 'bad' : 'good');
-  const up = c.obs.el > -0.833;
+  const up = sunUp(c.obs);
   $('compare').tBodies[0].innerHTML = `
     <tr><td>Elevation${infoButton('sky.elevation', 'elevation')}</td><td>${deg(c.obs.el)}</td><td>${deg(c.globe.el)}</td>
       <td class="${Math.abs(c.flat.el - c.obs.el) > 1 ? 'bad' : ''}">${deg(c.flat.el)}</td></tr>
@@ -2074,15 +2304,20 @@ function renderCompare(c, flatMiss) {
       <td class="${Math.abs(wrap180(c.flat.az - c.obs.az)) > 1 ? 'bad' : ''}">${bearing(c.flat.az)}</td></tr>
     <tr><td>Sun's width${infoButton('sky.width', 'width of the sun')}</td><td>${deg(c.obs.sizeDeg, 2)}</td><td>${deg(c.globe.sizeDeg, 2)}</td>
       <td class="${Math.abs(c.flat.sizeDeg - c.obs.sizeDeg) > 0.03 ? 'bad' : ''}">${deg(c.flat.sizeDeg, 2)}</td></tr>
-    <tr class="brk"><td>Sun visible?</td><td>${up ? 'yes' : 'no, set'}</td><td>${c.globe.el > -0.833 ? 'yes' : 'no, set'}</td>
-      <td class="${up === (c.flat.el > -0.833 && c.flat.lit) ? '' : 'bad'}">${
-        c.flat.el <= -0.833 ? 'no, set' : c.flat.lit ? 'yes' : `no: out of its light, ${deg(c.flat.el, 0)} up`
+    <tr class="brk"><td>Sun visible?</td><td>${up ? 'yes' : 'no, set'}</td><td>${sunUp(c.globe) ? 'yes' : 'no, set'}</td>
+      <td class="${up === (sunUp(c.flat) && c.flat.lit) ? '' : 'bad'}">${
+        !sunUp(c.flat) ? 'no, set' : c.flat.lit ? 'yes' : `no: out of its light, ${deg(c.flat.el, 0)} up`
       }</td></tr>
     <tr><td>Off by${infoButton('sky.miss', 'how far off each model is')}</td><td class="dim">n/a</td><td class="${cls(globeMiss)}">${deg(globeMiss, 2)}</td>
       <td class="${cls(flatMiss)}">${deg(flatMiss, 1)}</td></tr>
     ${bendingRow(c.obs, c.globe, c.flat, infoButton('sky.lift', 'lift from the air'))}`;
 }
 
+// The user's own measurements, each put against both models. Here the "You" column is a real reading and
+// not the almanac, so this is the panel where the globe can be wrong: both models are marked the same way,
+// by how far their place for the sun or star is from the one the user measured. The flat model is given
+// every chance: the height that fits the user's readings best is found for it (js/measurements.js).
+//
 // Rebuilt only when its content changes, so the buttons in it stay clickable during playback.
 let ownHtml = null;
 function renderOwn() {
@@ -2169,6 +2404,7 @@ function renderOwn() {
   $('own-summary').innerHTML = summary;
 }
 
+/** One bar of a score: a typical miss in degrees, drawn against a full width of `max` degrees. */
 function bar(label, value, color, max = 60) {
   const pct = value === null ? 0 : clamp((value / max) * 100, 0, 100);
   const text = value === null ? 'n/a' : deg(value, value < 1 ? 2 : 1);
@@ -2177,19 +2413,38 @@ function bar(label, value, color, max = 60) {
     <span class="bar-value">${text}</span></div>`;
 }
 
+/**
+ * The score panel. Three bars, each a typical miss over the samples described at `getFit`:
+ *
+ *   Globe          the globe model
+ *   Flat, as set   the flat model with its sun at the height that is set
+ *   Flat, best     the flat model with its sun at whichever height misses least
+ *
+ * and under them a count of day and night. For every city-hour of the day, nights included, the almanac
+ * says whether the sun is up, and each model is asked the same thing:
+ *
+ *   globe   the sun is up when its height is above the line for sunrise and sunset
+ *   flat    the same, and the city must also be within reach of its sun's light
+ *
+ * A model is right for a city-hour when its answer is the almanac's.
+ *
+ * The globe's two figures are true by construction: what counts as right, and which hours are night, come
+ * from the almanac, which rests on the same astronomy as the globe. They are not the evidence. What this
+ * panel tests is whether any height at all lets the flat model match.
+ */
 function renderFit() {
   const fit = getFit();
   const air = currentAir();
+  // The flat model's typical miss with its sun where it is set now.
   const current = rmsMiss(fit.samples, (s, lat, lon) => flatPredict(s, lat, lon, flatParams(), air));
   $('fit-scope').textContent = `Typical miss: ${REF_CITIES.length} cities, every hour of ${isoDay(state.date)}, daytime only. Leaving the nights out helps the flat model.`;
   // Day or night: each model is also asked, for every one of those hours, whether the sun can be seen at all.
-  const seen = (el) => el > -0.833;
   const tally = { all: fit.samples.length, globe: 0, flat: 0 };
   for (const s of fit.samples) {
-    const real = seen(s.obs.el);
+    const real = sunUp(s.obs);
     const f = flatPredict(s.sub, s.lat, s.lon, flatParams(), air);
-    if (seen(globePredict(s.sub, s.lat, s.lon, air).el) === real) tally.globe++;
-    if ((seen(f.el) && f.lit) === real) tally.flat++;
+    if (sunUp(globePredict(s.sub, s.lat, s.lon, air)) === real) tally.globe++;
+    if ((sunUp(f) && f.lit) === real) tally.flat++;
   }
   $('fit-bars').innerHTML =
     bar('Globe', fit.globeRms, 'var(--globe)') +
@@ -2198,15 +2453,20 @@ function renderFit() {
   $('fit-note').textContent =
     (fit.best
       ? `No sun height gets the flat model closer than ${deg(fit.best.rms)} ` +
-        `(at ${km(fit.best.heightKm)}${state.flatLight === 'bent' ? ', with its light curving as set' : ''}). For scale, the sun itself is about 0.5° wide. `
+        `(at ${km(fit.best.heightKm)}${bentLight() ? ', with its light curving as set' : ''}). For scale, the sun itself is about 0.5° wide. `
       : '') +
     `Day or night: of the ${tally.all} city-hours, the globe has the sun up or down rightly in ${tally.globe}. ` +
-    `The flat model, going by ${state.flatLight === 'bent' ? 'where its curving light lets the sun set' : 'how far its light reaches'}, is right in ${tally.flat}. ` +
+    `The flat model, going by ${bentLight() ? 'where its curving light lets the sun set' : 'how far its light reaches'}, is right in ${tally.flat}. ` +
     // The globe is being marked against the almanac here, as it is in the table at the observer.
     `The globe's two figures are true by construction: what counts as right, and which hours are night, come from the almanac, which rests on the same astronomy as the globe. They are not the evidence. What this panel tests is the flat model.`;
   drawFitChart(fit, current);
 }
 
+/**
+ * The chart under the bars: the typical miss (up the side, in degrees) against the height of the flat
+ * model's sun (along the bottom, in km, each mark ten times the one before). The amber curve is the flat
+ * model at every height tried, the dot is the height that is set, and the blue line is the globe.
+ */
 function drawFitChart(fit, current) {
   const canvas = $('fit-chart');
   const dpr = window.devicePixelRatio || 1;
@@ -2286,6 +2546,12 @@ function drawFitChart(fit, current) {
 // sun from beyond the distance its light is said to reach, and then no height at all would do.
 const impliedText = (heightKm) => (heightKm === null ? 'none works' : km(heightKm));
 
+/**
+ * The same moment from every reference city: the sun's height as measured there, the height the flat model
+ * gives it, and the height the flat sun would have to be at for that city's measurement to come out right
+ * (H = d × tan(height), see `compute`). One sun can only be at one height, so the last column is the test:
+ * on a flat earth every row of it would read the same.
+ */
 function renderCities(c) {
   const rows = c.cities.map((x) => {
     const day = x.obs.el > 0;
@@ -2297,18 +2563,19 @@ function renderCities(c) {
   $('city-table').tBodies[0].innerHTML = rows.join('');
 }
 
+/** The chosen star's tables: the same three columns as for the sun, its score, and the same star from every city. */
 function renderStars(c) {
   const s = c.stars;
   $('stars-panel').hidden = !s;
   if (!s) return;
   const i = s.selected;
-  const obs = s.measured[i];
+  const obs = s.measured[i]; // the almanac's
   const g = s.globe[i];
   const f = s.flat[i];
   const miss = skySeparation(obs, f);
   const globeMiss = skySeparation(obs, g);
   const up = obs.el > 0;
-  const height = (el) => (el > 0 ? deg(el) : `${deg(-el)} below`);
+  const height = heightOrBelow;
   $('star-name').textContent = s.name;
   $('star-compare').tBodies[0].innerHTML = `
     <tr><td>Elevation</td><td>${height(obs.el)}</td><td>${height(g.el)}</td>
@@ -2321,6 +2588,7 @@ function renderStars(c) {
       <td class="${miss > 1 ? 'bad' : 'good'}">${deg(miss, 1)}</td></tr>
     ${bendingRow(obs, g, f)}`;
 
+  // The stars' score (see `getStarFit`), with the flat model's stars at the height that is set.
   const fit = getStarFit();
   const air = currentAir();
   const current = rmsMiss(fit.samples, (pt, lat, lon) => flatPredict(pt, lat, lon, starDome(), air));
@@ -2343,6 +2611,11 @@ function renderStars(c) {
     .join('');
 }
 
+// The table of routes. Nothing here comes from the almanac. Each model gives a distance between two cities:
+// the globe the shortest way over a sphere, the flat map a straight line across it. A scheduled flight
+// gives a time. Distance ÷ time is the speed the aircraft would have to fly, and a speed above that of sound
+// is marked, because airliners do not fly that fast.
+//
 // Rebuilt only when its content changes, so its buttons stay clickable during playback.
 let routeHtml = null;
 function renderRoutes(c) {
@@ -2375,8 +2648,8 @@ function renderRoutes(c) {
     const active = r?.preset === route;
     return `<tr class="${active ? 'active' : ''}">
       <td><button data-route="${i}" title="Draw this route on both maps">${route.from} – ${route.to}</button></td>
-      <td title="${esc(route.flights)}: ${hoursMinutes(route.there)} out, ${hoursMinutes(route.back)} back">${st.hours.toFixed(1)} h</td><td>${Math.round(st.globeKmh).toLocaleString('en-US')}</td>
-      <td class="${st.flatKmh > SOUND_KMH ? 'bad' : ''}">${Math.round(st.flatKmh).toLocaleString('en-US')}</td></tr>`;
+      <td title="${esc(route.flights)}: ${hoursMinutes(route.there)} out, ${hoursMinutes(route.back)} back">${st.hours.toFixed(1)} h</td><td>${whole(st.globeKmh)}</td>
+      <td class="${st.flatKmh > SOUND_KMH ? 'bad' : ''}">${whole(st.flatKmh)}</td></tr>`;
   }).join('');
   const html = `${detail}\u0000${rows}`;
   if (html === routeHtml) return;
@@ -2389,7 +2662,7 @@ function renderRoutes(c) {
 function focusRoute() {
   const r = computeRoute();
   if (!r || !globeView) return;
-  const mid = r.path[r.path.length >> 1];
+  const mid = midPoint(r.path);
   globeView.focus(mid.lat, mid.lon);
   flatView.focus(mid.lat, mid.lon);
 }
@@ -2434,6 +2707,10 @@ function setMode(mode) {
   requestUpdate();
 }
 
+/**
+ * The card with the explanation: a demonstration's text, a tour's question, the list for choosing a tour, or
+ * the introduction to the tool on show. Also keeps the two rows of the menu at the top in step with it.
+ */
 function renderDemo(c) {
   const tour = state.tour;
   // If the scene has been changed away from the step on show, the step goes back to its question.
@@ -2502,7 +2779,13 @@ function renderDemo(c) {
 }
 
 // ---------- controls ----------
+//
+// `syncInputs` makes every control show what the state holds. The `bind…` functions go the other way: each
+// control changes the state and asks for an update. Nothing is worked out here.
 
+// The sliders for the flat model's heights run from 0 to 1000 and cover 100 km to 1,000,000 km in equal
+// ratios, so that each quarter of the slider is ten times the height:
+//   height = 100 km × 10,000^(slider ÷ 1000)
 const heightToSlider = (h) => (1000 * Math.log10(h / MIN_HEIGHT_KM)) / Math.log10(MAX_HEIGHT_KM / MIN_HEIGHT_KM);
 const sliderToHeight = (v) => MIN_HEIGHT_KM * Math.pow(MAX_HEIGHT_KM / MIN_HEIGHT_KM, v / 1000);
 
@@ -2514,13 +2797,14 @@ const LAYER_INPUTS = [
   ['hz-layer', 'layerM', (v) => fmtH(v)],
   ['hz-lapse', 'lapse100', (v) => (v === 0 ? 'the same' : `${Math.abs(v).toFixed(2)} °C ${v < 0 ? 'colder' : 'warmer'}`)],
 ];
+// The same kind of slider for any range: equal steps along it multiply the value by equal amounts.
 const toLogSlider = (value, [min, max]) => (1000 * Math.log(value / min)) / Math.log(max / min);
 const fromLogSlider = (v, [min, max]) => min * Math.pow(max / min, v / 1000);
 // The three sizes in the horizon tool, each with a slider and a box to type in.
 const HZ_QUANTITIES = [
-  { key: 'targetM', slider: 'hz-target', number: 'hz-target-n', show: heightNumber, unit: () => (imperial() ? FT : 1) },
-  { key: 'targetKm', slider: 'hz-distance', number: 'hz-distance-n', show: distanceNumber, unit: () => (imperial() ? MI : 1) },
-  { key: 'eyeM', slider: 'hz-eye', number: 'hz-eye-n', show: heightNumber, unit: () => (imperial() ? FT : 1) },
+  { key: 'targetM', slider: 'hz-target', number: 'hz-target-n', show: heightNumber, unit: heightUnit },
+  { key: 'targetKm', slider: 'hz-distance', number: 'hz-distance-n', show: distanceNumber, unit: distanceUnit },
+  { key: 'eyeM', slider: 'hz-eye', number: 'hz-eye-n', show: heightNumber, unit: heightUnit },
 ];
 
 function setIfIdle(input, value) {
@@ -2538,16 +2822,20 @@ function fromInputTime(value) {
   return new Date(value.length === 16 ? `${value}:00Z` : `${value}Z`);
 }
 
+/** Makes every control show what the state holds. A box that is being typed in is left alone. */
 function syncInputs() {
   syncSides();
   setIfIdle($('m-time'), toInputTime(state.date));
   $('m-where').textContent =
     `It will be recorded at the observer's place, ${where(state.lat, state.lon)}. ` +
     'Move the observer first if you measured somewhere else.';
+  // The time controls above the views: the date, the time of day in universal time, and the time by the sun.
   setIfIdle($('date'), isoDay(state.date));
   const minutes = utcMinutes(state.date);
   $('time').value = Math.floor(minutes);
   $('time-label').textContent = `${hhmm(Math.floor(minutes))} UTC`;
+  // The sun crosses 15° of longitude an hour, so the time by the sun is 4 minutes later for each degree east.
+  // It is a rough guide only: it leaves out the quarter of an hour or so by which the sun runs fast or slow over the year.
   $('solar-time').textContent = `${hhmm(Math.floor(minutes + state.lon * 4))} by the sun`;
   $('solar-time').title = 'About this time by the sun at the observer. Clock zones vary.';
   setIfIdle($('lat'), state.lat.toFixed(2));
@@ -2560,7 +2848,7 @@ function syncInputs() {
   $('light-range-label').textContent = km(state.lightRangeKm);
   $('flat-lighting').value = state.flatLighting;
   $('flat-light').value = state.flatLight;
-  $('light-range-name').textContent = state.flatLight === 'bent' ? 'How far off the sun is seen to set' : 'How far its light reaches';
+  $('light-range-name').textContent = bentLight() ? 'How far off the sun is seen to set' : 'How far its light reaches';
   $('stars').checked = state.stars;
   $('star').value = state.star;
   $('star-height').value = heightToSlider(state.starHeightKm);
@@ -2579,6 +2867,7 @@ function syncInputs() {
   $('air-fields').hidden = !custom;
   setIfIdle($('air-temp'), state.tempC);
   setIfIdle($('air-pressure'), state.pressureHpa);
+  // The lift goes with the air's density: up with its pressure, down with its temperature (js/refraction.js).
   const change = Math.round((airFactor(currentAir()) - 1) * 100);
   $('air-note').textContent =
     custom ? `This air bends light ${change ? `${Math.abs(change)}% ${change > 0 ? 'more' : 'less'} than` : 'the same as'} standard air.` : '';
@@ -2653,24 +2942,25 @@ function syncInputs() {
 }
 
 function bindControls() {
+  // Every place there is, by name, for the three lists that offer them.
+  const places = [...CITIES].sort((a, b) => a.name.localeCompare(b.name)).map((c) => `<option>${c.name}</option>`).join('');
   const select = $('city');
-  select.innerHTML =
-    '<option value="">Custom location</option>' +
-    [...CITIES]
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map((c) => `<option>${c.name}</option>`)
-      .join('');
+  select.innerHTML = '<option value="">Custom location</option>' + places;
   for (const el of document.querySelectorAll('.ref-count')) el.textContent = REF_CITIES.length;
 
+  // ----- the time controls, in the bar above the views -----
+
+  // The moment on show is the date at midnight, universal time, and the slider's minutes after it.
   const setClock = () => {
     const day = Date.parse(`${$('date').value}T00:00:00Z`);
     if (Number.isNaN(day)) return;
-    state.date = new Date(day + Number($('time').value) * 60000);
+    state.date = new Date(day + Number($('time').value) * MINUTE_MS);
     requestUpdate();
   };
   $('date').addEventListener('change', setClock);
   $('time').addEventListener('input', setClock);
 
+  // Sunrise, noon and sunset at the observer, for the day on show, are the almanac's.
   const jump = (which, name) => () => {
     const t = sunEvents(state.date, state.lat, state.lon)[which];
     if (!t) return toast(`No ${name} here on this date`);
@@ -2701,6 +2991,8 @@ function bindControls() {
   });
   $('speed').addEventListener('change', (e) => (state.speed = Number(e.target.value)));
 
+  // ----- the observer, and the flat model's settings -----
+
   select.addEventListener('change', () => {
     const place = city(select.value);
     if (place) setObserver(place, true);
@@ -2721,6 +3013,7 @@ function bindControls() {
     state.lightRangeKm = Number(e.target.value);
     requestUpdate();
   });
+  // "Best fit" puts the flat sun at the height that misses least over the day (see `getFit`): the flat model at its best.
   $('btn-bestfit').addEventListener('click', () => {
     const best = getFit().best;
     if (!best) return;
@@ -2768,13 +3061,13 @@ function bindControls() {
     // Go to where the moon is high in the sky at that moment.
     setObserver(cityUnderMoon(state.date), true);
   };
-  $('btn-fullmoon').addEventListener('click', moonJump(() => nextFullMoon(new Date(state.date.getTime() + 3600000))));
-  $('btn-eclipse').addEventListener('click', moonJump(() => nextLunarEclipse(new Date(state.date.getTime() + 3600000)).peak));
+  // The search starts an hour on from the moment on show, so a full moon or an eclipse that is on show already is passed over.
+  $('btn-fullmoon').addEventListener('click', moonJump(() => nextFullMoon(new Date(state.date.getTime() + HOUR_MS))));
+  $('btn-eclipse').addEventListener('click', moonJump(() => nextLunarEclipse(new Date(state.date.getTime() + HOUR_MS)).peak));
 
   // Distances
-  const places = [...CITIES].sort((a, b) => a.name.localeCompare(b.name)).map((c) => `<option>${c.name}</option>`);
   for (const id of ['route-from', 'route-to']) {
-    $(id).innerHTML = '<option value="">Choose a place</option>' + places.join('');
+    $(id).innerHTML = '<option value="">Choose a place</option>' + places;
     $(id).addEventListener('change', () => setRoute($('route-from').value, $('route-to').value));
   }
   $('route-table').addEventListener('click', (e) => {
@@ -2805,6 +3098,8 @@ function bindControls() {
     requestUpdate();
   });
 
+  // ----- the menu on the observer's sky -----
+
   // The observer's sky keeps its own options behind the three dots in its corner. The list stays open while
   // they are ticked, and closes on a press anywhere else or on Escape.
   const skyMenu = $('sky-menu-button');
@@ -2822,6 +3117,9 @@ function bindControls() {
     openSkyMenu(false);
     skyMenu.focus();
   });
+
+  // ----- the air, the "i" boxes, the other tools, the link -----
+
   for (const [id, key] of [
     ['air-temp', 'tempC'],
     ['air-pressure', 'pressureHpa'],
@@ -2851,6 +3149,8 @@ function bindControls() {
       toast('Copy the address from the address bar');
     }
   });
+
+  // ----- the menu at the top: the groups of demonstrations, the demonstrations, and the tours -----
 
   $('demo-groups').insertAdjacentHTML('beforeend', GROUPS.map((g) => `<button data-group="${g.id}">${esc(g.label)}</button>`).join(''));
   $('demo-list').innerHTML =
@@ -2931,6 +3231,7 @@ function bindControls() {
 }
 
 function bindHorizonControls() {
+  // The three tools. Switching also turns the menu at the top to a group that has something for the new tool.
   for (const btn of document.querySelectorAll('#mode-tabs button')) {
     btn.addEventListener('click', () => {
       setMode(btn.dataset.mode);
@@ -3003,6 +3304,8 @@ function bindHorizonControls() {
   $('hz-k-standard').addEventListener('click', () => setK(K_STANDARD));
 
   // The weather calculator: three things a person can measure, turned into the bending.
+  //   k = 503 × pressure ÷ T² × (0.0343 + change of temperature per metre)     pressure in hPa, T in kelvin
+  // The sum is `coefficientFromWeather` in js/horizon.js. The change is typed in per 100 m.
   const weather = () => {
     const tempC = Number($('hz-w-temp').value);
     const pressureHpa = Number($('hz-w-pressure').value);
@@ -3078,8 +3381,9 @@ function bindMeasurementForm() {
     const shadow = Number($('m-shadow').value);
     return filled('m-stick') && filled('m-shadow') && stick > 0 && shadow > 0 ? shadowToElevation(stick, shadow) : null;
   };
-  // What was measured: the sun, or one of the stars. A star throws no shadow, so it is always an angle.
-  fillStarPickers();
+  // What was measured: the sun, or one of the stars (the list was filled in `bindControls`). A star throws no
+  // shadow, so it is always an angle. The sun's height can also come from a stick and its shadow:
+  //   height = atan(stick ÷ shadow)
   const usingShadow = () => !$('m-what').value && $('m-method').value === 'shadow';
   const showMethod = () => {
     const star = $('m-what').value;
@@ -3174,6 +3478,20 @@ function bindMeasurementForm() {
 }
 
 // ---------- shareable state ----------
+//
+// Everything that is set goes into the address after the #, so a link shows someone else exactly the same
+// scene, and the same figures, to check. The short names:
+//
+//   t time (UTC)        lat, lon observer        h flat sun's height, km     r how far its light reaches, km
+//   fb=1 its light curves                        fl how the flat map is lit  rf air: 0 none, 1 standard, 2 own (tc °C, ph hPa)
+//   sl sight lines      ag grid on the sky       demo demonstration          a its own controls
+//   tn tour, ts step, tv=1 answer on show, tl the steps of a tour of one's own
+//   st=1 stars, star which one, sh their height, tr trails                  mo=1 moon, mh its height
+//   rt route            v tool: h horizon, f flight                         u=i feet and miles
+//   horizon: tg shape, th its height, td its distance, eh eye height, k bending, sg line of sight on the map,
+//            s1 s2 s3 two sunsets, ly=1 layers of air (at, wt, lm, lg)
+//   flight:  fs speed, fa height, fm minutes
+//   m the user's measurements                    o the user's horizon observations
 
 function writeHash() {
   const p = new URLSearchParams({
@@ -3185,7 +3503,7 @@ function writeHash() {
     sl: state.sightLines ? 1 : 0,
     ...(state.skyGrid ? { ag: 1 } : {}),
     fl: state.flatLighting,
-    ...(state.flatLight === 'bent' ? { fb: 1 } : {}),
+    ...(bentLight() ? { fb: 1 } : {}),
     rf: { off: 0, standard: 1, custom: 2 }[state.refraction],
   });
   if (state.refraction === 'custom') {
@@ -3251,6 +3569,7 @@ function writeHash() {
   history.replaceState(null, '', `#${p}`);
 }
 
+/** Reads a link back into the state. Every number is held to the range its control allows, and anything unreadable is passed over. */
 function readHash() {
   const p = new URLSearchParams(location.hash.slice(1));
   const num = (key, min, max) => {
@@ -3334,6 +3653,7 @@ function readHash() {
 
 // ---------- start ----------
 
+/** Reads what was stored and what the link says, builds the views, and sets the loop going. */
 async function start() {
   let stored = '';
   try {
@@ -3342,13 +3662,14 @@ async function start() {
     // Storage can be unavailable. Then there is nothing stored to read.
   }
   await knowCatalogueStarsIn(decodeURIComponent(location.hash.replace(/\+/g, ' ')), stored);
-  measurements = mergeMeasurements(loadStoredMeasurements());
-  observations = mergeObservations(loadStoredObservations());
+  measurements = mergeMeasurements(storedList(STORE_KEY));
+  observations = mergeObservations(storedList(OBS_KEY));
   readHash();
   // A link written by the app carries its time. Without one, this is a plain visit.
   if (!new URLSearchParams(location.hash.slice(1)).has('t')) openInDaylight();
   bindControls();
   bindFolds();
+  // The outlines of the land (Natural Earth, 1:110m), drawn on both maps from the same latitudes and longitudes.
   const land = await (await fetch('data/land-110m.json')).json();
   app.land = land; // for an argument that draws a map of its own
   const landCanvas = makeLandCanvas(land);
@@ -3393,12 +3714,18 @@ async function start() {
     requestUpdate();
   });
 
+  // ----- the update loop -----
+
+  // Once for every frame the screen draws. Whatever is running moves on by the time that has passed, then
+  // `update` is called if anything has changed, and the sky tool's four views are drawn.
   let last = performance.now();
   const frame = (now) => {
+    // Seconds since the last frame, and never more than a tenth: after a pause nothing leaps ahead.
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
     if (state.playing) {
-      state.date = new Date(state.date.getTime() + dt * state.speed * 60000);
+      // "Play" only moves the clock: `state.speed` minutes for every real second. Everything else follows from the time.
+      state.date = new Date(state.date.getTime() + dt * state.speed * MINUTE_MS);
       needsUpdate = true;
     }
     if (state.flying && state.mode === 'flight') {

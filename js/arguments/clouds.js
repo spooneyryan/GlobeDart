@@ -1,5 +1,16 @@
+// Clouds lit from beneath after sunset.
+//
+// Nothing here is taken from the almanac except where the sun is overhead,
+// which both models are handed. Each model then says where its own sun is as
+// seen from a cloud: above level, so that the light comes down onto the top,
+// or below level, so that it comes up onto the underside. The sums are in
+// js/clouds.js. What is observed is the "check" below: anyone can watch it.
+//
+// The flat model is tried both ways it is offered: with straight light, which
+// reaches only so far, and with light that curves upward.
 import { DEG, EARTH_RADIUS_KM } from '../astro.js';
 import { levelDropDeg, shadowHeightKm, globeCloudLight, flatCloudLight, litBelowMinutes } from '../clouds.js';
+import { label as sketchLabel } from './sketch.js';
 
 // Kinds of cloud to compare, with a usual height for each in km.
 const KINDS = [
@@ -33,18 +44,13 @@ const flatSun = (state) => ({
   bendSetKm: state.flatLight === 'bent' ? state.lightRangeKm : 0,
 });
 
-function label(ctx, string, x, y, colour = INK.muted, align = 'left', weight = 400) {
-  ctx.font = `${weight} 11px system-ui, -apple-system, 'Segoe UI', sans-serif`;
-  ctx.textAlign = align;
-  ctx.textBaseline = 'middle';
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = 'rgba(4, 8, 14, 0.85)';
-  ctx.strokeText(string, x, y);
-  ctx.fillStyle = colour;
-  ctx.fillText(string, x, y);
-}
+/** Text with a dark edge, a size smaller than the shared kind. */
+const label = (ctx, string, x, y, colour = INK.muted, align = 'left', weight = 400) => sketchLabel(ctx, string, x, y, colour, align, weight, 11);
 
-/** One puff of cloud, its top and its underside coloured by the light on it. */
+/**
+ * One puff of cloud, its top and its underside coloured by the light on it:
+ * `lit` is 'top', 'under' or 'dark', as js/clouds.js gives it.
+ */
 function puff(ctx, x, y, rx, ry, lit) {
   const half = (from, to, colour) => {
     ctx.fillStyle = colour;
@@ -78,6 +84,7 @@ function ray(ctx, points, colour, broken = false) {
   ctx.fill();
 }
 
+/** A small aircraft seen from the side: a body, a tail and a wing. */
 function aircraft(ctx, x, y) {
   ctx.strokeStyle = INK.text;
   ctx.lineWidth = 2;
@@ -91,6 +98,7 @@ function aircraft(ctx, x, y) {
   ctx.stroke();
 }
 
+/** A height in the sky in words: "1.5° below level". */
 const below = (el, deg) => `${deg(Math.abs(el))} ${el < 0 ? 'below' : 'above'} level`;
 
 export default {
@@ -118,21 +126,32 @@ export default {
   draw(ctx, { w, h }, c, { state, deg }, own) {
     const cloudKm = own.km;
     const R = EARTH_RADIUS_KM;
+    // The height of the globe's sun by geometry alone, without the lift from the air, as the explanation says.
     const sunEl = c.globe.trueEl;
-    const halfKm = 1.15 * Math.sqrt(2 * R * cloudKm); // a little beyond the cloud's own horizon
-    const lowKm = -(halfKm * halfKm) / (2 * R); // how far the globe's surface has fallen away at the edges
+    // Both pictures show the same stretch of ground, with the observer in the middle and x measured in km
+    // toward the sun. From h up the horizon is √(2Rh) away, and the pictures run a little beyond that each way.
+    const halfKm = 1.15 * Math.sqrt(2 * R * cloudKm);
+    // The globe's surface falls away from level by x² ÷ 2R, so this is how far down it is at the two edges.
+    const lowKm = -(halfKm * halfKm) / (2 * R);
     const highKm = 1.6 * cloudKm;
     const gap = 8;
-    const ph = (h - gap) / 2;
+    const ph = (h - gap) / 2; // the height of each picture, in pixels
+    // Pixels to a km, across and up. They differ, which is the stretching the drawing owns up to in its corner.
     const sx = (w / 2 - 4) / halfKm;
     const sy = (ph - 22) / (highKm - lowKm);
     const X = (x) => w / 2 + x * sx;
+    // Eleven puffs of cloud spread across the picture. The light is drawn arriving at three of them.
     const puffs = Array.from({ length: 11 }, (_, i) => ((i - 5) / 5) * 0.92 * halfKm);
     const aimed = [puffs[2], puffs[5], puffs[8]];
     const rx = Math.max(6, (0.92 * halfKm * sx) / 5 / 2 - 1);
     const ry = Math.max(3.5, Math.min(8, 0.17 * cloudKm * sy));
 
-    // `shadowTop(x)` is the height below which no sunlight comes; `unlit(x)` is true where light is on its way but is said not to arrive.
+    // One picture. Each model supplies its own rules:
+    //   ground(x)        how high the ground is at x, in km
+    //   lightAt(x)       which side of a cloud at x is lit
+    //   pathTo(x, y, at) how high the ray that arrives at (x, y) was when it was passing over `at`, or null
+    //   shadowTop(x)     the height below which no sunlight comes
+    //   unlit(x)         true where light is on its way but is said not to arrive
     const panel = (top, ground, lightAt, pathTo, title, colour, shadowTop, unlit = () => false) => {
       const Y = (y) => top + ph - 3 - (y - lowKm) * sy;
       const across = (i, n) => -halfKm + (2 * halfKm * i) / n;
@@ -192,27 +211,35 @@ export default {
       label(ctx, `${title}: ${WORDS[lightAt(0).side]}`, 6, top + 9, colour, 'left', 600);
     };
 
-    // Globe: the surface falls away as x² ÷ 2R, and the light is parallel.
+    // Globe: the surface falls away as x² ÷ 2R, and the light is parallel, every ray at the slope tan(e) for a
+    // sun at height e. Below level that slope is negative: the light is rising as it travels away from the sun.
     const slope = Math.tan(Math.max(-89, Math.min(89, sunEl)) * DEG);
     panel(
       0,
       (x) => -(x * x) / (2 * R),
-      (x) => globeCloudLight(cloudKm, sunEl + x / R / DEG), // nearer the sun, it is higher in the sky
+      // Go x km toward the sun and it stands higher in the sky by the angle x ÷ R, turned into degrees here.
+      (x) => globeCloudLight(cloudKm, sunEl + x / R / DEG),
       (x, y, at) => y + (at - x) * slope,
       'Globe',
       INK.globe,
-      // The Earth's shadow: everything under the ray that just clears the curve, on the far side of where it touches.
+      // The Earth's shadow: everything under the ray that just clears the curve, on the far side of where it
+      // touches. With s the slope, that ray touches the ground at x = −sR and runs along the line
+      //   y = s² × R ÷ 2 + s × x
       (x) => (sunEl < 0 && x < -slope * R ? (slope * slope * R) / 2 + slope * x : -Infinity),
     );
     label(ctx, `sun ${below(sunEl, deg)}`, w - 6, 9, INK.muted, 'right');
 
-    // Flat: level ground, and light from a sun at one height, which may be made to curve.
+    // Flat: level ground, and light from a sun at one height H, which may be made to curve. `awayKm` is how far
+    // over the map the observer is from the place under the flat sun, so a cloud at x is awayKm − x from it.
     const sun = flatSun(state);
     const awayKm = c.flat.groundKm;
     panel(
       ph + gap,
       () => 0,
       (x) => flatCloudLight(cloudKm, awayKm - x, sun),
+      // The ray's height once it has travelled a distance t from the sun, leaving at slope s₀ and curving by c:
+      //   H + s₀ × t + c × t² ÷ 2
+      // With straight light c is nothing, and this is a straight line.
       (x, y, at) => {
         const from = awayKm - x; // how far the light has come when it arrives
         const travelled = awayKm - at;
@@ -224,8 +251,10 @@ export default {
       INK.flat,
       (x) => {
         const from = awayKm - x;
+        // Straight light: the model has daylight everywhere within the reach it gives its sun, and none beyond.
         if (!sun.bendSetKm) return from <= sun.lightRangeKm ? -Infinity : Infinity;
-        // Bending light clears the ground and climbs again: beyond its reach it is above H × (distance ÷ reach − 1)².
+        // Bending light: the lowest ray touches the ground at the reach and climbs again, so beyond the reach
+        // there is light only above H × (distance ÷ reach − 1)².
         return from <= sun.bendSetKm ? -Infinity : sun.sunHeightKm * (from / sun.bendSetKm - 1) ** 2;
       },
       () => !sun.bendSetKm,
@@ -236,11 +265,13 @@ export default {
   },
   body(c, { state, deg, km, fmtH, fmtTime }, own) {
     const cloudKm = own.km;
-    const high = (v) => fmtH(v * 1000);
+    const high = (v) => fmtH(v * 1000); // a height in km, written out
     const sunEl = c.globe.trueEl;
+    // What each model says of the cloud straight over the observer.
     const globe = globeCloudLight(cloudKm, sunEl);
     const sun = flatSun(state);
     const flat = flatCloudLight(cloudKm, c.flat.groundKm, sun);
+    // How long the globe lights a cloud that high from beneath as the sun sets here today.
     const minutes = (v) => {
       const m = litBelowMinutes(v, state.lat, c.sub.lat);
       return m === null ? 'the sun does not set here today' : fmtTime(m);
@@ -249,6 +280,7 @@ export default {
       .sort((a, b) => a[1] - b[1])
       .map(([name, v]) => `<tr><td>${name}</td><td>${minutes(v)}</td>${sun.bendSetKm ? '' : '<td class="bad">never</td>'}</tr>`)
       .join('');
+    // How high the Earth's shadow has climbed straight overhead, in km.
     const shadow = shadowHeightKm(sunEl);
     const globeNow = {
       top: `The globe's sun is still <b class="g">${deg(sunEl)}</b> above level here, so its light comes down onto the
@@ -312,6 +344,8 @@ export default {
     check('clouds argument: a flat sun 5,000 km up lights the top of every cloud within reach of its light, from any distance', wrong === 0, `${wrong} wrong`);
     check('clouds argument: and beyond that reach it lights neither side', flatCloudLight(5, 12000, straight).side === 'dark' && flatCloudLight(5, 12000, straight).el > 20);
     const bent = { sunHeightKm: 5000, lightRangeKm: 10000, bendSetKm: 10000 };
+    // Beyond the reach the lowest light is H × (distance ÷ reach − 1)² up, so it clears a cloud h up out to
+    //   reach × (1 + √(h ÷ H))
     const edge = 10000 * (1 + Math.sqrt(5 / 5000));
     check('clouds argument: bending light lights the top, then the underside, then nothing, as the flat sun moves off',
       flatCloudLight(5, 9000, bent).side === 'top' && flatCloudLight(5, 10100, bent).side === 'under' && flatCloudLight(5, edge - 1, bent).side === 'under' && flatCloudLight(5, edge + 1, bent).side === 'dark');

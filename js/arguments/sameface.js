@@ -1,3 +1,11 @@
+// The same face of the moon from everywhere.
+//
+// What is observed is that photographs from different continents show the
+// same markings. Each model is asked how far apart two people's lines of sight
+// to the moon are, as an angle at the moon: that is how much of a different
+// side one would see than the other (viewsApartDeg in js/models.js, giving
+// `turnGlobe` and `turnFlat`). The globe has the moon at its published
+// distance, and the flat model at the height set in the panel.
 export default {
   id: 'sameface',
   group: 'moon',
@@ -16,6 +24,7 @@ export default {
   body(c, { state, deg, km, MOON_OFF }) {
     const m = c.moon;
     if (!m) return MOON_OFF;
+    // Of the cities with the moon above their horizon, the one whose view the flat model turns furthest from the observer's.
     const seen = m.cities.filter((x) => x.obs.el > 0);
     const far = seen.reduce((a, b) => (b.turnFlat > a.turnFlat ? b : a), seen[0]);
     if (!far) return '<p>The moon is not up in any of the cities at this moment. Press "Next full moon".</p>';

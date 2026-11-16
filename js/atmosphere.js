@@ -8,16 +8,18 @@
 // Heights are in metres, pressures in hectopascals (the same as millibars),
 // temperatures in kelvin unless a name says otherwise.
 
+/** Pressure at sea level in the standard atmosphere, in hectopascals. */
 export const SEA_LEVEL_HPA = 1013.25;
-const SEA_LEVEL_K = 288.15;
-const GRAVITY = 9.80665; // metres per second squared
-const GAS_CONSTANT = 8.31446; // joules per mole per kelvin
-const AIR_KG_PER_MOLE = 0.0289644;
+const SEA_LEVEL_K = 288.15; // 15 °C
+/** The pull of gravity at the ground, in metres per second squared: the standard figure. */
+export const GRAVITY = 9.80665;
+const GAS_CONSTANT = 8.31446; // joules per mole per kelvin: how much a gas pushes back when warmed
+const AIR_KG_PER_MOLE = 0.0289644; // the weight of dry air
 /** The radius the standard uses to turn height above the ground into the height its layers are defined in. */
 const STANDARD_RADIUS_M = 6356766;
 /** The greatest height the standard atmosphere is defined for here. */
 export const AIR_TOP_M = 84000;
-/** The speed needed to leave the Earth from its surface, in metres per second. */
+/** The speed needed to leave the Earth from its surface, in metres per second: near enough √(2 × g × R). */
 export const ESCAPE_SPEED_M_S = 11186;
 
 // Each layer: the height it starts at, and how its temperature changes with height (kelvin per metre).
@@ -31,7 +33,12 @@ const LAYERS = [
   [71000, -0.002],
 ];
 
-/** How the pressure changes with height at a steady temperature: it falls to 1/e in this many metres. */
+/**
+ * How the pressure changes with height at a steady temperature T: it falls to
+ * 1/e (a little over a third) in this many metres.
+ *   R × T ÷ (M × g)       about 8,400 m at 15 °C
+ * with R the gas constant, M the weight of a mole of air and g gravity.
+ */
 export function scaleHeightM(tempK = SEA_LEVEL_K) {
   return (GAS_CONSTANT * tempK) / (AIR_KG_PER_MOLE * GRAVITY);
 }
@@ -39,7 +46,14 @@ export function scaleHeightM(tempK = SEA_LEVEL_K) {
 /**
  * Temperature and pressure of the standard atmosphere at a height above sea
  * level. In each layer the weight of the air above is what the pressure holds
- * up, so the pressure falls by (density x gravity) for each metre climbed.
+ * up, so the pressure falls by (density × gravity) for each metre climbed.
+ * The density is itself set by the pressure and temperature, which gives, from
+ * the bottom of a layer (p₁, T₁) to a height Δh up it (p₂, T₂):
+ *
+ *   p₂ = p₁ × exp(−f × Δh ÷ T₁)           where the temperature stays the same
+ *   p₂ = p₁ × (T₂ ÷ T₁) ^ (−f ÷ L)        where it changes by L kelvin per metre
+ *
+ * with f = M × g ÷ R = 0.0342 kelvin per metre.
  */
 export function standardAir(heightM) {
   const z = Math.min(AIR_TOP_M, Math.max(0, heightM));
@@ -59,12 +73,13 @@ export function standardAir(heightM) {
   return { tempK, hPa };
 }
 
+/** The pressure of the standard atmosphere at a height, in hectopascals. */
 export const pressureAtHpa = (heightM) => standardAir(heightM).hPa;
 
 /** The mass of air above each square metre at a height, in kilograms: the pressure is its weight. */
 export const airAboveKgPerM2 = (heightM) => (pressureAtHpa(heightM) * 100) / GRAVITY;
 
-/** The typical speed of an air molecule at a temperature, in metres per second. */
+/** The typical speed of an air molecule at a temperature T, in metres per second: √(3 × R × T ÷ M). */
 export function molecularSpeedMS(tempK = SEA_LEVEL_K) {
   return Math.sqrt((3 * GAS_CONSTANT * tempK) / AIR_KG_PER_MOLE);
 }

@@ -1,3 +1,11 @@
+// Feeling the spin.
+//
+// The one thing taken from observation is how long the sky takes to turn once
+// against the stars, 23 hours 56 minutes, which anyone can time. The rest is
+// what follows if it is the Earth that turns (js/rotation.js): the speed of the
+// ground at a latitude, how much the turn takes off a person's weight, and how
+// fast a long pendulum's line of swing turns against the floor. A still, flat
+// earth gives nothing for each of the three.
 import { TURN_DEG_PER_HOUR, groundSpeedKmh, weightLost, pendulumDegPerHour } from '../rotation.js';
 
 export default {
@@ -17,8 +25,8 @@ export default {
   },
   body(c, { state, deg, kmh }) {
     const lat = state.lat;
-    const lost = weightLost(lat);
-    const swing = pendulumDegPerHour(lat);
+    const lost = weightLost(lat); // as a fraction of the person's weight
+    const swing = pendulumDegPerHour(lat); // degrees an hour: below zero in the south, where it turns the other way
     return `
     <p>The sky turns once a day: ${deg(TURN_DEG_PER_HOUR, 1)} an hour, which the star trails show. Either
     everything in the heavens circles us every day, or we turn.</p>

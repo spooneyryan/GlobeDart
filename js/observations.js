@@ -17,6 +17,12 @@ export const MAX_OBSERVATIONS = 30;
  * The bending of light that would make the globe hide exactly this much.
  * It is always below 1: no air makes the globe hide nothing at every distance
  * short of light that follows the curve.
+ *
+ * The globe hides (d − √(2 R′ e))² ÷ 2R′ of something d away from an eye e up
+ * (horizon.js). Turned round to give the seeming radius R′ from what was hidden:
+ *
+ *   1 ÷ R′ = 2 × (√hidden + √e)² ÷ d²
+ *   k      = 1 − R ÷ R′
  */
 export function impliedCoefficient(eyeM, distanceKm, hiddenM) {
   const d = distanceKm * 1000;

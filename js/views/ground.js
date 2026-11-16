@@ -10,12 +10,20 @@
 // East = +x, up = +y, north = -z, in metres. The eye is at the origin and the
 // ground is EYE below it. Nothing in the east or the west stands taller than the
 // eye, so the horizon there stays clear for sunrise and sunset.
+//
+// Both views draw the ground as a level plane that meets the sky at eye level.
+// That favours neither model. From 1.7 m up, the globe's horizon is 0.04° below
+// eye level (dipDeg in js/horizon.js), far too little to draw.
 import * as THREE from 'three';
 import { DEG } from '../astro.js';
 import { SCENERY } from '../place.js';
+import { smooth } from '../scene-utils.js';
 
+/** The height of the observer's eye above the ground, in metres. */
 export const EYE = 1.7;
 
+// The light on the ground, as red, green and blue: what is left of it at night, and the warmth a low sun adds.
+// Like every colour in this file they are chosen by eye.
 const NIGHT_LIGHT = [0.08, 0.09, 0.13];
 const DUSK_TINT = [1.1, 0.9, 0.72];
 
@@ -24,22 +32,25 @@ const BALES = [
   [22, 14, 0], [58, 31, 1], [77, 64, 0], [104, 19, 1], [127, 44, 0], [146, 76, 0], [201, 26, 0],
   [226, 58, 1], [247, 13, 0], [262, 38, 0], [291, 70, 1], [312, 22, 1], [330, 47, 0], [36, 82, 0],
 ];
-const BALE_M = 1.45;
+const BALE_M = 1.45; // a bale's height and width, in metres
+// Bearings in degrees, distances and sizes in metres.
 const TREE = { az: 345, dist: 60, size: 12.5 };
 const SMALL_TREE = { az: 171.5, dist: 128, size: 9 };
 const HOUSE = { az: 163, dist: 120, width: 15, height: 7.5 };
+// The fence runs east and west, 2.6 m north of the eye, from 6 m to 180 m out on each side, with a post every 4 m.
 const FENCE = { z: -2.6, from: 6, to: 180, gap: 4, post: 1.1 };
 
 const CASTERS = 16; // how many things can cast a shadow at once
 const DECK = 2.1; // at sea: half the width of the deck the observer stands on
 
+/** Where something stands, as [metres east, metres south] of the observer, from its bearing and distance. */
 const place = (az, dist) => [dist * Math.sin(az * DEG), -dist * Math.cos(az * DEG)];
 
-const smooth = (a, b, x) => {
-  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
-  return t * t * (3 - 2 * t);
-};
-
+/**
+ * A maker of random-looking numbers from 0 to 1 that gives the same run every
+ * time for the same seed, so that a tree's leaves are where they were on the
+ * last visit. (It is the generator known as mulberry32.)
+ */
 function seeded(seed) {
   let a = seed >>> 0;
   return () => {
@@ -51,6 +62,7 @@ function seeded(seed) {
   };
 }
 
+/** A picture painted once onto a canvas by `draw`, for the graphics card to use. */
 function paint(width, height, draw) {
   const canvas = document.createElement('canvas');
   canvas.width = width;
@@ -419,6 +431,46 @@ function whiteTexture() {
   });
 }
 
+// ---------- the ground itself ----------
+//
+// The ground is painted by the shader below, one pixel at a time. Each pixel is
+// a direction of looking, d, and the first job is to find the spot on the
+// ground that the eye sees that way. The eye is EYE above a level plane, so a
+// line of sight that drops by −d.y for each unit travelled meets the ground at
+//
+//   p = (d.x, d.z) × EYE ÷ (−d.y)        metres east and south of the feet
+//
+// What is painted at p is scenery: grass, sand, snow or sea, by the kind of
+// place (uKind). The textures come from "noise", random-looking numbers that
+// are the same for the same spot, laid over one another at several scales. Each
+// scale is dropped once it is finer than a pixel can show.
+//
+// Two things follow the view's own sun, and so differ between the models when
+// the models put the sun in different places:
+//
+// Shadows. uSun is the direction to this model's sun. Something H metres tall
+// throws a shadow away from the sun of length
+//
+//   H × run,      run = (how far uSun points sideways) ÷ (how far it points up) = 1 ÷ tan(sun's height)
+//
+// with run held to 30 at most, which it would pass with the sun under 2° up.
+// Each thing that casts one is given as uCast = (east, south, half-width, top)
+// and uLift, the height its shadow starts from (the bottom of a tree's crown,
+// say). Its shadow is the strip of that half-width from where the shadow of its
+// lowest part falls to where the shadow of its top falls. The observer casts
+// one too, from the feet: person(h) is half the width of a standing figure at
+// height h, and a spot on the ground is shaded by the part of the figure at
+// height (its distance from the feet) ÷ run.
+// uShade is how strong the shadows are: nothing with the sun under 0.4° up or
+// out of its light, full by 6° (see update at the foot of this file).
+//
+// Light. uLight is the colour of the light, uHaze the colour of the sky at the
+// horizon, which the far ground fades into, and uSheen the glint toward a low
+// sun. Water mirrors the sky more the flatter it is looked along.
+//
+// The notes inside the shaders are kept to plain letters, which is all that
+// some graphics cards' compilers will read.
+
 const VERTEX_DIR = `
   varying vec3 vDir;
   void main() {
@@ -427,23 +479,25 @@ const VERTEX_DIR = `
   }`;
 
 const GROUND_FRAGMENT = `
-  uniform vec3 uLight;
-  uniform vec3 uHaze;
-  uniform vec3 uSun;
-  uniform float uShade;
-  uniform float uSheen;
+  uniform vec3 uLight;  // the colour of the light on the ground
+  uniform vec3 uHaze;   // the colour of the sky at the horizon
+  uniform vec3 uSun;    // the direction to this model's sun
+  uniform float uShade; // how strong the shadows are, 0 to 1
+  uniform float uSheen; // how strong the glint toward the sun is, 0 to 1
   uniform float uKind; // which scenery: its place in SCENERY
-  uniform vec4 uCast[CASTERS];
-  uniform float uLift[CASTERS];
+  uniform vec4 uCast[CASTERS]; // each thing that casts a shadow: east, south, half-width, top (metres)
+  uniform float uLift[CASTERS]; // and the height its shadow starts from
   varying vec3 vDir;
 
   const float EYE = ${EYE.toFixed(2)};
 
+  // A random-looking number from 0 to 1 that is always the same for the same spot.
   float hash(vec2 p) {
     vec3 p3 = fract(vec3(p.xyx) * 0.1031);
     p3 += dot(p3, p3.yzx + 33.33);
     return fract((p3.x + p3.y) * p3.z);
   }
+  // The same, blended smoothly from each whole-numbered spot to the next, from -0.5 to 0.5.
   float noise(vec2 p) {
     vec2 i = floor(p);
     vec2 f = fract(p);
@@ -479,6 +533,8 @@ const GROUND_FRAGMENT = `
     // How much ground one pixel covers there. Detail finer than that is left out, so the distance does not shimmer.
     float px = max(fwidth(p.x), fwidth(p.y));
 
+    // Roughness at six scales, from patches 125 m across down to a centimetre. Each fades out as one pixel
+    // comes to cover from a third of a patch to the whole of it.
     float rough =
       noise(p * 0.008) * 0.7 * (1.0 - smoothstep(0.3, 1.0, px * 0.008)) +
       noise(p * 0.035) * 0.6 * (1.0 - smoothstep(0.3, 1.0, px * 0.035)) +
@@ -551,13 +607,18 @@ const GROUND_FRAGMENT = `
       vec2 away = -normalize(uSun.xz + vec2(1e-6));
       float run = min(length(uSun.xz) / max(uSun.y, 1e-3), 30.0); // length of shadow for each metre of height
       for (int i = 0; i < CASTERS; i++) {
+        // The shadow runs from a, where the shadow of the thing's lowest part falls, on by ba to where the
+        // shadow of its top falls. This spot is shaded if it is within the thing's half-width of that line.
         vec2 a = uCast[i].xy + away * (uLift[i] * run);
         vec2 ba = away * ((uCast[i].w - uLift[i]) * run);
         vec2 pa = p - a;
         float t = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
+        // A shadow's edge is softer the further it falls from the thing that casts it.
         float soft = 0.06 + 0.012 * length(p - uCast[i].xy) + px;
         shade = max(shade, 1.0 - smoothstep(uCast[i].z - soft, uCast[i].z + soft, length(pa - ba * t)));
       }
+      // The observer's own shadow: this spot is "along" metres from the feet, in the shadow of whatever
+      // part of the figure is along / run metres up.
       float along = dot(p, away);
       float half_ = person(along / run);
       if (half_ >= 0.0) {
@@ -569,6 +630,8 @@ const GROUND_FRAGMENT = `
     col *= uLight;
 
     // Towards a low sun the ground glints, and towards the horizon it fades into the air.
+    // "down" is how steeply the eye looks down (the sine of the angle below level), so "air" is 1 at the
+    // horizon and all but gone by 15 degrees below it.
     float air = exp(-down * 16.0);
     float toSun = max(dot(normalize(d.xz + vec2(1e-6)), normalize(uSun.xz + vec2(1e-6))), 0.0);
     col += uSheen * vec3(1.0, 0.78, 0.5) * pow(toSun, 12.0) * air * 0.3;
@@ -658,7 +721,7 @@ export class Ground {
    */
   build(kind) {
     const set = { objects: [], casters: [] };
-    this.into = set;
+    this.into = set; // addSprite and addFence put what they make into this set
     const scene = this.scene;
     const spots = BALES.map(([az, dist, endOn]) => ({ at: place(az, dist), endOn }));
     const tall = place(TREE.az, TREE.dist);
@@ -734,6 +797,11 @@ export class Ground {
     });
   }
 
+  /**
+   * The material for a picture standing at `at`. It takes the same light as the
+   * ground, and fades into the haze with distance: by 1 − e^(−distance ÷ 700 m),
+   * which is about a sixth at 120 m. Lit windows (`haze` set to none) do not fade.
+   */
   material(map, at, { light = this.light, haze = this.haze, alpha = { value: 1 }, tint = [1, 1, 1] } = {}) {
     return new THREE.ShaderMaterial({
       uniforms: {
@@ -756,7 +824,7 @@ export class Ground {
   /** A flat picture standing on the ground at a place, turned to face the observer. A negative width mirrors it. */
   addSprite(scene, map, at, width, height, options = {}) {
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(Math.abs(width), height), this.material(map, at, options));
-    mesh.position.set(at[0], height / 2 - EYE, at[1]);
+    mesh.position.set(at[0], height / 2 - EYE, at[1]); // its foot on the ground, EYE below the eye
     mesh.rotation.y = Math.atan2(-at[0], -at[1]);
     if (width < 0) mesh.scale.x = -1;
     mesh.renderOrder = options.order ?? 6.5;
@@ -809,6 +877,16 @@ export class Ground {
   }
 
   /**
+   * Sets the light on the ground to go with the sky above it. For each of red,
+   * green and blue:
+   *
+   *   light = (night + (1 − night) × bright) × (1 + (tint − 1) × dusk)
+   *
+   * Shadows come in as the sun climbs from 0.4° to 6°. The glint toward the
+   * sun comes in as it climbs from 3° below the horizon to 2° above, and fades
+   * out between 25° and 60° up. Both go as the moon covers the sun. The windows
+   * of the house are lit when it is dark.
+   *
    * @param bright  how light it is, 0 (night) to 1 (day)
    * @param dusk    how much of the low sun's warmth is in the light, 0 to 1
    * @param low     the colour of the sky at the horizon

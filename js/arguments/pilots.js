@@ -1,3 +1,11 @@
+// Pilots and the nose.
+//
+// No almanac figure is used. The sums are in js/flight.js: how fast an
+// aircraft goes round a globe at a given speed, which is the rate its nose
+// comes down, and how much height it would gain if its nose were held still
+// instead. The flat model's answer to each is nothing. As the explanation
+// says, this is an argument that cannot tell the two models apart from the
+// cockpit: it is here because the claim it answers is so common.
 import { pitchRateDegPerMin, hoursRound, climbIfStraightM, schulerMinutes } from '../flight.js';
 
 export default {
@@ -13,6 +21,7 @@ export default {
   apply({ state }) {
     Object.assign(state, { speedKmh: 900, altitudeM: 11000, flightMinutes: 10, flying: true });
   },
+  // In the text: a clock's minute hand turns 6° a minute, so it turns 6 ÷ rate times faster than the nose comes down.
   body: (fl, { fmtSpeed, fmtH, fmtAngle, fmtTime }) => `
     <p>An airliner at ${fmtSpeed(fl.speedKmh)} holds its height above a globe by going round it, once every
     <b class="g">${fmtTime(fl.hoursRound * 60)}</b>. Its nose comes down at the same rate:

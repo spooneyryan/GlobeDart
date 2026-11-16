@@ -5,7 +5,12 @@
 // neither model is favoured.
 //
 // "Air" is either null (no atmosphere) or { tempC, pressureHpa }.
+//
+// The lift is small: about half a degree for something on the horizon, under
+// a tenth of a degree at 10° up, and nothing straight overhead. It can be
+// switched off in the app, to see how little rests on it.
 
+// This file is imported by astro.js, so it keeps its own copy of the degrees-to-radians factor.
 const DEG = Math.PI / 180;
 
 /** The conditions the standard formula assumes. */
@@ -15,9 +20,13 @@ export const STANDARD_AIR = Object.freeze({ tempC: 10, pressureHpa: 1010 });
 export const AIR_LIMITS = Object.freeze({ tempC: [-80, 60], pressureHpa: [300, 1100] });
 
 /**
- * Lift in degrees for a true (geometric) elevation in standard air, from
- * Sæmundsson's formula as given by Meeus, "Astronomical Algorithms", chapter 16.
- * Written to give the same numbers as astronomy-engine's 'normal' setting:
+ * Lift in degrees for a true (geometric) elevation h in standard air, from
+ * Sæmundsson's formula as given by Meeus, "Astronomical Algorithms", chapter 16:
+ *
+ *   lift = 1.02 ÷ tan(h + 10.3 ÷ (h + 5.11))      in sixtieths of a degree, with h in degrees
+ *
+ * The three numbers in it were fitted to measurements of how much the air
+ * lifts stars at each height. Written to give the same numbers as astronomy-engine's 'normal' setting:
  * held constant below one degree under the horizon, then faded out toward the
  * point straight down, where it means nothing anyway.
  */
@@ -31,6 +40,8 @@ export function standardLift(trueElDeg) {
 /**
  * How the lift scales with the weather: in proportion to the air's density,
  * so up with pressure and down with temperature. Exactly 1 for standard air.
+ *
+ *   factor = (pressure ÷ 1010 hPa) × (283 K ÷ temperature in kelvin)
  */
 export function airFactor(air) {
   if (!air) return 0;

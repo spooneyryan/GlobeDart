@@ -32,6 +32,16 @@ The empty `.nojekyll` file tells GitHub Pages to serve the files exactly as they
 
 ## How it is put together
 
+The code is written to be read by someone who suspects it of cheating. Nothing is built or minified: what is in
+`js/` is what the browser runs. Every file starts by saying what it does and what its units are, and each sum is
+written out in a comment above the function that does it, so that it can be done again by hand. Three files hold
+the whole argument about the sky:
+
+1. `js/astro.js` is the almanac. Its first lines say which figures both models are handed (the place the sun is
+   overhead) and which neither is handed (where an observer sees it).
+2. `js/models.js` is the two models, each a few lines of geometry on those inputs.
+3. `tools/check-maths.mjs` is what is checked, and against what.
+
 | Path | What it does |
 |---|---|
 | `js/astro.js` | Wrapper round astronomy-engine: subsolar point, measured sun and star positions, sunrise/sunset, seasons |
@@ -98,7 +108,7 @@ the page is what changes with the numbers, and the short instructions needed to 
 
 - "Measured" values are the published almanac figures, worked out by Astronomy Engine. The app takes no readings of its own, and says so on the page. The almanac and the globe model come from the same astronomy, so the globe matching it is true by construction and is not offered as the evidence. The evidence is that the almanac matches the sky, which anyone can test with a stick, a compass and a clock, and "Your own measurements" scores both models against such a reading.
 - Both models get the same single input for each object: the point on Earth it is directly overhead. Neither is handed the answer.
-- The flat model's own account of night counts. With straight light, a place beyond the reach of its sun's light is drawn dark, with the sun a dull disc where the model still has it, and the table says the sun cannot be seen. The score has a second line for it: in how many city-hours each model has the sun up or down rightly.
+- The flat model's own account of night counts. With straight light, a place beyond the reach of its sun's light is drawn dark, with the sun a dull disc where the model still has it, and the table says the sun cannot be seen. The score has a second line for it: in how many city-hours each model has the sun up or down rightly. For the almanac and both models alike the sun is up while any of its disc shows above the horizon, as it appears through the air.
 - The flat model is given the kindest reading available: its sun is sized to look correct when overhead, it is scored on daytime moments only, and its sun and stars each get their own adjustable height.
 - The globe side has no free parameters. The flat side has every knob exposed.
 

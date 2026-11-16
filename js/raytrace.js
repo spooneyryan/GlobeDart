@@ -11,8 +11,9 @@ import { EARTH_RADIUS_KM } from './astro.js';
 import { OVERTURNING_LAPSE } from './horizon.js';
 
 const R = EARTH_RADIUS_KM * 1000;
-// Air's refractive index is 1 + C × pressure / temperature (hPa, kelvin).
-// Chosen to agree with the 503 in the surveyors' formula in horizon.js.
+// The refractive index n is how much a material slows light: 1 for empty space,
+// about 1.0003 for air at the ground. For air it is 1 + C × pressure ÷ temperature
+// (hPa, kelvin). C is chosen to agree with the 503 in the surveyors' formula in horizon.js.
 const C = 503 / R;
 // How fast pressure falls with height: this, divided by the temperature, per metre.
 const G = -OVERTURNING_LAPSE;
@@ -38,7 +39,7 @@ export function makeAir({ tempC = 15, pressureHpa = 1013.25, lapse = STANDARD_LA
   const offset = surfaceC === null ? 0 : surfaceC - tempC;
   const t1 = t0 + lapse * NEAR_GROUND;
   const t2 = t1 + STANDARD_LAPSE * (TROPOPAUSE - NEAR_GROUND);
-  // Pressure at the top of a layer, from the weight of the air in it.
+  // Pressure at the top of a layer, from the weight of the air in it (the two rules in atmosphere.js).
   const through = (pBelow, tBelow, tAbove, rate, depth) =>
     Math.abs(rate) < 1e-9 ? pBelow * Math.exp((-G * depth) / tBelow) : pBelow * Math.pow(tAbove / tBelow, -G / rate);
   const p1 = through(pressureHpa, t0, t1, lapse, NEAR_GROUND);
@@ -72,6 +73,8 @@ export function makeAir({ tempC = 15, pressureHpa = 1013.25, lapse = STANDARD_LA
         t += bump;
         dt -= bump / layerM;
       }
+      // n − 1 = C × p ÷ t, and its rate of change with height, given that p falls by G × p ÷ t per metre:
+      //   dn/dh = −C × p ÷ t² × (G + dt/dh)
       air.n1 = (C * p) / t;
       air.dn = ((-C * p) / (t * t)) * (G + dt);
     },
@@ -81,6 +84,21 @@ export function makeAir({ tempC = 15, pressureHpa = 1013.25, lapse = STANDARD_LA
 
 /**
  * Follows one ray from the eye.
+ *
+ * With h the ray's height, θ its direction above the local level, x the
+ * distance covered over the ground and s the distance along the ray:
+ *
+ *   dh/ds = sin θ
+ *   dθ/ds = (dn/dh ÷ n) × cos θ            the air turns the ray toward where it is denser
+ *           + cos θ ÷ (R + h)              on the globe only: "level" itself tips as the ray goes round
+ *   dx/ds = cos θ × R ÷ (R + h)            on the globe, and plain cos θ on flat ground
+ *
+ * The second line of dθ/ds is the whole difference between the two models
+ * here. The air, and the rule for how it bends light, are the same for both.
+ *
+ * The steps are taken by the standard fourth-order Runge-Kutta method: the
+ * rates are sampled at the start of a step, twice at its middle and once at
+ * its end, and averaged with weights 1, 2, 2, 1.
  *
  * @param air      from makeAir
  * @param o.eyeM       height of the eye
@@ -107,6 +125,7 @@ export function traceRay(air, { eyeM, angle, curved = true, targetKm = null, sto
   let atTargetM = null;
   const points = record ? [{ km: 0, m: eyeM }] : null;
   // Rates of change at a height and direction: of height, direction, distance along the ground, and bending.
+  // They are kept in four plain variables, not returned as a list, because this runs millions of times.
   let dh = 0;
   let dth = 0;
   let dx = 0;
@@ -122,6 +141,7 @@ export function traceRay(air, { eyeM, angle, curved = true, targetKm = null, sto
   };
   const half = step / 2;
   for (let i = 1; i < 200000; i++) {
+    // The four samples of one step. After the last call, dh, dth, dx and db hold the fourth.
     rates(h, th);
     const h1 = dh;
     const t1 = dth;
@@ -140,6 +160,7 @@ export function traceRay(air, { eyeM, angle, curved = true, targetKm = null, sto
     rates(h + h3 * step, th + t3 * step);
     const hNext = h + ((h1 + 2 * h2 + 2 * h3 + dh) * step) / 6;
     const xNext = x + ((x1 + 2 * x2 + 2 * x3 + dx) * step) / 6;
+    // Passing the target's distance during this step: note the height there, by proportion.
     if (target !== null && atTargetM === null && xNext >= target) {
       atTargetM = h + ((hNext - h) * (target - x)) / (xNext - x);
       if (stopBelowM !== null && atTargetM >= 0 && atTargetM <= stopBelowM) {
@@ -147,6 +168,7 @@ export function traceRay(air, { eyeM, angle, curved = true, targetKm = null, sto
         return { end: 'target', endKm: targetKm, atTargetM, bend, points };
       }
     }
+    // Reaching the ground during this step: note where, by proportion.
     if (hNext <= 0) {
       const endKm = (x + ((xNext - x) * h) / (h - hNext)) / 1000;
       if (points) points.push({ km: endKm, m: 0 });
@@ -184,9 +206,10 @@ export function astronomicalBend(air, apparentRad, eyeM = 2) {
  */
 export function traceView(air, { eyeM, targetM, distanceKm, curved }) {
   const d = distanceKm * 1000;
-  const size = targetM / d; // how tall the target looks with no air at all
-  const base = -eyeM / d - (curved ? d / (2 * R) : 0); // where its foot would be in a straight line
-  const level = curved ? -Math.sqrt((2 * eyeM) / R) : 0; // and the horizon
+  // Rough directions with no air at all, in radians, used only to decide where to start looking.
+  const size = targetM / d; // how tall the target looks
+  const base = -eyeM / d - (curved ? d / (2 * R) : 0); // where its foot would be in a straight line: on the globe, lower by d ÷ 2R
+  const level = curved ? -Math.sqrt((2 * eyeM) / R) : 0; // and the horizon: the dip √(2h ÷ R) on the globe, eye level on flat ground
   const step = Math.min(150, 30 * air.finest, Math.max(10, d / 400));
   const maxM = targetM * 4 + eyeM + 200;
   const follow = (angle, record = 0) =>

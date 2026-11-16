@@ -1,7 +1,23 @@
+// The phases of Venus.
+//
+// Through a small telescope Venus shows a disc with phases like the moon's,
+// and the disc is widest when least of it is lit. This demonstration follows
+// its width and the share of its face that is lit over the 584 days from one
+// far side of the sun to the next, three ways:
+//
+//   measured     the almanac's figures for each day (astro.js, planetSeen): how far away Venus is, which
+//                gives its width, and how much of its face is lit. The published thing to be explained
+//   two orbits   what Venus should show if it and the Earth each go round the sun on an ellipse
+//                (planets.js, seenFromEarth). It is given six published numbers for each orbit and
+//                nothing seen in the sky
+//   flat         a ball at the height the flat model gives its stars, over the place Venus is overhead
+//                (that place is taken from the almanac, and handed to it), lit by the flat model's sun
+//
+// Widths are in seconds of arc, 3,600 to a degree.
 import { subsolarPoint, starPoints, planetSeen, nextInLine } from '../astro.js';
 import { flatPlace, flatMapDistanceKm, litFraction } from '../models.js';
 import { seenFromEarth, widthSec, AU_KM } from '../planets.js';
-import { INK, label, line, day } from './sketch.js';
+import { INK, label, line, day, keeper } from './sketch.js';
 
 // The times Venus passes between us and the sun that are offered. Each dated one is the first on or after the day given.
 // An entry of this list that is the same one as "the next" is left off it.
@@ -13,20 +29,15 @@ const ALL_LISTED = [
 ];
 const FROM = { 2026: Date.UTC(2026, 9, 1), 2025: Date.UTC(2025, 2, 1), 2023: Date.UTC(2023, 7, 1) };
 const SPAN_DAYS = 292; // half the 584 days from one such passing to the next
-const STEP_DAYS = 73; // how far apart the pictures in the drawing are
+const STEP_DAYS = 73; // how far apart the pictures in the drawing are: an eighth of the 584
 const DAY_MS = 86400000;
-const VENUS = { body: 'Venus' };
+const HOUR_MS = 3600000;
+const TWILIGHT_MS = 25 * 60000; // how long after sunset, or before sunrise, the scene is set
+const VENUS = { body: 'Venus' }; // how astro.js is asked for a planet's place in place of a star's
 
-const kept = new Map();
-function keep(key, make) {
-  if (!kept.has(key)) {
-    if (kept.size > 12) kept.clear();
-    kept.set(key, make());
-  }
-  return kept.get(key);
-}
+const keep = keeper();
 
-/** The moment an entry of the list stands for. "Next" means the next after today. */
+/** The moment an entry of the list stands for, as published. "Next" means the next after today. */
 function passing(which) {
   const from = FROM[which] ?? Math.floor(Date.now() / DAY_MS) * DAY_MS;
   return keep(`when ${from}`, () => nextInLine('Venus', new Date(from)).getTime());
@@ -35,7 +46,13 @@ function passing(which) {
 const LISTED = ALL_LISTED.filter(([which]) => which === 'next' || passing(which) !== passing('next'));
 const days = (n) => `${n} day${n === 1 ? '' : 's'}`;
 
-/** Venus through a telescope at a moment, as published and as two planets going round the sun make it. */
+/**
+ * Venus through a telescope at a moment, as published (`seen`) and as two
+ * planets going round the sun make it (`sum`). Each has the share of its face
+ * that is lit, its width in seconds of arc and its distance in astronomical
+ * units. Both widths come from the one rule, in planets.js: the real width of
+ * Venus, 12,104 km, seen from each one's own distance.
+ */
 function both(t) {
   const date = new Date(t);
   const seen = planetSeen('Venus', date);
@@ -46,16 +63,29 @@ function both(t) {
 function cycleOf(which) {
   const mid = passing(which);
   return keep(`cycle ${mid}`, () => {
-    const days = [];
-    for (let d = -SPAN_DAYS; d <= SPAN_DAYS; d++) days.push(both(mid + d * DAY_MS));
-    return { mid, days };
+    const list = [];
+    for (let d = -SPAN_DAYS; d <= SPAN_DAYS; d++) list.push(both(mid + d * DAY_MS));
+    return { mid, days: list };
   });
 }
 
 /**
- * The flat model's Venus at a moment: a ball at the height of its stars, over
- * the place Venus is overhead, lit by the flat sun. `real` is the width the
- * ball really has, in km.
+ * How wide something looks, in seconds of arc, when it is really w across and
+ * a distance s away:
+ *   2 × atan(w ÷ 2s)      in degrees, times 3,600
+ */
+const looksSec = (widthKm, awayKm) => (2 * Math.atan(widthKm / 2 / awayKm) * 3600 * 180) / Math.PI;
+
+/**
+ * The flat model's Venus at a moment: a ball at the height H of its stars, over
+ * the place Venus is overhead, lit by the flat sun. `realKm` is the width the
+ * ball really has. With d the distance over the map from the observer to the
+ * place under it:
+ *
+ *   s      = √(d² + H²)            the straight-line distance to it
+ *   width  = 2 × atan(w ÷ 2s)      how wide it then looks
+ *   lit    = (1 + cos angle) ÷ 2   with the angle at the ball between the flat sun and the observer,
+ *                                  the same rule as serves both models for the moon (models.js, litFraction)
  */
 function flatVenus(t, state, realKm) {
   const date = new Date(t);
@@ -65,20 +95,34 @@ function flatVenus(t, state, realKm) {
   const slantKm = Math.hypot(groundKm, state.starHeightKm);
   return {
     slantKm,
-    widthSec: (2 * Math.atan(realKm / 2 / slantKm) * 3600 * 180) / Math.PI,
+    widthSec: looksSec(realKm, slantKm),
     lit: litFraction(flatPlace(sub.lat, sub.lon, state.sunHeightKm), flatPlace(under.lat, under.lon, state.starHeightKm), flatPlace(state.lat, state.lon)),
   };
+}
+
+/** The flat ball hour by hour for a day from a moment: what it would show while the sky turns once. */
+function flatThroughDay(t, state, realKm) {
+  const list = [];
+  for (let hour = 0; hour < 24; hour++) list.push(flatVenus(t + hour * HOUR_MS, state, realKm));
+  return list;
 }
 
 /**
  * How wide the flat ball has to be. Nothing in the model says, so it is made
  * to show a width in the middle of the range that is measured, 24 seconds of
- * arc, to someone straight beneath it.
+ * arc, to someone straight beneath it, H below:
+ *   w = 2 × H × tan(24″ ÷ 2)
+ * The app does the same for the flat sun (models.js, flatPredict).
  */
 const MIDDLE_WIDTH_SEC = 24;
 const flatRealKm = (state) => 2 * state.starHeightKm * Math.tan((MIDDLE_WIDTH_SEC / 2 / 3600) * (Math.PI / 180));
 
-/** A planet as a telescope shows it: a dark disc with the lit part on one side. */
+/**
+ * A planet as a telescope shows it: a dark disc of radius `r` pixels with the
+ * lit part on one side. The line between light and dark on a ball is half an
+ * ellipse, as tall as the disc and |1 − 2 × lit| of its width: a straight line
+ * when half the face is lit, and the full edge when all or none of it is.
+ */
 function phase(ctx, cx, cy, r, lit, litOnRight, colour) {
   ctx.save();
   ctx.translate(cx, cy);
@@ -118,9 +162,10 @@ export default {
   ],
   apply({ state, sunEvents, STAR_DEMO }, own) {
     const t = passing(own.which) + own.days * DAY_MS;
-    // Before it passes between us and the sun Venus is the evening star, and after it the morning star.
+    // Before it passes between us and the sun Venus is the evening star, and after it the morning star. So the
+    // scene is set 25 minutes after sunset, or 25 minutes before sunrise: when Venus is up and the sky is dim.
     const events = sunEvents(new Date(t), state.lat, state.lon);
-    const dusk = own.days < 0 ? events.set && events.set.getTime() + 25 * 60000 : own.days > 0 ? events.rise && events.rise.getTime() - 25 * 60000 : events.noon?.getTime();
+    const dusk = own.days < 0 ? events.set && events.set.getTime() + TWILIGHT_MS : own.days > 0 ? events.rise && events.rise.getTime() - TWILIGHT_MS : events.noon?.getTime();
     state.date = new Date(dusk ?? t);
     Object.assign(state, STAR_DEMO, { star: 'Venus', sightLines: false, trails: false });
   },
@@ -131,14 +176,17 @@ export default {
     const now = state.date.getTime();
     // The pictures keep the time of day of the scene, since the flat model's answer changes through the night.
     const clock = ((((now - cycle.mid) % DAY_MS) + DAY_MS * 1.5) % DAY_MS) - DAY_MS / 2;
+    // One column for each picture, 73 days apart, and one row for each of the three accounts.
     const steps = [];
     for (let d = -SPAN_DAYS; d <= SPAN_DAYS; d += STEP_DAYS) steps.push(d);
     const left = 4;
     const colW = (w - left * 2) / steps.length;
-    const perSec = Math.min(0.56, (colW - 3) / 61); // pixels to a second of arc: the widest disc just fits its column
+    // Pixels to a second of arc, the same for every disc in all three rows, so that their sizes can be compared.
+    // A disc 61″ wide, which is about the widest Venus gets, fills its column at this scale.
+    const perSec = Math.min(0.56, (colW - 3) / 61);
     const rowH = Math.max(40, (h - 46) / 3);
     const realKm = flatRealKm(state);
-    const X = (days) => left + ((days + SPAN_DAYS) / STEP_DAYS + 0.5) * colW;
+    const X = (d) => left + ((d + SPAN_DAYS) / STEP_DAYS + 0.5) * colW; // across the drawing, for a number of days from the middle
     const rows = [
       ['Measured', INK.real, (t) => both(t).seen],
       ['Two orbits round the sun', INK.globe, (t) => both(t).sum],
@@ -148,6 +196,7 @@ export default {
       const top = 4 + i * rowH;
       label(ctx, name, left, top + 6, colour, 'left', 600);
       steps.forEach((d) => {
+        // Before it passes between us and the sun Venus is east of the sun, and its lit side is drawn on the right.
         const v = make(cycle.mid + d * DAY_MS + clock);
         phase(ctx, X(d), top + 14 + (rowH - 14) / 2, (v.widthSec / 2) * perSec, v.lit, d < 0, colour === INK.flat ? '#f3d9a4' : '#f4f1e6');
       });
@@ -172,14 +221,15 @@ export default {
     const { seen, sum } = both(t);
     const realKm = flatRealKm(state);
     const flat = flatVenus(t, state, realKm);
+    // A cell of the table is marked as wrong when it is further from the measured figure than `limit`.
     const bad = (a, b, limit) => (Math.abs(a - b) > limit ? ' class="bad"' : '');
     const widths = cycle.days.map((d) => d.seen.widthSec);
     const [widest, narrowest] = [Math.max(...widths), Math.min(...widths)];
+    // The most the sum is out from the measured figures on any day of the stretch.
     const worstLit = Math.max(...cycle.days.map((d) => Math.abs(d.seen.lit - d.sum.lit)));
     const worstWidth = Math.max(...cycle.days.map((d) => Math.abs(d.seen.widthSec - d.sum.widthSec)));
     // The flat ball over the next day: its width follows how far off along the ground it is, and its lit share follows the flat sun.
-    const through = [];
-    for (let hour = 0; hour < 24; hour++) through.push(flatVenus(t + hour * 3600000, state, realKm));
+    const through = flatThroughDay(t, state, realKm);
     const [flatWide, flatNarrow] = [Math.max(...through.map((f) => f.widthSec)), Math.min(...through.map((f) => f.widthSec))];
     const [flatMost, flatLeast] = [Math.max(...through.map((f) => f.lit)), Math.min(...through.map((f) => f.lit))];
     // The scene is put at dusk or dawn, which can be most of a day from the slider's moment. So the days are the
@@ -222,6 +272,8 @@ export default {
     const dated = Object.keys(FROM).sort().map((which) => new Date(passing(which)).toISOString().slice(0, 10));
     check('Venus argument: the dated passings in its list are the ones named', dated.join(' ') === '2023-08-13 2025-03-23 2026-10-24', dated.join(' '));
     const cycles = Object.keys(FROM).map(cycleOf);
+    // Each cycle has one entry a day: entry SPAN_DAYS is the day Venus passes between us and the sun, and the
+    // first and last are half a cycle either side of it.
     const all = cycles.flatMap((cy) => cy.days);
     const worstLit = Math.max(...all.map((d) => Math.abs(d.seen.lit - d.sum.lit)));
     const worstWidth = Math.max(...all.map((d) => Math.abs(d.seen.widthSec - d.sum.widthSec)));
@@ -239,11 +291,9 @@ export default {
     // The flat ball.
     const state = { lat: 51.5, lon: -0.1, starHeightKm: 5000, sunHeightKm: 5000 };
     const realKm = flatRealKm(state);
-    check('Venus argument: the flat ball is sized to show 24″ from straight beneath', near((2 * Math.atan(realKm / 2 / 5000) * 3600 * 180) / Math.PI, 24, 1e-9), `${realKm.toFixed(3)} km`);
+    check('Venus argument: the flat ball is sized to show 24″ from straight beneath', near(looksSec(realKm, 5000), 24, 1e-9), `${realKm.toFixed(3)} km`);
     const t = passing('2025') - 70 * DAY_MS;
-    const through = [];
-    for (let hour = 0; hour < 24; hour++) through.push(flatVenus(t + hour * 3600000, state, realKm));
-    const widths = through.map((f) => f.widthSec);
+    const widths = flatThroughDay(t, state, realKm).map((f) => f.widthSec);
     check('Venus argument: from London that ball changes width by more than half in a single day, and is never as wide as Venus is measured that week',
       Math.max(...widths) / Math.min(...widths) > 1.5 && Math.max(...widths) < both(t).seen.widthSec,
       `${Math.min(...widths).toFixed(1)}″ to ${Math.max(...widths).toFixed(1)}″ against ${both(t).seen.widthSec.toFixed(1)}″`);

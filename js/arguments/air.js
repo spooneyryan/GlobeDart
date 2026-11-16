@@ -1,3 +1,16 @@
+// Air without a container.
+//
+// The claim is that air next to a vacuum needs a lid. This demonstration sets
+// two accounts of the air side by side at any height:
+//
+//   held down by gravity   the pressure at a height is the weight of the air above it. The figures are
+//                          the International Standard Atmosphere (js/atmosphere.js), the table aircraft
+//                          altimeters are built on, which is itself an average of measurements
+//   sealed in, no pull     a container with nothing pulling the gas down: the same pressure at every
+//                          height, taken to be the sea-level figure
+//
+// Neither is the almanac's. What is measured is what a barometer reads up a
+// hill, which is the "check" below.
 import { SEA_LEVEL_HPA, ESCAPE_SPEED_M_S, standardAir, pressureAtHpa, airAboveKgPerM2, scaleHeightM, molecularSpeedMS, sealedPressureHpa } from '../atmosphere.js';
 
 // Places to compare, with their heights above sea level in metres.
@@ -13,6 +26,7 @@ const PLACES = [
 
 const INK = { text: '#e6edf5', muted: '#93a4b8', grid: '#243243', globe: '#7fb4ff', flat: '#ffb224' };
 
+/** Plain text, without the dark edge the other drawings give theirs. */
 function label(ctx, string, x, y, colour = INK.muted, align = 'left', weight = 400) {
   ctx.font = `${weight} 11px system-ui, -apple-system, 'Segoe UI', sans-serif`;
   ctx.textAlign = align;
@@ -29,6 +43,7 @@ function roundStep(max) {
   return (n < 1.5 ? 1 : n < 3.5 ? 2 : n < 7.5 ? 5 : 10) * pow;
 }
 
+/** A pressure in words, in hectopascals (the same as millibars), with more places the smaller it is. */
 const hPa = (p) => `${p >= 100 ? Math.round(p).toLocaleString('en-US') : p >= 1 ? p.toFixed(1) : p.toPrecision(2)} hPa`;
 
 export default {
@@ -50,11 +65,14 @@ export default {
   drawHeight: 210,
   /** Pressure across, height up: the curve gravity gives, and the straight line a sealed container would. */
   draw(ctx, { w, h }, fl, { fmtH }, own) {
+    // A graph with plain, even scales: pressure across from 0 to 1,100 hPa, and height up from the sea to a
+    // little above the height chosen (never less than 12 km, nor more than 80 km).
     const pad = { l: 58, r: 14, t: 14, b: 30 };
     const topM = Math.min(80000, Math.max(12000, own.km * 1000 * 1.3));
     const fullHpa = 1100;
     const X = (p) => pad.l + (p / fullHpa) * (w - pad.l - pad.r);
     const Y = (m) => h - pad.b - (m / topM) * (h - pad.t - pad.b);
+    // The grid: a line every 250 hPa, and a few round-numbered heights.
     ctx.lineWidth = 1;
     ctx.strokeStyle = INK.grid;
     for (let p = 0; p <= 1000; p += 250) {
@@ -85,7 +103,7 @@ export default {
     ctx.setLineDash([]);
     label(ctx, 'sealed in, no pull down', X(sealedPressureHpa()) - 6, Y(topM) + 10, INK.flat, 'right');
 
-    // Held down by gravity: thinner the higher you go.
+    // Held down by gravity: thinner the higher you go. The standard atmosphere's pressure at 121 heights, joined up.
     ctx.strokeStyle = INK.globe;
     ctx.beginPath();
     for (let i = 0; i <= 120; i++) {
@@ -116,7 +134,8 @@ export default {
   body(fl, { fmtH }, own) {
     const heightM = own.km * 1000;
     const here = pressureAtHpa(heightM);
-    const rows = [...PLACES.map(([name, m]) => [m > 0 ? `${name}, ${fmtH(m)}` : name, m]), [`<b>Your height, ${fmtH(heightM)}</b>`, heightM]]
+    // One row for each place, lowest first, with the height chosen among them.
+    const rows =[...PLACES.map(([name, m]) => [m > 0 ? `${name}, ${fmtH(m)}` : name, m]), [`<b>Your height, ${fmtH(heightM)}</b>`, heightM]]
       .sort((a, b) => a[1] - b[1])
       .map(
         ([name, m]) =>
@@ -125,6 +144,10 @@ export default {
       )
       .join('');
     const speed = molecularSpeedMS();
+    // In the text below: the pressure falls to 1/e of itself in one "scale height", so it falls by a third, to
+    // two thirds, in
+    //   scale height × ln(3 ÷ 2)
+    // which is written to the nearest 100 m.
     return `
     <p>A gas does spread out to fill an empty space, when nothing else acts on it. Something does act on the air:
     its own weight. The air at any height is squeezed by the weight of all the air above it, and that squeeze is
@@ -163,6 +186,9 @@ export default {
       near(scaleHeightM(), 8434, 5) && [0, 10, 1000, 11000, 20000, 47000, 71000].every((m, i, all) => i === 0 || pressureAtHpa(m) < pressureAtHpa(all[i - 1])));
     check('air argument: a small step in height changes the pressure by the weight of the air in that step',
       (() => {
+        // The density of air from its pressure and temperature, in kg per cubic metre, by the gas law:
+        //   density = pressure × (mass of a mole of air) ÷ (gas constant × temperature)
+        // A metre of that air weighs density × g on each square metre, and that is the fall in pressure, in pascals.
         const air = standardAir(5000);
         const density = (air.hPa * 100 * 0.0289644) / (8.31446 * air.tempK);
         // Gravity is a little weaker 5 km up, which the standard allows for.

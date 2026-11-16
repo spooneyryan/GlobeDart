@@ -15,7 +15,12 @@
 //   L   where round the orbit the planet is, in degrees
 //   ϖ   the direction of its closest point to the sun, in degrees
 //   Ω   the direction of the line where the two orbits cross, in degrees
+//
+// This file imports nothing: not the almanac, and not either model. What it
+// works out is set beside the almanac's figures in the app, and the checks
+// hold Mars to within 0.05° of its published place.
 const DEG = Math.PI / 180;
+/** The astronomical unit, the Earth's average distance from the sun, in km. */
 export const AU_KM = 149597870.7;
 
 export const ORBITS = {
@@ -28,8 +33,14 @@ export const ORBITS = {
 /** The widths of the two planets the app looks at, in km. */
 export const PLANET_RADIUS_KM = { Venus: 6051.8, Mars: 3389.5 };
 
+// The moment the six numbers are given for: noon on 1 January 2000. Their rates of change are per 36,525 days.
 const J2000_MS = Date.UTC(2000, 0, 1, 12);
 const CENTURY_MS = 36525 * 86400000;
+
+/** An angle brought into the range −180° to 180°. */
+const wrap180 = (deg) => ((deg % 360) + 540) % 360 - 180;
+/** An angle brought into the range 0° to 360°. */
+const wrap360 = (deg) => ((deg % 360) + 360) % 360;
 
 /**
  * Where a planet is at a moment, in astronomical units from the sun: x toward
@@ -48,13 +59,17 @@ export function orbitPlace(name, date) {
   const o = ORBITS[name];
   const at = (pair) => pair[0] + pair[1] * t;
   const [a, e] = [at(o.a), at(o.e)];
-  const M = ((((at(o.L) - at(o.peri)) % 360) + 540) % 360 - 180) * DEG;
+  const M = wrap180(at(o.L) - at(o.peri)) * DEG;
+  // Kepler's equation has no neat answer, so it is closed in on by Newton's method: a first guess, then
+  //   E ← E − (E − e sin E − M) ÷ (1 − e cos E)
+  // eight times over. For orbits this nearly round, three would do.
   let E = M + e * Math.sin(M);
   for (let i = 0; i < 8; i++) E -= (E - e * Math.sin(E) - M) / (1 - e * Math.cos(E));
   const xp = a * (Math.cos(E) - e);
   const yp = a * Math.sqrt(1 - e * e) * Math.sin(E);
   const [w, I, N] = [(at(o.peri) - at(o.node)) * DEG, at(o.I) * DEG, at(o.node) * DEG];
   const [cw, sw, cI, sI, cN, sN] = [Math.cos(w), Math.sin(w), Math.cos(I), Math.sin(I), Math.cos(N), Math.sin(N)];
+  // The three turns, multiplied out.
   return [
     (cw * cN - sw * sN * cI) * xp + (-sw * cN - cw * sN * cI) * yp,
     (cw * sN + sw * cN * cI) * xp + (-sw * sN + cw * cN * cI) * yp,
@@ -81,7 +96,7 @@ export function seenFromEarth(name, date) {
   // The angle at the planet between the sun (at the origin) and the Earth.
   const cosAngle = (planet[0] * to[0] + planet[1] * to[1] + planet[2] * to[2]) / (sunDistAu * distAu);
   return {
-    lon: ((Math.atan2(to[1], to[0]) / DEG) % 360 + 360) % 360,
+    lon: wrap360(Math.atan2(to[1], to[0]) / DEG),
     lat: Math.asin(to[2] / distAu) / DEG,
     distAu,
     lit: (1 + cosAngle) / 2,
@@ -91,7 +106,7 @@ export function seenFromEarth(name, date) {
   };
 }
 
-/** How wide a planet looks from a distance, in seconds of arc. */
+/** How wide a planet looks from a distance, in seconds of arc: 2 × atan(radius ÷ distance). */
 export function widthSec(name, distAu) {
   return (2 * Math.atan(PLANET_RADIUS_KM[name] / (distAu * AU_KM)) * 3600) / DEG;
 }
@@ -102,6 +117,7 @@ export function widthSec(name, distAu) {
  * changes sign. Returns the times in ms, with the direction it then sets off in.
  */
 export function stations(samples) {
+  // How far it moved from one day to the next, allowing for the step from 359° back to 0°.
   const turn = (a, b) => ((b - a + 540) % 360) - 180;
   const found = [];
   for (let i = 1; i + 1 < samples.length; i++) {
