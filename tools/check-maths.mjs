@@ -25,7 +25,8 @@ import {
   secondSunsetSeconds,
   radiusFromTwoSunsetsKm,
 } from '../js/horizon.js';
-import { ARGUMENTS, GROUPS, TOOLS, TOURS, OWN_TOUR, MAX_TOUR_STEPS, cleanTourSteps } from '../js/arguments/index.js';
+import { SCENERY, SCENERY_NAMES, sceneryAt, onLand } from '../js/place.js';
+import { ARGUMENTS, GROUPS, TOOLS, TOURS, OWN_TOUR, MAX_TOUR_STEPS, cleanTourSteps, moveTourStep } from '../js/arguments/index.js';
 import { SLIDER_STEPS, defaultsFor, cleanValue, cleanOwn, sliderPosition, sliderValue, encodeOwn, decodeOwn, controlFaults } from '../js/arguments/controls.js';
 import { earthUrl, buildKml, buildSightKml, parseKml, unzipKml, kmlText, KML_LIMITS } from '../js/earth.js';
 import { VIEWS, viewSizes } from '../js/presets.js';
@@ -662,9 +663,32 @@ check('every argument is in at least one tour', ARGUMENTS.every((a) => TOURS.som
   ARGUMENTS.filter((a) => !TOURS.some((t) => t.steps.includes(a.id))).map((a) => a.id).join(', '));
 check('every question an argument asks ends as a question', ARGUMENTS.every((a) => a.ask.trim().endsWith('?')),
   ARGUMENTS.filter((a) => !a.ask.trim().endsWith('?')).map((a) => a.id).join(', '));
-check('a tour of your own keeps only arguments that exist, each once, in the listed order',
-  cleanTourSteps(['ship', 'nonsense', 'sunset', 'ship']).join() === 'sunset,ship' && cleanTourSteps(null).length === 0);
+check('a tour of your own keeps only arguments that exist, each once, in the order they were chosen',
+  cleanTourSteps(['ship', 'nonsense', 'sunset', 'ship', 'constructor']).join() === 'ship,sunset' && cleanTourSteps(null).length === 0);
+check('a step of it can be moved one place earlier or later, and stays put at either end',
+  moveTourStep(['ship', 'sunset', 'spin'], 'spin', -1).join() === 'ship,spin,sunset' &&
+    moveTourStep(['ship', 'sunset', 'spin'], 'ship', 1).join() === 'sunset,ship,spin' &&
+    moveTourStep(['ship', 'sunset', 'spin'], 'ship', -1).join() === 'ship,sunset,spin' &&
+    moveTourStep(['ship', 'sunset', 'spin'], 'spin', 1).join() === 'ship,sunset,spin' &&
+    moveTourStep(['ship', 'sunset'], 'air', 1).join() === 'ship,sunset');
 check(`and is cut off at ${MAX_TOUR_STEPS} steps`, cleanTourSteps(ARGUMENTS.map((a) => a.id)).length === Math.min(MAX_TOUR_STEPS, ARGUMENTS.length));
+
+// 14-and-a-bit. The scenery under the observer's sky is sorted by place.
+{
+  const land = JSON.parse(readFileSync(new URL('../data/land-110m.json', import.meta.url), 'utf8'));
+  const expected = [
+    ['London', 51.5, -0.13, 'field'], ['Moscow', 55.75, 37.6, 'field'], ['Sydney', -33.87, 151.2, 'field'], ['Reykjavik', 64.1, -21.9, 'field'],
+    ['Cairo', 30.04, 31.24, 'desert'], ['Alice Springs', -23.7, 133.9, 'desert'], ['Phoenix', 33.4, -112, 'desert'],
+    ['Nairobi', -1.3, 36.8, 'tropics'], ['Manaus', -3.1, -60, 'tropics'], ['Singapore', 1.35, 103.8, 'tropics'],
+    ['the South Pole', -89.9, 0, 'snow'], ['the middle of Greenland', 72.6, -38.5, 'snow'], ['the North Pole', 89.9, 0, 'snow'],
+    ['the middle of the Atlantic', 30, -40, 'sea'], ['the Southern Ocean', -65, 100, 'sea'],
+  ];
+  const wrong = expected.filter(([, lat, lon, kind]) => sceneryAt(land, lat, lon) !== kind);
+  check(`the scenery is sorted rightly for ${expected.length} places: farmland, desert, the tropics, ice and open sea`,
+    wrong.length === 0, wrong.map(([name, lat, lon]) => `${name}: ${sceneryAt(land, lat, lon)}`).join(', '));
+  check('every kind of scenery has a name, and a place with no map to go by is taken for open sea',
+    SCENERY.every((kind) => typeof SCENERY_NAMES[kind] === 'string') && sceneryAt(null, 45, 10) === 'sea' && onLand(land, 47, 2) && !onLand(land, 0, -30));
+}
 
 // 14a. Controls that belong to an argument.
 const faults = ARGUMENTS.flatMap(controlFaults);
@@ -702,7 +726,7 @@ check(`the ${ARGUMENTS.filter((a) => a.controls?.length).length} arguments with 
   const blankCanvas = () => new Proxy({}, { get: (store, key) => (key in store ? store[key] : () => ({ width: 10, addColorStop() {} })), set: (store, key, value) => ((store[key] = value), true) });
   const drawHelpers = {
     fmtH: (m) => `${Math.round(m)} m`, fmtD: (k) => `${k} km`, km: (n) => `${Math.round(n)} km`, deg: (n, d = 1) => `${n.toFixed(d)}°`, city: place,
-    state: { sunHeightKm: 5000, lightRangeKm: 10000, flatLight: 'straight', lat: 51.5, lon: 0 },
+    state: { sunHeightKm: 5000, starHeightKm: 5000, moonHeightKm: 5000, lightRangeKm: 10000, flatLight: 'straight', lat: 51.5, lon: 0, date: new Date(Date.UTC(2025, 0, 16, 22)) },
   };
   // What a drawing is handed for the sky: the sun by day, just after sunset, at night, and just after sunset with the flat model's light bending.
   const skies = [[30, 4000, 'straight'], [-1.5, 9000, 'straight'], [-40, 15000, 'straight'], [-1.5, 10150, 'bent']].map(([el, groundKm, flatLight]) => ({

@@ -357,6 +357,16 @@ export function discCovered(sunR, moonR, sep) {
 }
 
 /**
+ * How much of the sun's width the moon covers, with the same s, m and x:
+ *   (s + m − x) ÷ 2s      no less than 0, and no more than 1 or m ÷ s
+ * This is what an eclipse's "magnitude" means. The outside views shade the
+ * ground by it, to draw the moon's shadow.
+ */
+export function eclipseDepth(sunR, moonR, sep) {
+  return Math.min(1, moonR / sunR, Math.max(0, (sunR + moonR - sep) / (2 * sunR)));
+}
+
+/**
  * What one observer sees of an eclipse of the sun. `sun` and `moon` are each a
  * bearing `az`, a height `el` and a width `sizeDeg`, from the measurement or
  * from either model. `inFront` is false when the moon is the further of the
@@ -479,6 +489,44 @@ export function bestFlatMoonHeightKm(sub, moon, place, params) {
     if (!best || missKm < best.missKm) best = { heightKm, missKm };
   }
   return best;
+}
+
+// ---------- the tides ----------
+
+/** The moon and the sun, each as a share of the Earth's mass. */
+export const MOON_MASS = 1 / 81.3006;
+export const SUN_MASS = 332946.05;
+
+/**
+ * How far one body would raise or lower a sea that covered the whole globe and
+ * had time to settle, in metres. The body pulls the near side of the Earth
+ * harder than the centre, and the centre harder than the far side, so the
+ * water is stretched along the line to it: up on both sides, down in between.
+ * With m the body's mass as a share of the Earth's, d its distance, R the
+ * Earth's radius and γ the angle round the Earth from the place it is overhead:
+ *
+ *   height = m × R × (R ÷ d)³ × (3 cos² γ − 1) ÷ 2
+ *
+ * `body` is the place it is overhead and its distance, as astro.js gives them.
+ * Real seas are not that simple: coasts hold the water up and it arrives late.
+ * The size and the hour of a real tide differ from port to port. Its rhythm is this one.
+ */
+export function tideHeightM(body, mass, lat, lon) {
+  const cosAngle = Math.cos(globeAngleDeg(lat, lon, body.lat, body.lon) * DEG);
+  return mass * EARTH_RADIUS_KM * 1000 * Math.pow(EARTH_RADIUS_KM / body.distKm, 3) * (3 * cosAngle * cosAngle - 1) / 2;
+}
+
+/**
+ * The flat model has no far side, so a pull from its moon could only heap the
+ * water up beneath it. This is the upward part of a pull that weakens as the
+ * square of the distance, from something H up, as a share of what it is
+ * straight underneath: with s the straight-line distance to it,
+ *
+ *   share = (H ÷ s)³
+ */
+export function flatPullShare(body, heightKm, lat, lon) {
+  const groundKm = flatMapDistanceKm(lat, lon, body.lat, body.lon);
+  return Math.pow(heightKm / Math.hypot(groundKm, heightKm), 3);
 }
 
 /**

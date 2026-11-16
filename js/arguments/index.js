@@ -43,14 +43,17 @@ import pilots from './pilots.js';
 import air from './air.js';
 import anymap from './anymap.js';
 import clouds from './clouds.js';
+import retrograde from './retrograde.js';
+import venus from './venus.js';
+import tides from './tides.js';
 
-export const ARGUMENTS = [sunset, clouds, angles, sunrise, december, polaris, southern, phases, sameface, eclipse, suneclipse, flights, icewall, anymap, ship, eyelevel, looming, waterlevel, bedford, twosunsets, pilots, spin, air];
+export const ARGUMENTS = [sunset, clouds, angles, sunrise, december, polaris, southern, retrograde, venus, phases, sameface, eclipse, suneclipse, tides, flights, icewall, anymap, ship, eyelevel, looming, waterlevel, bedford, twosunsets, pilots, spin, air];
 
 /** The headings the arguments are listed under, in order. */
 export const GROUPS = [
   { id: 'sun', label: 'The sun' },
   { id: 'moon', label: 'The moon' },
-  { id: 'stars', label: 'The stars' },
+  { id: 'stars', label: 'Stars and planets' },
   { id: 'travel', label: 'Distances' },
   { id: 'horizon', label: 'The horizon' },
   { id: 'motion', label: 'Motion and air' },
@@ -63,8 +66,8 @@ export const TOOLS = ['sky', 'horizon', 'flight'];
 /** The guided tours. Each is a list of arguments in the order they are shown, easiest first. The first is the one a bare link starts. */
 export const TOURS = [
   { id: 'short', label: 'The short tour', about: 'Six of the strongest arguments, easiest first.', steps: ['sunset', 'sunrise', 'angles', 'southern', 'flights', 'ship'] },
-  { id: 'sky', label: 'The sun and the stars', about: 'What the sky does over a day, over a year, and from different places.', steps: ['sunset', 'clouds', 'sunrise', 'december', 'angles', 'polaris', 'southern'] },
-  { id: 'moon', label: 'The moon', about: 'Its phases, its face, the shadow that crosses it and the shadow it casts.', steps: ['phases', 'sameface', 'eclipse', 'suneclipse'] },
+  { id: 'sky', label: 'Sun, stars and planets', about: 'What the sky does over a day, over a year, and from different places, and what two of the planets do in it.', steps: ['sunset', 'clouds', 'sunrise', 'december', 'angles', 'polaris', 'southern', 'retrograde', 'venus'] },
+  { id: 'moon', label: 'The moon', about: 'Its phases, its face, the shadow that crosses it, the shadow it casts and the tides it raises.', steps: ['phases', 'sameface', 'eclipse', 'suneclipse', 'tides'] },
   { id: 'horizon', label: 'The horizon', about: 'Ships, skylines and still water.', steps: ['ship', 'eyelevel', 'waterlevel', 'bedford', 'looming', 'twosunsets'] },
   { id: 'travel', label: 'Travel, motion and air', about: 'Flights, voyages, pilots, the spin and the air.', steps: ['flights', 'icewall', 'anymap', 'pilots', 'spin', 'air'] },
 ];
@@ -74,10 +77,18 @@ export const OWN_TOUR = 'own';
 export const MIN_TOUR_STEPS = 2;
 export const MAX_TOUR_STEPS = 12;
 
-/** A list of steps somebody chose, made usable: arguments that exist, each once, in the order the app lists them. */
+/** A list of steps somebody chose, made usable: arguments that exist, each once, in the order they were given. */
 export function cleanTourSteps(ids) {
-  const wanted = new Set(ids ?? []);
-  return ARGUMENTS.filter((a) => wanted.has(a.id))
-    .map((a) => a.id)
-    .slice(0, MAX_TOUR_STEPS);
+  const wanted = new Set((ids ?? []).filter((id) => Object.hasOwn(ARGUMENT_BY_ID, id)));
+  return [...wanted].slice(0, MAX_TOUR_STEPS);
+}
+
+/** The same steps with one of them moved one place earlier (-1) or later (+1). At either end it stays put. */
+export function moveTourStep(ids, id, by) {
+  const list = [...ids];
+  const at = list.indexOf(id);
+  const to = at + by;
+  if (at < 0 || to < 0 || to >= list.length) return list;
+  [list[at], list[to]] = [list[to], list[at]];
+  return list;
 }

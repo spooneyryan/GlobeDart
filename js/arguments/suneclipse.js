@@ -1,5 +1,6 @@
-import { DEG, EARTH_RADIUS_KM, MOON_RADIUS_KM, wrap180, subsolarPoint, moonPoint, observedSun, observedMoon, nextSolarEclipse, solarEclipseNear, solarEclipses, newMoons } from '../astro.js';
-import { globeAngleDeg, globePredict, globePredictNear, flatBendPerKm, discCovered, sunCovered, moonShadowGlobe, moonShadowFlat, bestFlatMoonHeightKm } from '../models.js';
+import { DEG, EARTH_RADIUS_KM, MOON_RADIUS_KM, wrap180, observedSun, observedMoon, nextSolarEclipse, solarEclipses, newMoons } from '../astro.js';
+import { globeAngleDeg, globePredict, globePredictNear, flatBendPerKm, discCovered, sunCovered, eclipseDepth, globePlace, moonShadowFlat, bestFlatMoonHeightKm } from '../models.js';
+import { keep, publishedAt, moment, middleOf, trackOf, flatCentre } from '../shadowpath.js';
 
 // The eclipses offered. Each of the dated ones is the first total eclipse on or after the day given.
 const LISTED = [
@@ -38,68 +39,15 @@ const flatOf = (state) => ({
   bendPerKm: flatBendPerKm({ sunHeightKm: state.sunHeightKm, bendSetKm: state.flatLight === 'bent' ? state.lightRangeKm : 0 }),
 });
 
-// Looking an eclipse up takes a search, and so does following its shadow, so each is done once and kept.
-const kept = new Map();
-function keep(key, make) {
-  if (!kept.has(key)) {
-    if (kept.size > 40) kept.clear();
-    kept.set(key, make());
-  }
-  return kept.get(key);
-}
-
 /** The published eclipse an entry of the list stands for. "Next" means the next after today. */
 function listed(which) {
   const from = FROM[which] ?? Math.floor(Date.now() / 86400000) * 86400000;
   return keep(`listed ${from}`, () => nextSolarEclipse(new Date(from), true));
 }
 
-/** The published eclipse of the sun going on at a moment, or null. */
-let lastLooked = { hour: null, found: null };
-function publishedAt(date) {
-  const t = date.getTime();
-  if (lastLooked.found && Math.abs(lastLooked.found.peak.getTime() - t) <= 4 * 3600000) return lastLooked.found;
-  const hour = Math.floor(t / 3600000);
-  if (lastLooked.hour !== hour) lastLooked = { hour, found: solarEclipseNear(date) };
-  return lastLooked.found;
-}
-
-/** Where the sun and the moon are overhead at a moment, and the shadow the globe makes of that. */
-function moment(date) {
-  const sub = subsolarPoint(date);
-  const moon = moonPoint(date);
-  return { date, sub, moon, globe: moonShadowGlobe(sub, moon) };
-}
-
-/** The middle of an eclipse: the moment itself, and how high the sun is from the published place. */
-function middleOf(eclipse) {
-  return keep(`middle ${eclipse.peak.getTime()}`, () => ({
-    ...moment(eclipse.peak),
-    sunEl: eclipse.lat === null ? null : observedSun(eclipse.peak, eclipse.lat, eclipse.lon).el,
-  }));
-}
-
-/** The globe's shadow every three minutes for as long as the line through the sun and moon meets the ground. */
-function trackOf(eclipse) {
-  return keep(`track ${eclipse.peak.getTime()}`, () => {
-    const list = [];
-    for (let minutes = -240; minutes <= 240; minutes += 3) {
-      const at = moment(new Date(eclipse.peak.getTime() + minutes * 60000));
-      if (at.globe.centre) list.push(at);
-    }
-    return list;
-  });
-}
-
 /** The moment of every new moon from 2020 to 2035: the sample both models are tried on. */
 const SAMPLE_YEARS = [2020, 2035];
 const everyNewMoon = () => keep('new moons', () => newMoons(...SAMPLE_YEARS).map(moment));
-
-/** Where the flat model's shadow is at one of those moments, if it is anywhere on the map. */
-function flatCentre(at, flat) {
-  const shade = moonShadowFlat(at.sub, at.moon, flat);
-  return shade.centre && !shade.offMap ? shade.centre : null;
-}
 
 function label(ctx, string, x, y, colour = INK.muted, align = 'left', weight = 400) {
   ctx.font = `${weight} 12px system-ui, -apple-system, 'Segoe UI', sans-serif`;
@@ -402,8 +350,12 @@ export default {
     ${along}
     ${others}
     ${often}
-    <p class="try">Try: press Play, or step the time, and watch the two shadows part on the map. Then drag "Flat model:
-    height of the moon" in the panel on the left and see how near the orange track can be brought to the blue one.</p>`;
+    <p>The two large views of the Earth from outside show the same thing at full size. Each has its own model's shadow
+    drawn on the ground: lightly where part of the sun is hidden, and dark where all of it is. The line is the track
+    of the middle of the shadow, blue for the globe and amber for the flat model, and the teal ring is the published
+    place. The flat map carries the globe's track as well, for comparison.</p>
+    <p class="try">Try: press Play, or step the time, and watch the two shadows part. Then drag "Flat model: height of
+    the moon" in the panel on the left and see how near the amber track can be brought to the blue one.</p>`;
   },
   checks({ check, near }) {
     // The share of the sun hidden.
@@ -411,6 +363,41 @@ export default {
       discCovered(0.26, 0.27, 0.6) === 0 && discCovered(0.26, 0.27, 0.005) === 1 && near(discCovered(0.27, 0.25, 0.01), (0.25 / 0.27) ** 2, 1e-12));
     check('solar eclipse argument: two equal discs with each centre on the other edge share 39.1% of their area',
       near(discCovered(1, 1, 1), 2 / 3 - Math.sqrt(3) / (2 * Math.PI), 1e-12), discCovered(1, 1, 1).toFixed(4));
+
+    // The shading of the ground in the outside views.
+    check('solar eclipse argument: the ground is shaded by how much of the sun\'s width is covered: none where the discs do not touch, half where the moon\'s edge is on the sun\'s middle, all where a larger moon is central',
+      eclipseDepth(0.26, 0.27, 0.53) === 0 && near(eclipseDepth(0.26, 0.27, 0.27), 0.5, 1e-12) && eclipseDepth(0.26, 0.27, 0.01) === 1 && near(eclipseDepth(0.27, 0.25, 0), 0.25 / 0.27, 1e-12));
+    {
+      // At the middle of the eclipse of April 2024: dark at the place the sum names, and no shading at all past the edge of the wider shadow.
+      const at = moment(listed('2024').peak);
+      const depthAt = (place) => {
+        const sun = globePredict(at.sub, place.lat, place.lon, null);
+        const moon = globePredictNear(at.moon, place.lat, place.lon, null);
+        return eclipseDepth(sun.sizeDeg / 2, moon.sizeDeg / 2, sunCovered(sun, moon).sepDeg);
+      };
+      // How far a place is from the line through the sun and the moon, measured square to it.
+      const sunAt = globePlace(at.sub.lat, at.sub.lon, at.sub.distKm);
+      const moonAt = globePlace(at.moon.lat, at.moon.lon, at.moon.distKm);
+      const gap = Math.hypot(...moonAt.map((v, i) => v - sunAt[i]));
+      const dir = moonAt.map((v, i) => (v - sunAt[i]) / gap);
+      const fromLine = (place) => {
+        const p = globePlace(place.lat, place.lon).map((v, i) => v - moonAt[i]);
+        const along = p[0] * dir[0] + p[1] * dir[1] + p[2] * dir[2];
+        return Math.sqrt(p[0] ** 2 + p[1] ** 2 + p[2] ** 2 - along * along);
+      };
+      // Places up and down the meridian through the middle of the shadow, and along its parallel.
+      const places = [];
+      for (let step = -60; step <= 60; step += 4) {
+        places.push({ lat: at.globe.centre.lat + step * 0.9, lon: at.globe.centre.lon }, { lat: at.globe.centre.lat, lon: at.globe.centre.lon + step });
+      }
+      const edge = at.globe.penumbraKm;
+      const clear = places.filter((p) => Math.abs(fromLine(p) - edge) > 80 && Math.abs(p.lat) < 88);
+      const wrong = clear.filter((p) => depthAt(p) > 0 !== fromLine(p) < edge);
+      const half = clear.filter((p) => Math.abs(fromLine(p) - edge / 2) < 400).map(depthAt);
+      check('solar eclipse argument: that shading is full at the middle of the shadow of April 2024, about half at half its width, and stops at the edge the cone of the shadow gives',
+        depthAt(at.globe.centre) === 1 && wrong.length === 0 && clear.length > 40 && half.length > 2 && half.every((d) => d > 0.35 && d < 0.65),
+        `${wrong.length} of ${clear.length} places wrong, ${half.map((d) => d.toFixed(2)).join(' ')} at half width`);
+    }
 
     // The globe: every new moon from 2020 to 2035, against what is published.
     const published = solarEclipses(2020, 2035);

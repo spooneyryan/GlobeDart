@@ -17,6 +17,7 @@ import {
   makeGlowSprite,
   add3,
 } from '../scene-utils.js';
+import { ECLIPSE_GLSL, eclipseUniforms, setEclipse, ring } from './eclipseShade.js';
 
 const LIFT = 0.004;
 const onMap = (lat, lon) => {
@@ -48,6 +49,14 @@ export class FlatView extends View3D {
       range: { value: 1.5 },
       observedMix: { value: 0 },
       sunDirGlobe: { value: new THREE.Vector3(1, 0, 0) },
+      // The flat model's own sun and moon, for its moon's shadow: heights and half-widths in Earth radii.
+      sunH: { value: 1 },
+      sunHalf: { value: 0.004 },
+      moonXZ: { value: new THREE.Vector2() },
+      moonH: { value: 0 }, // nothing when there is no moon on show
+      moonHalf: { value: 0.004 },
+      bend: { value: 0 }, // how much its light curves upward, per Earth radius travelled
+      ...eclipseUniforms(),
     };
     const disc = new THREE.CircleGeometry(Math.PI, 180);
     disc.rotateX(-Math.PI / 2);
@@ -71,7 +80,29 @@ export class FlatView extends View3D {
           uniform float range;
           uniform float observedMix;
           uniform vec3 sunDirGlobe;
+          uniform float sunH;
+          uniform float sunHalf;
+          uniform vec2 moonXZ;
+          uniform float moonH;
+          uniform float moonHalf;
+          uniform float bend;
           varying vec2 vP;
+          ${ECLIPSE_GLSL}
+          // The direction something h up over a place on the map is seen in from the point p (flatPredict in models.js).
+          vec3 seen(vec2 p, vec2 under, float h) {
+            vec2 d = under - p;
+            float g = length(d);
+            return normalize(vec3(d.x, h - 0.5 * bend * g * g, d.y));
+          }
+          // The flat model's shadow: its moon in front of its sun, from p.
+          float flatShade(vec2 p) {
+            if (moonH <= 0.0) return 1.0;
+            float sunDist = length(vec3(subXZ - p, sunH));
+            float moonDist = length(vec3(moonXZ - p, moonH));
+            if (moonDist >= sunDist) return 1.0;
+            float sep = length(cross(seen(p, subXZ, sunH), seen(p, moonXZ, moonH)));
+            return eclipseShade(eclipseDepth(sunHalf / sunDist, moonHalf / moonDist, sep));
+          }
           void main() {
             float r = length(vP);
             float lon = atan(-vP.y, vP.x);
@@ -83,7 +114,9 @@ export class FlatView extends View3D {
             vec3 n = vec3(cos(lat) * cos(lon), sin(lat), -cos(lat) * sin(lon));
             float real = smoothstep(-0.015, 0.015, dot(n, sunDirGlobe));
             float day = mix(spot, real, observedMix);
-            gl_FragColor = vec4(c * (0.26 + 0.74 * day), 1.0);
+            // The moon's shadow: the flat model's own, or the real one when the real daylight is drawn.
+            float shade = mix(flatShade(vP), mix(1.0, globeShade(n), real), observedMix);
+            gl_FragColor = vec4(c * (0.26 + 0.74 * day) * shade, 1.0);
           }`,
       }),
     );
@@ -109,6 +142,21 @@ export class FlatView extends View3D {
     this.scene.add(this.spotRing.object);
     this.terminator = new DynamicSegments(360, COLORS.terminator, 0.95);
     this.scene.add(this.terminator.object);
+
+    // An eclipse of the sun: the track of the middle of the shadow as this model has it and as the globe has it,
+    // the line through this model's sun and moon down to the ground, and the published place.
+    this.shadowTrack = new DynamicSegments(170, COLORS.flat, 1);
+    this.scene.add(this.shadowTrack.object);
+    this.shadowTrackGlobe = new DynamicSegments(170, COLORS.globe, 1);
+    this.scene.add(this.shadowTrackGlobe.object);
+    this.shadowLine = new DynamicSegments(32, COLORS.flat, 0.8);
+    this.scene.add(this.shadowLine.object);
+    this.shadowRing = new DynamicSegments(40, 0xffffff, 1);
+    this.scene.add(this.shadowRing.object);
+    this.publishedRing = new DynamicSegments(40, COLORS.measured, 1);
+    this.scene.add(this.publishedRing.object);
+    this.shadowLabel = this.labels.add("Flat model's shadow", 'shadow');
+    this.shadowLabel.visible = false;
 
     this.observerDot = new THREE.Mesh(
       new THREE.SphereGeometry(0.035, 20, 14),
@@ -239,6 +287,73 @@ export class FlatView extends View3D {
       prev = next;
     }
     this.terminator.end();
+
+    // The moon's shadow.
+    const m = c.moon;
+    setEclipse(this.uniforms, c.sub, m?.point ?? null);
+    this.uniforms.sunH.value = h;
+    this.uniforms.sunHalf.value = c.flat.sunWidthKm / 2 / EARTH_RADIUS_KM;
+    this.uniforms.moonH.value = m ? state.moonHeightKm / EARTH_RADIUS_KM : 0;
+    this.shadowTrack.begin();
+    this.shadowTrackGlobe.begin();
+    this.shadowLine.begin();
+    this.shadowRing.begin();
+    this.publishedRing.begin();
+    let flatDark = null;
+    if (m) {
+      const under = flatVec(m.point.lat, m.point.lon);
+      this.uniforms.moonXZ.value.set(under[0], under[2]);
+      this.uniforms.moonHalf.value = m.flat.sunWidthKm / 2 / EARTH_RADIUS_KM;
+      this.uniforms.bend.value = m.shade.bendPerKm * EARTH_RADIUS_KM;
+      const at = (p, lift) => {
+        const v = flatVec(p.lat, p.lon);
+        return [v[0], LIFT * lift, v[2]];
+      };
+      const around = (p, radius, lift) => {
+        const mid = at(p, lift);
+        return (a) => [mid[0] + radius * Math.cos(a), mid[1], mid[2] + radius * Math.sin(a)];
+      };
+      const path = m.shade.path;
+      if (path) {
+        const draw = (target, places, lift) => {
+          let last = null;
+          for (const p of places) {
+            const next = p && at(p, lift);
+            // A gap in the track, or the jump across the far rim of this map, lifts the pen.
+            if (next && last && Math.hypot(next[0] - last[0], next[2] - last[2]) < 0.6) target.add(last, next);
+            last = next;
+          }
+        };
+        draw(this.shadowTrackGlobe, path.globe, 2.5);
+        draw(this.shadowTrack, path.flat, 3);
+        ring(this.publishedRing, around(path.published, 0.085, 3));
+      }
+      const f = m.shade.flat;
+      if (f.centre) {
+        // The path of the light from the ground through the moon to the sun: straight, or curved if the model's light is.
+        const ground = at(f.centre, 3);
+        const whole = f.fromMoonKm + f.gapKm;
+        const curve = m.shade.bendPerKm;
+        const slope = f.fromMoonKm > 0 ? (state.moonHeightKm - (curve * f.fromMoonKm * f.fromMoonKm) / 2) / f.fromMoonKm : 0;
+        const along = (t) => {
+          const x = whole * t;
+          const up = whole > 0 ? slope * x + (curve * x * x) / 2 : state.sunHeightKm * t;
+          return [ground[0] + (sunPos[0] - ground[0]) * t, up / EARTH_RADIUS_KM, ground[2] + (sunPos[2] - ground[2]) * t];
+        };
+        for (let k = 0; k < 32; k++) this.shadowLine.add(along(k / 32), along((k + 1) / 32));
+        if (!f.offMap) {
+          flatDark = ground;
+          ring(this.shadowRing, around(f.centre, 0.05, 3));
+        }
+      }
+    }
+    this.shadowTrack.end();
+    this.shadowTrackGlobe.end();
+    this.shadowLine.end();
+    this.shadowRing.end();
+    this.publishedRing.end();
+    this.shadowLabel.visible = !!flatDark;
+    if (flatDark) this.shadowLabel.pos.fromArray(flatDark);
 
     const here = onMap(state.lat, state.lon);
     this.observerDot.position.fromArray(here);

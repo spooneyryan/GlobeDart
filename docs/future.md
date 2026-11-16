@@ -6,17 +6,17 @@ each is listed under it.
 ## Also built: the moon
 
 "Show the moon" puts the moon in both skies, with its phase as each model lights it, and four arguments use it:
-phases, the same face, eclipses of the moon and eclipses of the sun. Still to do: the moon's own tilt and wobble
-(so the insets could show its markings the right way up), and the tides. For eclipses of the sun: the shadow
-drawn on the globe and the flat map themselves, the area that sees a partial eclipse, and timing an eclipse of
-your own against both models.
+phases, the same face, eclipses of the moon, eclipses of the sun and the tides. Still to do: the moon's own tilt
+and wobble (so the insets could show its markings the right way up). For eclipses of the sun the shadow is now
+drawn on the globe and the flat map themselves, with the area that sees a partial eclipse. Still to do there:
+timing an eclipse of your own against both models. For the tides: a real tide-gauge record to set the sum
+against, which would be the first data in the app that is not astronomy or a map.
 
 ## Also built: a guided tour
 
 "Take a tour" offers five tours, each a few arguments in order. Every step opens with a question to ask before
 the answer is shown, and the tour ends with a list of things to go and check. "Choose your own" makes a tour from
-any arguments ticked, and its link carries the choice. Still to do: putting the steps of one's own tour in an
-order other than the listed one.
+any arguments ticked, in any order, and its link carries both.
 
 ## Also built: your own star measurements
 
@@ -30,8 +30,10 @@ under its catalogue number. Still to do: the names astronomers give them, such a
 
 ## Also built: the planets
 
-Mercury, Venus, Mars, Jupiter and Saturn can be followed and measured like stars. Still to do: anything that is
-special to a planet, such as the way Mars doubles back among the stars, or the phases of Venus.
+Mercury, Venus, Mars, Jupiter and Saturn can be followed and measured like stars. Two things special to a planet
+have demonstrations of their own: the way Mars doubles back among the stars, and the phases of Venus. Each sets
+the measurement against the Earth and the planet going round the sun on ellipses. Still to do: the same for
+Jupiter's moons, which a pair of binoculars shows going round something that is not the Earth.
 
 ## Also built: a flat model with bending light
 
@@ -59,8 +61,9 @@ by mountains and aircraft trails.
 The observer's sky used to be a chart: a sky with a grid over it and a strip of plain green beneath. It is now a
 view from a place, a field where two tracks cross, with bales, a fence, a tree and a farmhouse for scale, and
 shadows that follow each model's own sun. The grid is a setting, off to begin with. The sky also darkens when a
-model has the moon hiding the sun. Still to do: clouds, the moon's light on the ground at night, scenery that
-suits the observer's place (a beach, a desert, snow), and the corona round a fully hidden sun.
+model has the moon hiding the sun. The scenery now suits the observer's place: farmland, the tropics, desert,
+ice, or a deck on the open sea. Still to do: clouds, the moon's light on the ground at night, a coast (which
+would need to know which way the sea lies), the seasons, and the corona round a fully hidden sun.
 
 ## 1. Connect to Google Earth
 

@@ -271,3 +271,51 @@ export function seasons(year) {
     decSolstice: s.dec_solstice.date,
   };
 }
+
+// ---------- the planets among the stars ----------
+
+const OBLIQUITY_2000 = 23.4392911 * DEG; // the tilt of the Earth's axis to its orbit at the start of 2000
+
+/**
+ * Where a planet is seen among the stars from the Earth, as published:
+ * measured along the sun's yearly path (`lon`) and north of it (`lat`), in
+ * degrees, in the same fixed frame as js/planets.js uses. Also its distance in
+ * astronomical units and how much of its face is lit.
+ */
+export function planetSeen(body, date) {
+  const time = Astronomy.MakeTime(date);
+  const v = Astronomy.GeoVector(Astronomy.Body[body], time, true);
+  const [c, s] = [Math.cos(OBLIQUITY_2000), Math.sin(OBLIQUITY_2000)];
+  const [x, y, z] = [v.x, v.y * c + v.z * s, -v.y * s + v.z * c];
+  const distAu = Math.hypot(x, y, z);
+  return {
+    lon: wrap360(Math.atan2(y, x) / DEG),
+    lat: Math.asin(z / distAu) / DEG,
+    distAu,
+    lit: Astronomy.Illumination(Astronomy.Body[body], time).phase_fraction,
+  };
+}
+
+/**
+ * The next time the Earth and a planet are in line on the same side of the
+ * sun, as published. For Mars that is opposition, when it is nearest and up
+ * all night. For Venus it is the moment it passes between us and the sun.
+ */
+export function nextInLine(body, date) {
+  return Astronomy.SearchRelativeLongitude(Astronomy.Body[body], 0, date).date;
+}
+
+/**
+ * The new moons, first quarters, full moons and last quarters in a stretch of
+ * days, as published: each a time in ms and a `quarter` from 0 (new) to 3.
+ */
+export function moonQuarters(from, days) {
+  const list = [];
+  let found = Astronomy.SearchMoonQuarter(from);
+  const until = from.getTime() + days * 86400000;
+  while (found.time.date.getTime() <= until) {
+    list.push({ t: found.time.date.getTime(), quarter: found.quarter });
+    found = Astronomy.NextMoonQuarter(found);
+  }
+  return list;
+}

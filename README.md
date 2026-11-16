@@ -37,6 +37,9 @@ The empty `.nojekyll` file tells GitHub Pages to serve the files exactly as they
 | `js/astro.js` | Wrapper round astronomy-engine: subsolar point, measured sun and star positions, sunrise/sunset, seasons |
 | `js/models.js` | The two models. Each takes the point an object is overhead plus the observer's position and predicts azimuth, elevation and apparent width. Also the scoring |
 | `js/refraction.js` | How much the air lifts what you see, for standard air or a given temperature and pressure. The measurement and both models all use it |
+| `js/planets.js` | The Earth, Venus and Mars each going round the sun on an ellipse, from six published numbers apiece, and what that makes of a planet seen from the Earth |
+| `js/shadowpath.js` | The moon's shadow over the course of one eclipse of the sun: which published eclipse is going on, and its track under each model |
+| `js/place.js` | What kind of country the observer is in, for the scenery under the observer's sky |
 | `js/stars.js` | A hand-entered table of 96 bright stars and the lines that join them into familiar figures, the five planets, and stars added from the full catalogue |
 | `js/distances.js` | Distances under each model, the non-stop flights used to test them, and the test of whether four places can lie on any flat sheet |
 | `js/horizon.js` | What is hidden behind the horizon under each model, and how the air near the ground changes it |
@@ -53,8 +56,9 @@ The empty `.nojekyll` file tells GitHub Pages to serve the files exactly as they
 | `js/observations.js` | Horizon observations the user enters themselves: what bending each one implies, how each model fares, and the text form used in links |
 | `js/measurements.js` | Measurements of the sun or a star that the user enters themselves: stick-and-shadow conversion, scoring against both models, and the text form used in links |
 | `js/views/globeView.js`, `flatView.js` | Outside views of each model |
+| `js/views/eclipseShade.js` | The moon's shadow drawn on the ground of the two outside views |
 | `js/views/skyView.js` | The observer's sky: a first-person view, used once per model with a shared look direction |
-| `js/views/ground.js` | The ground under the observer's sky: the field, its tracks and landmarks, and the shadows |
+| `js/views/ground.js` | The ground under the observer's sky: the field, desert, snow or sea, its landmarks, and the shadows |
 | `js/views/horizonView.js` | The horizon drawings: the scene from the side and through a telescope, once per model |
 | `js/views/flightView.js` | The level-flight drawings: one lap speeded up, and a stretch to true scale |
 | `js/main.js` | State, controls, result panels, shareable URL, and the helpers handed to each argument |
@@ -101,13 +105,18 @@ the page is what changes with the numbers, and the short instructions needed to 
 
 The two lower views show what each model says the observer sees, from where the observer stands.
 
-- The observer stands in a mown field where two farm tracks cross. One track runs north to south and the other
-  east to west, so each compass point on the horizon has a track leading to it. There are hay bales, a fence, a
-  tree to the north and a farmhouse to the south.
-- The field is scenery. It is the same in both views and at every place on Earth, and neither model has any say
-  in it. Nothing in the east or the west stands taller than the eye, so the horizon is clear for sunrise and
-  sunset.
-- The light and the shadows do follow each view's own sun. The bales, the tree and the observer cast shadows
+- In farming country the observer stands in a mown field where two farm tracks cross. One track runs north to
+  south and the other east to west, so each compass point on the horizon has a track leading to it. There are
+  hay bales, a fence, a tree to the north and a farmhouse to the south.
+- The scenery suits the place. In the tropics it is dry grass and red earth, with a palm and a thatched hut. In
+  the great deserts it is sand, with rocks, a cactus and a mud-brick house. On the ice of Antarctica, Greenland
+  and the far north it is snow, with a marker flag and a red hut. On the open sea the observer stands on a
+  wooden deck, with a buoy near by and a sailing boat far off. The sorting is rough: it goes by the app's coarse
+  map, by latitude and by a short list of deserts (`js/place.js`), and takes no account of the season.
+- All of it is scenery. It is the same in both views, and neither model has any say in it. Nothing in the east
+  or the west stands taller than the eye, so the horizon is clear for sunrise and sunset. The tall thing is
+  always to the north and the dwelling to the south.
+- The light and the shadows do follow each view's own sun. The bales (or rocks, or posts), the tree and the observer cast shadows
   away from it, long when it is low. Look down and away from the sun to see your own. The two views differ
   wherever the models put the sun at different heights.
 - When a model has the moon hiding the sun, its sky darkens by the share hidden. With all of it hidden the sky
@@ -185,6 +194,14 @@ score across every star.
 - The five planets the eye can see are in the lists too. A planet has no fixed place among the stars, so its place
   is worked out for the date. It is otherwise treated exactly like a star, and the flat model puts it at the
   height of the stars.
+- Two demonstrations go further with the planets. "Mars doubles back" follows Mars for the hundred days either
+  side of an opposition, when it stops among the stars, goes backward for about eleven weeks and carries on.
+  "Phases of Venus" follows Venus through the 584 days in which it goes from a small full disc to a thin crescent
+  six times as wide. In both, the measurement is set against a sum that is given no positions in the sky: the
+  Earth and the planet each going round the sun on an ellipse, from six published numbers apiece
+  (`js/planets.js`). That sum puts Mars within 0.05° of its published place on every day and has each of its
+  turns within two hours, and gives the lit share of Venus within a thousandth. The flat model has no rule for
+  either. Each demonstration draws what its simplest reading would give.
 - The catalogue is a saved copy in `data/`, fetched from VizieR by `node tools/fetch-bright-stars.mjs`. All 96
   hand-entered stars are in it within 0.03°, which the maths check confirms. The two come from different sources.
 - The flat model puts every star at one height, turning about the point above the north pole once a day. That
@@ -214,6 +231,16 @@ close enough for that to shift it by up to a degree depending on where you stand
   then follows both shadows across a map: the flat one is thousands of km out at the ends of the track, wrong
   again at the next eclipse, and on the map at far more new moons than have an eclipse. The Moon table has a row
   for how much of the sun is hidden from the observer.
+- **The shadow on the maps.** During an eclipse of the sun the two outside views draw each model's own shadow on
+  the ground: light where part of the sun is hidden and dark where all of it is. Every point of the map is asked
+  what the observer is asked: how far apart the sun and moon look from there, and how wide each is. Each view
+  also has the track of the middle of its shadow, and a teal ring at the published place. The flat map carries
+  the globe's track in blue as well, and the line from its sun through its moon to the ground. With "Flat map
+  shading" set to the real daylight, the flat map shows the real shadow instead.
+- **Tides.** "Tides" works out how far the moon and the sun would raise a sea that covered the whole globe: two
+  high waters each time the moon comes round, about 12 hours 25 minutes apart, biggest at new and full moon. A
+  pull from the flat model's moon could only heap the sea up beneath it, once a day. The app holds no tide
+  tables, so this one has no measured column: it says what to look for in a tide table of your own.
 - "Next full moon" and "Next eclipse" jump to those moments and move the observer to where the moon is high.
 - The flat model's moon is treated as a ball lit by its sun. A moon that gives its own light would say nothing
   about phases, so there is nothing in that version to test.
@@ -323,13 +350,15 @@ person showing another.
 | Tour | Steps |
 |---|---|
 | The short tour | sunset, sunrise direction, sun angles from many cities, southern stars, southern flights, a ship over the horizon |
-| The sun and the stars | sunset, clouds lit from beneath, sunrise direction, December daylight, sun angles, the pole star, southern stars |
-| The moon | phases, the same face, eclipses of the moon, eclipses of the sun |
+| Sun, stars and planets | sunset, clouds lit from beneath, sunrise direction, December daylight, sun angles, the pole star, southern stars, Mars doubling back, the phases of Venus |
+| The moon | phases, the same face, eclipses of the moon, eclipses of the sun, the tides |
 | The horizon | a ship, the horizon at eye level, water finding its level, the Bedford Level, things seen from too far away, two sunsets |
 | Travel, motion and air | southern flights, the ice wall, any flat map, pilots and the nose, feeling the spin, air without a container |
 
-- "Choose your own" lists every argument with a tick box. Tick between two and twelve and they become a tour, in
-  the order they are listed. Once it is running, "Copy link to this view" gives a link that carries the choice.
+- "Choose your own" lists every argument with a tick box. Tick between two and twelve and they become a tour.
+  Each one ticked joins the end of the list shown beneath the boxes, and the arrows beside each step move it
+  earlier or later. Once the tour is running, "Copy link to this view" gives a link that carries the choice and
+  its order.
 - Each step opens with the claim and a question to ask before anything is shown. The views stay dimmed until
   "Show what each model says" is pressed, so the other person can commit to an answer first.
 - The last step lists, for each argument in that tour, what anyone can go and check for themselves.
@@ -346,12 +375,12 @@ A link can name a demonstration or a tour and nothing else, and the app sets the
 |---|---|
 | `#demo=bedford` | the demonstration with that name (the file names in `js/arguments/`) |
 | `#tn=horizon` | that tour at its first step: `short`, `sky`, `moon`, `horizon` or `travel` |
-| `#tn=own&tl=sunset~ship~bedford` | a tour of those arguments |
+| `#tn=own&tl=sunset~ship~bedford` | a tour of those arguments, in that order |
 
 ## The demonstrations
 
-The bar at the top lists the demonstrations under six headings: the sun, the moon, the stars, distances, the
-horizon, and motion and air. Picking a heading shows its demonstrations beneath it. There are twenty-three, each answering one
+The bar at the top lists the demonstrations under six headings: the sun, the moon, stars and planets, distances, the
+horizon, and motion and air. Picking a heading shows its demonstrations beneath it. There are twenty-six, each answering one
 flat-earth claim, which is quoted above its explanation.
 
 ## Writing an argument

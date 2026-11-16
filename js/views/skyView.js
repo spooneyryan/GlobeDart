@@ -291,6 +291,13 @@ export class SkyView extends View3D {
   }
 
   /** Shows or hides the lines of equal elevation and bearing, their labels and the line of the horizon. */
+  /** Changes the scenery under the sky to suit a kind of place (see js/place.js). */
+  setPlace(kind) {
+    if (this.ground.kind === kind) return;
+    this.ground.setPlace(kind);
+    this.dirty = true;
+  }
+
   setGrid(on) {
     if (this.grid.visible === on) return;
     this.grid.visible = this.horizonLine.visible = on;

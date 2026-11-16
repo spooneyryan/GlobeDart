@@ -4,6 +4,7 @@ import * as THREE from 'three';
 
 export const COLORS = {
   measured: 0x45d6c8, // what observers actually record
+  globe: 0x7fb4ff, // globe-model prediction
   flat: 0xffb224, // flat-model prediction
   own: 0xc79bff, // a measurement the user entered themselves
   observer: 0xff5d6c,

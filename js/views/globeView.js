@@ -17,6 +17,7 @@ import {
   add3,
   scale3,
 } from '../scene-utils.js';
+import { ECLIPSE_GLSL, eclipseUniforms, setEclipse, ring } from './eclipseShade.js';
 
 const SURFACE = 1.003;
 const onSphere = (lat, lon) => scale3(globeVec(lat, lon), SURFACE);
@@ -40,6 +41,7 @@ export class GlobeView extends View3D {
     this.uniforms = {
       map: { value: makeLandTexture(landCanvas) },
       sunDir: { value: new THREE.Vector3(1, 0, 0) },
+      ...eclipseUniforms(),
     };
     this.earth = new THREE.Mesh(
       new THREE.SphereGeometry(1, 128, 64),
@@ -58,6 +60,7 @@ export class GlobeView extends View3D {
           uniform sampler2D map;
           uniform vec3 sunDir;
           varying vec3 vN;
+          ${ECLIPSE_GLSL}
           void main() {
             vec3 n = normalize(vN);
             float lon = atan(-n.z, n.x);
@@ -66,7 +69,8 @@ export class GlobeView extends View3D {
             float d = dot(n, sunDir);
             float day = smoothstep(-0.015, 0.015, d);
             float twilight = smoothstep(-0.31, 0.0, d);
-            gl_FragColor = vec4(c * (0.2 + 0.18 * twilight + 0.62 * day), 1.0);
+            // The moon's shadow, when it is on the Earth: an eclipse of the sun.
+            gl_FragColor = vec4(c * (0.2 + 0.18 * twilight + 0.62 * day) * mix(1.0, globeShade(n), day), 1.0);
           }`,
       }),
     );
@@ -86,6 +90,14 @@ export class GlobeView extends View3D {
       new THREE.MeshBasicMaterial({ color: COLORS.flat }),
     );
     this.scene.add(this.subsolarDot);
+
+    // An eclipse of the sun: the track of the middle of the moon's shadow, where it is now, and the published place.
+    this.shadowTrack = new DynamicSegments(170, COLORS.globe, 1);
+    this.scene.add(this.shadowTrack.object);
+    this.shadowRing = new DynamicSegments(40, 0xffffff, 1);
+    this.scene.add(this.shadowRing.object);
+    this.publishedRing = new DynamicSegments(40, COLORS.measured, 1);
+    this.scene.add(this.publishedRing.object);
 
     this.observerDot = new THREE.Mesh(
       new THREE.SphereGeometry(0.022, 20, 14),
@@ -125,6 +137,9 @@ export class GlobeView extends View3D {
       return item;
     });
     this.sunLabel = this.labels.add('', 'sun');
+    this.shadowLabel = this.labels.add('', 'shadow');
+    this.shadowLabel.test = (camera) => facing(this.shadowLabel.pos)(camera);
+    this.shadowLabel.visible = false;
     this.observerLabel = this.labels.add('Observer', 'observer');
     this.observerLabel.test = (camera) => facing(this.observerLabel.pos)(camera);
     this.cityLabels = cities.map((c) => {
@@ -154,6 +169,33 @@ export class GlobeView extends View3D {
     this.sunGlow.position.fromArray(scale3(sun, 2.3));
     this.sunLabel.pos.fromArray(scale3(sun, 2.3));
     this.sunLabel.el.textContent = `To the sun, ${(c.sub.distKm / 1e6).toFixed(1)} million km →`;
+
+    // The moon's shadow.
+    const shade = c.moon?.shade;
+    setEclipse(this.uniforms, c.sub, c.moon?.point ?? null);
+    const around = (place, radiusDeg) => {
+      const frame = globeFrame(place.lat, place.lon);
+      const [r, up] = [Math.sin(radiusDeg * DEG), Math.cos(radiusDeg * DEG) * (SURFACE + 0.003)];
+      return (a) => [0, 1, 2].map((i) => frame.up[i] * up + (frame.east[i] * Math.cos(a) + frame.north[i] * Math.sin(a)) * r);
+    };
+    this.shadowTrack.begin();
+    this.publishedRing.begin();
+    if (shade?.path) {
+      const pts = shade.path.globe.map((p) => scale3(globeVec(p.lat, p.lon), SURFACE + 0.003));
+      for (let k = 1; k < pts.length; k++) this.shadowTrack.add(pts[k - 1], pts[k]);
+      ring(this.publishedRing, around(shade.path.published, 3.2));
+    }
+    this.shadowTrack.end();
+    this.publishedRing.end();
+    this.shadowRing.begin();
+    const dark = shade?.globe.centre;
+    if (dark) {
+      ring(this.shadowRing, around(dark, 1.6));
+      this.shadowLabel.pos.fromArray(onSphere(dark.lat, dark.lon));
+      this.shadowLabel.el.textContent = shade.globe.kind === 'total' ? "Moon's shadow: sun all hidden" : "Moon's shadow: a ring of sun left";
+    }
+    this.shadowLabel.visible = !!dark;
+    this.shadowRing.end();
 
     const here = onSphere(state.lat, state.lon);
     this.observerDot.position.fromArray(here);

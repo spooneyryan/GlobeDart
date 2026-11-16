@@ -18,6 +18,7 @@ import {
   globePredict,
   flatPredict,
   flatBendPerKm,
+  globeAngleDeg,
   impliedSunHeightKm,
   skySeparation,
   rmsMiss,
@@ -34,6 +35,8 @@ import {
   moonShadowFlat,
 } from './models.js';
 import { CITIES, REF_CITIES } from './cities.js';
+import { publishedAt, trackOf, flatCentre } from './shadowpath.js';
+import { sceneryAt } from './place.js';
 import {
   MAX_MEASUREMENTS,
   shadowToElevation,
@@ -90,7 +93,7 @@ import { makeLandCanvas } from './scene-utils.js';
 import { GlobeView } from './views/globeView.js';
 import { FlatView } from './views/flatView.js';
 import { SkyView } from './views/skyView.js';
-import { ARGUMENTS, ARGUMENT_BY_ID, GROUPS, TOOLS, TOURS, OWN_TOUR, MIN_TOUR_STEPS, MAX_TOUR_STEPS, cleanTourSteps } from './arguments/index.js';
+import { ARGUMENTS, ARGUMENT_BY_ID, GROUPS, TOOLS, TOURS, OWN_TOUR, MIN_TOUR_STEPS, MAX_TOUR_STEPS, cleanTourSteps, moveTourStep } from './arguments/index.js';
 import { SLIDER_STEPS, controlsOf, defaultsFor, cleanValue, cleanOwn, sliderPosition, sliderValue, encodeOwn, decodeOwn } from './arguments/controls.js';
 import { EXPLAIN } from './explain.js';
 import { initInfo, refreshInfo, infoButton, explainHtml } from './info.js';
@@ -363,6 +366,11 @@ function computeMoon(sub, sunObs, sunGlobe, sunFlat) {
   const f = { sun: flatPlace(sub.lat, sub.lon, state.sunHeightKm), moon: flatPlace(point.lat, point.lon, state.moonHeightKm) };
   const phase = moonPhase(date);
   const here = { globe: globePlace(lat, lon), flat: flatPlace(lat, lon) };
+  const flatHeights = { sunHeightKm: state.sunHeightKm, moonHeightKm: state.moonHeightKm, bendPerKm: flatBend() };
+  // During a published eclipse of the sun: the track of the middle of the shadow, as each model has it.
+  // The sun and moon are within a couple of degrees of each other at any eclipse, so nothing is looked up otherwise.
+  const eclipse = globeAngleDeg(sub.lat, sub.lon, point.lat, point.lon) < 3 ? publishedAt(date) : null;
+  const track = eclipse && eclipse.lat !== null ? trackOf(eclipse) : null;
   return {
     point,
     obs,
@@ -390,7 +398,13 @@ function computeMoon(sub, sunObs, sunGlobe, sunFlat) {
     },
     shade: {
       globe: moonShadowGlobe(sub, point),
-      flat: moonShadowFlat(sub, point, { sunHeightKm: state.sunHeightKm, moonHeightKm: state.moonHeightKm, bendPerKm: flatBend() }),
+      flat: moonShadowFlat(sub, point, flatHeights),
+      bendPerKm: flatHeights.bendPerKm,
+      path: track && {
+        published: { lat: eclipse.lat, lon: eclipse.lon },
+        globe: track.map((at) => at.globe.centre),
+        flat: track.map((at) => flatCentre(at, flatHeights)),
+      },
     },
     cities: REF_CITIES.map((place) => {
       const o = observedMoon(date, place.lat, place.lon, air);
@@ -1678,10 +1692,22 @@ const TOUR_PICK = {
       return `<fieldset class="pick-group"><legend>${esc(g.label)}</legend>${boxes.join('')}</fieldset>`;
     }).join('');
     const ready = chosen.size >= MIN_TOUR_STEPS;
+    // The steps in the order they will be shown, each with a pair of buttons to move it.
+    const last = state.ownTour.length - 1;
+    const order = state.ownTour
+      .map((id, i) => {
+        const name = esc(DEMOS[id].label);
+        return `<li><span>${name}</span>
+          <button data-move="${id}:-1" aria-label="Move ${name} earlier" title="Earlier"${i === 0 ? ' disabled' : ''}>↑</button>
+          <button data-move="${id}:1" aria-label="Move ${name} later" title="Later"${i === last ? ' disabled' : ''}>↓</button></li>`;
+      })
+      .join('');
     return `
-    <p>Tick the arguments to walk through, up to ${MAX_TOUR_STEPS}. They are shown in the order they are listed
-    here. Once the tour is running, "Copy link to this view" gives a link that carries your choice.</p>
+    <p>Tick the arguments to walk through, up to ${MAX_TOUR_STEPS}. Each one ticked joins the end of the list beneath,
+    where the arrows change the order. Once the tour is running, "Copy link to this view" gives a link that carries
+    your choice and its order.</p>
     ${groups}
+    ${order ? `<p class="pick-order-name">Your tour, in order</p><ol class="pick-order">${order}</ol>` : ''}
     <div class="buttons two">
       <button data-pick-cancel>Cancel</button>
       <button class="primary" data-pick-start${ready ? '' : ' disabled'}>${ready ? `Start with ${chosen.size} steps` : `Tick at least ${MIN_TOUR_STEPS}`}</button>
@@ -1767,9 +1793,16 @@ function setDemoBody(html) {
   if (html === demoBodyHtml) return;
   demoBodyHtml = html;
   const body = $('demo-body');
-  const ticked = body.contains(document.activeElement) ? document.activeElement.dataset.pick : null;
+  const held = body.contains(document.activeElement) ? document.activeElement.dataset : {};
+  const [ticked, moved] = [held.pick, held.move];
   body.innerHTML = html;
   if (ticked) body.querySelector(`[data-pick="${ticked}"]`)?.focus();
+  if (moved) {
+    // The button that moved a step goes with it. At the end of the list it is switched off, and its partner takes over.
+    const [id, by] = moved.split(':');
+    const again = body.querySelector(`[data-move="${moved}"]`);
+    (again && !again.disabled ? again : body.querySelector(`[data-move="${id}:${-Number(by)}"]`))?.focus();
+  }
 }
 
 /** An argument can draw a picture of its own. It goes above the explanation and is redrawn with it. */
@@ -1850,6 +1883,14 @@ function setObserver(place, focus = false) {
   requestUpdate();
 }
 
+// The kind of country the observer is in. Looking it up means going through the map, so it is kept until they move.
+const sceneryKept = { key: null, kind: 'field' };
+function sceneryHere() {
+  const key = `${state.lat.toFixed(2)} ${state.lon.toFixed(2)}`;
+  if (sceneryKept.key !== key) Object.assign(sceneryKept, { key, kind: sceneryAt(app.land, state.lat, state.lon) });
+  return sceneryKept.kind;
+}
+
 function setLook(look) {
   globeSky.setLook(look);
   flatSky.setLook(look);
@@ -1909,6 +1950,10 @@ function update() {
   flatView.update(state, c);
   globeSky.setGrid(state.skyGrid);
   flatSky.setGrid(state.skyGrid);
+  // The ground under the observer's sky suits the place: a field, a desert, snow, the sea.
+  const scenery = sceneryHere();
+  globeSky.setPlace(scenery);
+  flatSky.setPlace(scenery);
 
   const up = c.obs.el > -0.9;
   const flatMiss = skySeparation(c.obs, c.flat);
@@ -2776,13 +2821,18 @@ function bindControls() {
   $('demo-body').addEventListener('change', (e) => {
     const id = e.target.dataset?.pick;
     if (!id) return;
-    const chosen = new Set(state.ownTour);
-    if (e.target.checked) chosen.add(id);
-    else chosen.delete(id);
-    state.ownTour = cleanTourSteps([...chosen]);
+    // A step that is ticked joins the end of the tour. One that is unticked leaves it.
+    state.ownTour = cleanTourSteps(e.target.checked ? [...state.ownTour, id] : state.ownTour.filter((step) => step !== id));
     requestUpdate();
   });
   $('demo-body').addEventListener('click', (e) => {
+    const move = e.target.closest('[data-move]')?.dataset.move;
+    if (move) {
+      const [id, by] = move.split(':');
+      state.ownTour = moveTourStep(state.ownTour, id, Number(by));
+      requestUpdate();
+      return;
+    }
     if (e.target.closest('[data-pick-start]') && state.ownTour.length >= MIN_TOUR_STEPS) tourGo(0, OWN_TOUR);
     else if (e.target.closest('[data-pick-cancel]')) tourLeave();
   });

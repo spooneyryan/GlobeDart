@@ -683,6 +683,13 @@ body:not([data-mode='flight']) .fl-only {
   transform: translate(-50%, 8px);
 }
 
+/* The middle of the moon's shadow during an eclipse of the sun: named beneath its ring. */
+.label.shadow {
+  color: #fff;
+  font-weight: 600;
+  transform: translate(-50%, 16px);
+}
+
 .label.compass {
   font-size: 12px;
   font-weight: 700;
@@ -925,6 +932,37 @@ body:not([data-mode='flight']) .fl-only {
   gap: 5px;
   font-size: 13px;
   cursor: pointer;
+}
+
+/* The steps of a tour of one's own, in the order they will be shown. */
+.pick-order-name {
+  margin: 10px 0 4px !important;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.pick-order {
+  margin: 0 0 10px;
+  padding-left: 26px;
+  font-size: 13px;
+}
+
+.pick-order li {
+  padding: 2px 0;
+}
+
+.pick-order li > span {
+  display: inline-block;
+  min-width: 11em;
+}
+
+.pick-order button {
+  min-width: 28px;
+  padding: 1px 6px;
+  font-size: 13px;
+  line-height: 1.3;
 }
 
 .tour-list {

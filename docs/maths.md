@@ -228,6 +228,44 @@ otherwise       (s² acos((x² + s² − m²) ÷ 2xs) + m² acos((x² + m² − 
   runs from 4,913 to 4,938 km under a sun at 5,000 km; and a moon at any of those heights casts a shadow on the
   map at more than twice as many new moons as have a real one).
 
+**The shadow drawn on the maps.** The outside views shade the ground by how much of the sun's width the moon
+covers from each point, with the same s, m and x:
+
+```
+depth = (s + m − x) ÷ 2s        no less than 0, and no more than 1 or m ÷ s
+```
+
+The graphics card works that out for every point of the map, from where each model has its sun and moon.
+
+- Code: `js/models.js`, `eclipseDepth`; the same sum for the graphics card in `js/views/eclipseShade.js`; the
+  track in `js/shadowpath.js`.
+- Checks: with the argument (the depth is none where the discs do not touch, a half where the moon's edge is on
+  the sun's middle and all where a larger moon is central; and on 8 April 2024 it is full at the middle of the
+  shadow, about half at half its width, and stops at the edge the cone of the shadow gives, at 60 places).
+
+**The tides.** The moon pulls the near side of the Earth harder than the centre, and the centre harder than the
+far side. What is left over stretches a sea that covers the globe along the line to the moon. With m the moon's
+mass as a share of the Earth's, d its distance, R the Earth's radius and γ the angle round the Earth from the
+place the moon is overhead:
+
+```
+height = m × R × (R ÷ d)³ × (3 cos² γ − 1) ÷ 2
+```
+
+The sun does the same with its own mass and distance, 46% as strongly. A pull from the flat model's moon, H up
+and a straight-line distance s away, could only lift the water toward it. Its upward part, as a share of what it
+is straight beneath:
+
+```
+share = (H ÷ s)³
+```
+
+- Code: `js/models.js`, `tideHeightM`, `flatPullShare`. Published values: `js/astro.js`, `moonQuarters`. The
+  argument: `js/arguments/tides.js`.
+- Checks: with the argument (0.36 m beneath the moon and on the far side, −0.18 m half way between; the sun's
+  share 46%; on the equator 57 high waters in a month of the moon, 12 h 25 min apart, and half as many from a
+  single pull; the rise and fall at new and full moon over twice that at the quarters).
+
 ## 3b. Which side of a cloud is lit
 
 Light strikes the underside of a cloud only if it is travelling upward when it arrives. So each model is asked
@@ -281,6 +319,36 @@ the globe's times a little.
 - Code: `js/clouds.js`, `levelDropDeg`, `shadowHeightKm`, `globeCloudLight`, `flatCloudLight`,
   `litBelowMinutes`; `js/arguments/clouds.js`.
 - Checks: section 14 (run from `js/arguments/clouds.js`).
+
+## 3c. The Earth as one of the planets
+
+The globe model belongs to a larger picture in which the Earth goes round the sun, as the other planets do. For
+each orbit six numbers are published (the "Keplerian elements"): half its long axis a, how far from round it is
+e, its tilt I, where round it the planet is L, the direction of its closest point to the sun ϖ, and the
+direction Ω of the line where it crosses the Earth's orbit. Each has a value for the start of 2000 and a change
+per century.
+
+```
+M = L − ϖ                       how far round from its closest point, at a steady rate
+E − e sin E = M                 Kepler's equation, solved for E
+x′ = a (cos E − e)              its place in the plane of its own orbit
+y′ = a √(1 − e²) sin E
+```
+
+Three turns bring that into the plane of the Earth's orbit: by ϖ − Ω, by I and by Ω. The planet is then seen
+from the Earth along the straight line from one to the other. How much of its face is lit is the rule used for
+the moon, (1 + cos angle) ÷ 2, with the angle at the planet between the sun and the Earth. Its width in the sky
+is 2 × atan(its radius ÷ its distance).
+
+A planet stops among the stars where its change of place from one day to the next changes sign.
+
+- Code: `js/planets.js`, `orbitPlace`, `seenFromEarth`, `widthSec`, `stations`. Published values:
+  `js/astro.js`, `planetSeen`, `nextInLine`. The arguments: `js/arguments/retrograde.js`,
+  `js/arguments/venus.js`.
+- Checks: with the arguments (Mars within 0.05° of its published place on every day of three stretches of 200
+  days, and each of its turns within two hours; the lit share of Venus within a thousandth and its width within
+  a twentieth of a second of arc on every day of three stretches of 584 days; Venus over 57″ wide and under 2%
+  lit when it passes between us and the sun, and under 10″ and over 99% lit half a cycle either side).
 
 ## 4. Scoring the models
 
