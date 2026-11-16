@@ -184,6 +184,9 @@ export default {
     const small = m.days.reduce((a, b) => (b.globe < a.globe ? b : a));
     const nearest = (t, wanted) => m.quarters.filter((q) => wanted.includes(q.quarter)).reduce((a, b) => (!a || Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a), null);
     const bigAt = nearest(big.t, [0, 2]);
+    // The sum has big tides at new moon and at full moon alike: the table says so when this month shows both.
+    const rangeAt = (q) => m.days.reduce((a, b) => (Math.abs(b.t - q.t) < Math.abs(a.t - q.t) ? b : a)).globe;
+    const atBoth = [0, 2].every((quarter) => m.quarters.some((q) => q.quarter === quarter && rangeAt(q) > 0.75 * big.globe));
     const smallAt = nearest(small.t, [1, 3]);
     const flatAt = (quarter) => {
       const q = m.quarters.find((x) => x.quarter === quarter);
@@ -198,8 +201,9 @@ export default {
     <table class="data"><thead><tr><th></th><th class="globe">Globe</th><th class="flat">Flat, one pull</th></tr></thead><tbody>
     <tr><td>High waters in the next 24 h 50 min</td><td>${count(globeHighs.length)}</td><td class="${flatHighs.length === globeHighs.length ? '' : 'bad'}">${count(flatHighs.length)}</td></tr>
     <tr class="brk"><td>At</td><td>${times(globeHighs) || 'n/a'}</td><td>${times(flatHighs) || 'n/a'}</td></tr>
-    <tr><td>Biggest tides this month</td><td>${bigAt ? `at ${PHASES[bigAt.quarter]}` : 'n/a'}</td>${flatNew && flatFull && flatFull < 0.9 * flatNew ? '<td class="bad">at new moon only</td>' : '<td>n/a</td>'}</tr>
+    <tr class="brk"><td>Biggest tides in the month from now</td><td>${atBoth ? 'at new moon and at full moon' : bigAt ? `at ${PHASES[bigAt.quarter]}` : 'n/a'}</td>${flatNew && flatFull && flatFull < 0.9 * flatNew ? '<td class="bad">at new moon only</td>' : '<td>n/a</td>'}</tr>
     </tbody></table>
+    <p>The moment on show is ${day(now)}, ${new Date(now).toISOString().slice(11, 16)} UTC.</p>
     <p>These sums are for the place on the equator due ${state.lat >= 0 ? 'south' : 'north'} of the observer, where
     the moon is highest at the same moment as it is for the observer.</p>
     <p>This app holds no tide tables, so there is no measured column here. The real sea is held up by coasts and
@@ -213,8 +217,8 @@ export default {
     <p>Away from the equator the sum makes one of the two high waters larger than the other whenever the moon is well
     north or south. A real ocean answers the pull as a whole basin, which evens the two out on most coasts and leaves
     the difference plain on others, such as the Pacific coast of North America.</p>
-    <p>The sum gives the size, too. The moon at its distance today, ${km(c.moon.point.distKm)}, would raise a sea that
-    covered the whole Earth by <b class="g">${metres(moonMost)}</b> from low to high at most, and the sun by
+    <p>The sum gives the size, too. At this moment the moon is ${km(c.moon.point.distKm)} away. At that distance it would raise a sea
+    that covered the whole Earth by <b class="g">${metres(moonMost)}</b> from low to high at most, and the sun by
     <b class="g">${metres(sunMost)}</b>, ${percent(sunMost / moonMost)} as much. Right now the two together make
     ${metres(Math.abs(here.globe))} ${here.globe < 0 ? 'below' : 'above'} the average there. At new moon and at full moon
     the two stretches lie along the same line and add up. At the quarters they are at right angles and partly cancel.

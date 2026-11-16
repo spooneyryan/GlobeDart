@@ -3,7 +3,8 @@ import { globeAngleDeg, globePredict, globePredictNear, flatBendPerKm, discCover
 import { keep, publishedAt, moment, middleOf, trackOf, flatCentre } from '../shadowpath.js';
 
 // The eclipses offered. Each of the dated ones is the first total eclipse on or after the day given.
-const LISTED = [
+// An entry of this list that is the same eclipse as "the next" is left off it (see LISTED, further down).
+const ALL_LISTED = [
   ['next', 'The next total one'],
   ['2026', '12 August 2026, Iceland and Spain'],
   ['2024', '8 April 2024, North America'],
@@ -44,6 +45,8 @@ function listed(which) {
   const from = FROM[which] ?? Math.floor(Date.now() / 86400000) * 86400000;
   return keep(`listed ${from}`, () => nextSolarEclipse(new Date(from), true));
 }
+
+const LISTED = ALL_LISTED.filter(([which]) => which === 'next' || listed(which).peak.getTime() !== listed('next').peak.getTime());
 
 /** The moment of every new moon from 2020 to 2035: the sample both models are tried on. */
 const SAMPLE_YEARS = [2020, 2035];

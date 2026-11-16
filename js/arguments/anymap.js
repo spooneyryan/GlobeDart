@@ -1,4 +1,4 @@
-import { globeDistanceKm, flatDistanceKm, flatSheetLayout } from '../distances.js';
+import { globeDistanceKm, flatDistanceKm, flatSheetLayout, flatSheetBestFit } from '../distances.js';
 
 // Sets of four cities. The first three are laid out flat; the fourth is the one that will not fit.
 const SETS = {
@@ -9,13 +9,21 @@ const SETS = {
 
 const INK = { text: '#e6edf5', muted: '#93a4b8', line: '#3f86bd', flat: '#ffb224', bad: '#ff7847', real: '#45d6c8' };
 
+// The search for the best shared-out fit takes a moment, so each set's answer is kept.
+const spreadKept = new Map();
+function spreadOf(setId, six) {
+  if (!spreadKept.has(setId)) spreadKept.set(setId, flatSheetBestFit(six));
+  return spreadKept.get(setId);
+}
+
 /** The four cities of a set, their six distances, and where a flat sheet would have to put them. */
 function work(setId, city) {
   const names = (SETS[setId] ?? SETS.north).cities;
   const [a, b, c, d] = names.map(city);
   const km = (p, q) => globeDistanceKm(p, q);
   const sides = { ab: km(a, b), ac: km(a, c), bc: km(b, c), ad: km(a, d), bd: km(b, d) };
-  return { names, places: [a, b, c, d], sides, real: km(c, d), sheet: flatSheetLayout(sides) };
+  const real = km(c, d);
+  return { names, places: [a, b, c, d], sides, real, sheet: flatSheetLayout(sides), spread: spreadOf(SETS[setId] ? setId : 'north', { ...sides, cd: real }) };
 }
 
 function label(ctx, string, x, y, colour = INK.text, align = 'center', weight = 400) {
@@ -107,7 +115,7 @@ export default {
     label(ctx, `really ${km(real)} from ${names[2]} to ${names[3]}`, w - 8, h - 10, INK.real, 'right', 600);
   },
   body(c, { city, km }, own) {
-    const { names, places, sides, sheet, real } = work(own.set, city);
+    const { names, places, sides, sheet, real, spread } = work(own.set, city);
     const [a, b, cc, d] = names;
     const usual = flatDistanceKm(places[2], places[3]);
     const nearest = sheet.cd.reduce((best, v) => (Math.abs(v - real) < Math.abs(best - real) ? v : best));
@@ -123,8 +131,14 @@ export default {
     only two places.</p>
     <p>That leaves the sheet no choice about the sixth distance. From ${cc} to ${d} it must be
     <b class="f">${km(sheet.cd[0])}</b> or <b class="f">${km(sheet.cd[1])}</b>. The real distance is
-    <b class="m">${km(real)}</b>, so the nearest a flat sheet can come is <b class="f">${km(Math.abs(nearest - real))}</b>
-    out. No way of drawing the map changes that, because every flat map is drawn on a flat sheet.</p>
+    <b class="m">${km(real)}</b>. So a flat sheet that has the other five right has this one
+    <b class="f">${km(Math.abs(nearest - real))}</b> out.</p>
+    <p>A mapmaker need not put the whole error on one leg. It can be shared out, with every distance a little
+    wrong. This app searches for the arrangement of four points whose worst leg is least wrong, and the best it
+    finds still has a leg <b class="f">${km(spread.worstKm)}</b> out. Nothing can bring that to zero: a sheet with
+    all six right would have five right, and the sixth has just been shown to follow from those. That holds for
+    every way of drawing the map, because every flat map is drawn on a flat sheet. These routes are flown to
+    within a few km, so ${km(spread.worstKm)} is not a rounding error.</p>
     <p>The usual flat map makes this distance ${km(usual)}. It can only get some distances right by getting others
     wrong.</p>
     <p>On a ball 6,371 km in radius all six fit together exactly. ${SETS[own.set]?.note ?? ''}</p>
@@ -132,6 +146,8 @@ export default {
   },
   checks({ check, near }) {
     const place = { A: { lat: 0, lon: 0 }, B: { lat: 0, lon: 90 }, C: { lat: 90, lon: 0 }, D: { lat: 0, lon: 45 } };
+    check('any flat map argument: sharing the error out among all six distances, the best fit to a real rectangle is exact',
+      flatSheetBestFit({ ab: 3, ac: 5, bc: 4, ad: 4, bd: 5, cd: 3 }).worstKm < 1e-6);
     // Four places that really are on a flat sheet: the corners of a 3 by 4 rectangle.
     const flat = flatSheetLayout({ ab: 3, ac: 5, bc: 4, ad: 4, bd: 5 });
     check('any flat map argument: on a flat sheet the fourth corner of a rectangle comes out where it should', near(flat.cd[0], 3, 1e-9), flat.cd.map((v) => v.toFixed(3)).join(' or '));
@@ -145,7 +161,9 @@ export default {
       const cities = { London: [51.51, -0.13], 'New York': [40.71, -74.01], Tokyo: [35.68, 139.69], 'Los Angeles': [34.05, -118.24], Sydney: [-33.87, 151.21], Johannesburg: [-26.2, 28.05], Santiago: [-33.45, -70.67], Perth: [-31.95, 115.86] };
       const w = work(id, (name) => ({ lat: cities[name][0], lon: cities[name][1] }));
       const out = Math.min(...w.sheet.cd.map((v) => Math.abs(v - w.real)));
-      check(`any flat map argument: ${set.cities.join(', ')} are at least 1,000 km from fitting any flat sheet`, out > 1000, `${Math.round(out)} km out`);
+      check(`any flat map argument: ${set.cities.join(', ')} are at least 1,000 km from fitting a flat sheet that has the other five distances right`, out > 1000, `${Math.round(out)} km out`);
+      check(`any flat map argument: and with the error shared out, the best fit found still has a leg over 150 km out, and no leg further out than loading it on one gives`,
+        w.spread.worstKm > 150 && w.spread.worstKm < out, `${Math.round(w.spread.worstKm)} km`);
     }
   },
 };

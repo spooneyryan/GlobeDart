@@ -355,11 +355,14 @@ export class SkyView extends View3D {
     this.sun.position.copy(skyDir(sun.az, el, FAR));
     this.sun.lookAt(0, 0, 0);
     this.sun.scale.setScalar(radius);
-    this.sun.material.color.copy(sunColor);
+    // A model can say its sun is up but that its light does not reach this place. Then the sun is drawn where the
+    // model has it, as a dull disc with no glow, under a dark sky.
+    const unlit = !lit && el > -0.833;
+    this.sun.material.color.copy(sunColor).multiplyScalar(unlit ? 0.3 : 1);
     this.glow.position.copy(this.sun.position);
     this.glow.scale.setScalar(radius * 14);
     this.glow.material.color.copy(sunColor);
-    this.glow.material.opacity = 1 - 0.8 * hidden;
+    this.glow.material.opacity = unlit ? 0.06 : 1 - 0.8 * hidden;
 
     this.measuredRing.position.copy(skyDir(measured.az, measured.el, FAR));
     this.measuredRing.lookAt(0, 0, 0);
@@ -390,14 +393,14 @@ export class SkyView extends View3D {
     this.updateStars(stars, bright);
 
     this.sunLabel.pos.copy(skyDir(sun.az, el - 2.2, FAR));
-    this.sunLabel.el.textContent = 'sun';
+    this.sunLabel.el.textContent = unlit ? 'sun, out of its light' : 'sun';
     this.sunLabel.visible = el > 2.5;
     this.readout.textContent = text;
 
     // Inset: the sun at a fixed magnification, with the horizon if it is close.
     const px = Math.max(2, sun.sizeDeg * SCOPE_PX_PER_DEG);
     this.scopeSun.style.width = this.scopeSun.style.height = `${px.toFixed(1)}px`;
-    this.scopeSun.style.background = `#${sunColor.getHexString()}`;
+    this.scopeSun.style.background = `#${this.sun.material.color.getHexString()}`;
     const groundTop = 50 + (Math.max(-1, Math.min(1, el)) * SCOPE_PX_PER_DEG * 100) / 120;
     this.scopeGround.style.top = `${groundTop.toFixed(1)}%`;
     this.scopeCaption.textContent =

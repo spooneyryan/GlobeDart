@@ -83,7 +83,7 @@ export default {
     ctx.lineTo(X(sealedPressureHpa()), Y(topM));
     ctx.stroke();
     ctx.setLineDash([]);
-    label(ctx, 'sealed in, no gravity', X(sealedPressureHpa()) - 6, Y(topM) + 10, INK.flat, 'right');
+    label(ctx, 'sealed in, no pull down', X(sealedPressureHpa()) - 6, Y(topM) + 10, INK.flat, 'right');
 
     // Held down by gravity: thinner the higher you go.
     ctx.strokeStyle = INK.globe;
@@ -135,8 +135,13 @@ export default {
     climbed, and there is no height where it stops.</p>
     <p>A container with nothing pulling the gas down predicts something else: the same pressure at every height.
     This can be measured, and every aircraft altimeter is a barometer that relies on the answer.</p>
-    <table class="data"><thead><tr><th>Where</th><th class="globe">Held down by gravity</th><th class="flat">Sealed in, no gravity</th></tr></thead>
+    <table class="data"><thead><tr><th>Where</th><th class="globe">Held down by gravity</th><th class="flat">Sealed in, nothing pulling down</th></tr></thead>
     <tbody>${rows}</tbody></table>
+    <p>The usual reply is that density and buoyancy sort things out, with no need for gravity. But buoyancy is
+    a difference in pressure: a thing floats because the fluid presses harder on its underside than on its top.
+    Pressure only differs with height when something pulls the fluid down. Take the pull away and the right-hand
+    column is what is left: the same pressure at every height, and nothing floats or sinks. Put a pull back, by
+    any name, and the left-hand column follows from it, with the numbers that are measured.</p>
     <p>At ${fmtH(heightM)} the air is at <b class="g">${hPa(here)}</b>, ${((here / SEA_LEVEL_HPA) * 100).toPrecision(2)}% of
     what it is at the sea, and about ${Math.round(standardAir(heightM).tempK - 273.15)} °C. An airliner's cabin is
     a real container: it is pumped up because the air outside is too thin to breathe.</p>

@@ -699,7 +699,8 @@ function computeRoute() {
 // One day of hourly observations from every reference city, cached per date.
 const fitCache = { key: null };
 function getFit() {
-  const key = `${isoDay(state.date)}|${airKey()}`;
+  // With curving light the best sun height depends on how far the light is said to reach, so that is part of the key.
+  const key = `${isoDay(state.date)}|${airKey()}|${state.flatLight === 'bent' ? state.lightRangeKm : 'straight'}`;
   if (fitCache.key !== key) {
     const air = currentAir();
     const day = Date.parse(`${isoDay(state.date)}T00:00:00Z`);
@@ -816,6 +817,11 @@ function renderHorizon(hz) {
       <td class="${flatSome ? 'bad' : ''}">${amount(hz.flatHiddenM)}</td></tr>
     <tr><td>In view</td><td>${all ? 'none' : fmtH(hz.visibleM)}</td><td>${amount(hz.targetM - hz.flatHiddenM)}</td></tr>
     <tr><td>Distance to the horizon${infoButton('hz.horizon', 'distance to the horizon')}</td><td>${far ? fmtD(hz.horizonKm) : layered ? 'beyond it' : 'no limit'}</td><td>${flatHorizon}</td></tr>
+    ${
+      far && !layered && state.k !== 0
+        ? `<tr><td>The same with no bending by the air</td><td>${fmtD(horizonDistanceKm(state.eyeM, 0))}</td><td>no limit</td></tr>`
+        : ''
+    }
     <tr><td>Horizon below eye level${infoButton('hz.dip', 'horizon below eye level')}</td><td>${layered && !far ? '<span class="dim">n/a</span>' : deg(hz.dipDeg, 2)}</td>
       <td>${deg(flatDip, 2)}</td></tr>
     ${
@@ -1493,8 +1499,12 @@ const INTRO = {
     the sky.</span><span class="on-phone">The globe model is shown first and the flat model second, both at the same
     moment for the same observer. The two buttons above them choose what to look at: "From outside", or "Observer's
     sky" for what the observer should see.</span></p>
-    <p>In the observer's sky the <b class="m">teal ring</b> marks where the sun is actually measured to be. A model
-    is right when its sun sits inside the ring.</p>
+    <p>In the observer's sky the <b class="m">teal ring</b> marks where the sun is measured to be. A model is right
+    when its sun sits inside the ring.</p>
+    <p>"Measured" here means the published almanac figure, the one navigators and surveyors work from. This app
+    takes no readings of its own. The almanac comes from the same picture of the sky as the globe model, so the
+    globe agreeing with it is no surprise and is not the evidence. The evidence is that the almanac agrees with
+    what anyone measures. "Your own measurements" lets you put a reading of yours against both models.</p>
     <p class="try">Take a tour, pick a demonstration above, or change the time, the place and the flat-model
     settings yourself. Drag any view to look around; scroll or pinch to zoom.</p>`,
 };
@@ -1731,7 +1741,7 @@ let shownGroup = null; // the group the bar last scrolled to
 /** Puts an argument on show: its scene, its tool, and the pair of views a phone starts with. */
 function showArgument(id) {
   demoGroup = DEMOS[id].group;
-  Object.assign(state, { demo: id, playing: false, sailing: false, flying: false, picking: false });
+  Object.assign(state, { demo: id, playing: false, sailing: false, flying: false, picking: false, route: null });
   state.own = defaultsFor(DEMOS[id]);
   setTucked('results', false); // the explanation is in that sidebar
   DEMOS[id].apply(app, state.own);
@@ -1967,7 +1977,7 @@ function update() {
       ? `Sun is ${deg(-c.flat.el)} below the horizon, bearing ${bearing(c.flat.az)}\n`
       : `Sun ${deg(c.flat.el)} above the horizon, bearing ${bearing(c.flat.az)}\n`) +
     `Width ${deg(c.flat.sizeDeg, 2)}, and ${deg(flatMiss)} from where it is measured` +
-    (flatSet ? '\nIt has set: its light curves away overhead' : c.flat.lit ? '' : '\nBeyond its light range, yet in plain line of sight');
+    (flatSet ? '\nIt has set: its light curves away overhead' : c.flat.lit ? '' : '\nOut of its light: by this model it is dark here, with the sun still up');
   const s = c.stars;
   if (s) {
     const g = s.globe[s.selected];
@@ -2041,13 +2051,14 @@ function bendingRow(obs, globe, flat, extra = '') {
   // Which way the air would have to move it is always said: up is a lift, down is the opposite.
   const show = (x, d) => (Math.abs(x) < 0.005 ? 'none' : `${deg(Math.abs(x), d)} ${x < 0 ? 'down' : 'up'}`);
   const fits = (x) => (Math.abs(x - obs.lift) <= 0.1 ? 'good' : 'bad');
-  const need = show;
+  const need = (x, d) => (Math.abs(x) < 0.005 ? 'needs none' : `needs ${show(x, d)}`);
   // Well below the horizon the ground is in the way and "lift" stops meaning anything.
   const hidden = obs.el < -1;
   const real = hidden ? '<td class="dim">n/a</td>' : `<td>${show(obs.lift, 2)}</td>`;
   const globeNeed = obs.el - globe.trueEl;
   const flatNeed = obs.el - flat.trueEl;
-  return `<tr><td>Bending by the air${extra}</td>${real}
+  // One row, two questions: how much the air really lifts the sun, and how much each model would need it to.
+  return `<tr class="brk"><td>Bending by the air: the real amount, and what each model needs${extra}</td>${real}
     ${hidden ? '<td class="dim">n/a</td>' : `<td class="${fits(globeNeed)}">${need(globeNeed, 2)}</td>`}
     <td class="${fits(flatNeed)}">${need(flatNeed, 1)}</td></tr>`;
 }
@@ -2063,8 +2074,10 @@ function renderCompare(c, flatMiss) {
       <td class="${Math.abs(wrap180(c.flat.az - c.obs.az)) > 1 ? 'bad' : ''}">${bearing(c.flat.az)}</td></tr>
     <tr><td>Sun's width${infoButton('sky.width', 'width of the sun')}</td><td>${deg(c.obs.sizeDeg, 2)}</td><td>${deg(c.globe.sizeDeg, 2)}</td>
       <td class="${Math.abs(c.flat.sizeDeg - c.obs.sizeDeg) > 0.03 ? 'bad' : ''}">${deg(c.flat.sizeDeg, 2)}</td></tr>
-    <tr><td>Sun visible?</td><td>${up ? 'yes' : 'no, set'}</td><td>${c.globe.el > -0.833 ? 'yes' : 'no, set'}</td>
-      <td class="${up === c.flat.el > -0.833 ? '' : 'bad'}">${c.flat.el > -0.833 ? 'yes' : 'no, set'}</td></tr>
+    <tr class="brk"><td>Sun visible?</td><td>${up ? 'yes' : 'no, set'}</td><td>${c.globe.el > -0.833 ? 'yes' : 'no, set'}</td>
+      <td class="${up === (c.flat.el > -0.833 && c.flat.lit) ? '' : 'bad'}">${
+        c.flat.el <= -0.833 ? 'no, set' : c.flat.lit ? 'yes' : `no: out of its light, ${deg(c.flat.el, 0)} up`
+      }</td></tr>
     <tr><td>Off by${infoButton('sky.miss', 'how far off each model is')}</td><td class="dim">n/a</td><td class="${cls(globeMiss)}">${deg(globeMiss, 2)}</td>
       <td class="${cls(flatMiss)}">${deg(flatMiss, 1)}</td></tr>
     ${bendingRow(c.obs, c.globe, c.flat, infoButton('sky.lift', 'lift from the air'))}`;
@@ -2168,15 +2181,27 @@ function renderFit() {
   const fit = getFit();
   const air = currentAir();
   const current = rmsMiss(fit.samples, (s, lat, lon) => flatPredict(s, lat, lon, flatParams(), air));
-  $('fit-scope').textContent = `Typical miss: ${REF_CITIES.length} cities, every hour of ${isoDay(state.date)}, daytime only.`;
+  $('fit-scope').textContent = `Typical miss: ${REF_CITIES.length} cities, every hour of ${isoDay(state.date)}, daytime only. Leaving the nights out helps the flat model.`;
+  // Day or night: each model is also asked, for every one of those hours, whether the sun can be seen at all.
+  const seen = (el) => el > -0.833;
+  const tally = { all: fit.samples.length, globe: 0, flat: 0 };
+  for (const s of fit.samples) {
+    const real = seen(s.obs.el);
+    const f = flatPredict(s.sub, s.lat, s.lon, flatParams(), air);
+    if (seen(globePredict(s.sub, s.lat, s.lon, air).el) === real) tally.globe++;
+    if ((seen(f.el) && f.lit) === real) tally.flat++;
+  }
   $('fit-bars').innerHTML =
     bar('Globe', fit.globeRms, 'var(--globe)') +
     bar('Flat, as set', current, 'var(--flat)') +
     bar('Flat, best', fit.best?.rms ?? null, 'var(--flat)');
-  $('fit-note').textContent = fit.best
-    ? `No sun height gets the flat model closer than ${deg(fit.best.rms)} ` +
-      `(at ${km(fit.best.heightKm)}). For scale, the sun itself is about 0.5° wide.`
-    : '';
+  $('fit-note').textContent =
+    (fit.best
+      ? `No sun height gets the flat model closer than ${deg(fit.best.rms)} ` +
+        `(at ${km(fit.best.heightKm)}${state.flatLight === 'bent' ? ', with its light curving as set' : ''}). For scale, the sun itself is about 0.5° wide. `
+      : '') +
+    `Day or night: of the ${tally.all} city-hours, the globe has the sun up or down rightly in ${tally.globe}. ` +
+    `The flat model, going by ${state.flatLight === 'bent' ? 'where its curving light lets the sun set' : 'how far its light reaches'}, is right in ${tally.flat}.`;
   drawFitChart(fit, current);
 }
 
@@ -2255,13 +2280,17 @@ function drawFitChart(fit, current) {
   }
 }
 
+// The height a city's measurement would put the flat sun at. With curving light there are cities that see the
+// sun from beyond the distance its light is said to reach, and then no height at all would do.
+const impliedText = (heightKm) => (heightKm === null ? 'none works' : km(heightKm));
+
 function renderCities(c) {
   const rows = c.cities.map((x) => {
     const day = x.obs.el > 0;
     return `<tr><td>${x.name}</td>
       <td class="${day ? '' : 'dim'}">${day ? deg(x.obs.el) : 'night'}</td>
       <td class="${x.miss > 2 ? 'bad' : ''}">${deg(x.flat.el)}</td>
-      <td class="${day ? '' : 'dim'}">${day ? km(x.implied) : 'n/a'}</td></tr>`;
+      <td class="${day ? (x.implied === null ? 'bad' : '') : 'dim'}">${day ? impliedText(x.implied) : 'n/a'}</td></tr>`;
   });
   $('city-table').tBodies[0].innerHTML = rows.join('');
 }
@@ -2307,7 +2336,7 @@ function renderStars(c) {
       return `<tr><td>${x.name}</td>
         <td class="${seen ? '' : 'dim'}">${seen ? deg(x.obs.el) : 'not visible'}</td>
         <td class="${x.miss > 2 ? 'bad' : ''}">${deg(x.flat.el)}</td>
-        <td class="${seen ? '' : 'dim'}">${seen ? km(x.implied) : 'n/a'}</td></tr>`;
+        <td class="${seen ? (x.implied === null ? 'bad' : '') : 'dim'}">${seen ? impliedText(x.implied) : 'n/a'}</td></tr>`;
     })
     .join('');
 }
@@ -2344,7 +2373,7 @@ function renderRoutes(c) {
     const active = r?.preset === route;
     return `<tr class="${active ? 'active' : ''}">
       <td><button data-route="${i}" title="Draw this route on both maps">${route.from} – ${route.to}</button></td>
-      <td>${st.hours.toFixed(1)} h</td><td>${Math.round(st.globeKmh).toLocaleString('en-US')}</td>
+      <td title="${esc(route.flights)}: ${hoursMinutes(route.there)} out, ${hoursMinutes(route.back)} back">${st.hours.toFixed(1)} h</td><td>${Math.round(st.globeKmh).toLocaleString('en-US')}</td>
       <td class="${st.flatKmh > SOUND_KMH ? 'bad' : ''}">${Math.round(st.flatKmh).toLocaleString('en-US')}</td></tr>`;
   }).join('');
   const html = `${detail}\u0000${rows}`;

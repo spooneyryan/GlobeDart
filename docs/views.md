@@ -97,7 +97,12 @@ canigou.allauch.free.fr, lists the viewpoints with their positions, heights and 
 
 - **The Bedford Level.** It is a test with three markers, not a view of something far away, so it is one of the
   demonstrations instead ("The Bedford Level", `js/arguments/bedford.js`). Its figures are Rowbotham's from
-  *Zetetic Astronomy*, Experiment 1, and Wallace's from *My Life* (1905), volume 2, chapter 39.
+  *Zetetic Astronomy*, Experiment 1, and Wallace's from *My Life* (1905), volume 2, chapter 39. Who drew the
+  sketches is also from there, and from the captions in *The Field* of 26 March 1870: the view through the large
+  telescope was sketched by Wallace's referee, M. W. B. Coulcher, and signed as correct by Hampden's, William
+  Carpenter. Wallace says both referees sketched the views through the level telescope, that Carpenter's were the
+  more accurate, and that Coulcher signed them. The two accounts were read from reprints and summaries of them,
+  not from the original pages.
 - **Lake Pontchartrain: the causeway and the line of pylons.** The causeway's length and clearance are published.
   For the pylons, the length and spacing can be worked out from OpenStreetMap, but no source was found for the
   height of the towers or of the camera. Left out until there is one.

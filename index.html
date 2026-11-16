@@ -575,10 +575,13 @@
           <h2>At the observer <button type="button" class="info" data-info="sky.measured" aria-label="How this is worked out: where measured comes from">i</button></h2>
           <table id="compare" class="data">
             <thead>
-              <tr><th></th><th class="measured">Measured</th><th class="globe">Globe</th><th class="flat">Flat</th></tr>
+              <tr><th></th><th class="measured" title="The published almanac figure for this moment and place. This app takes no readings of its own.">Measured</th><th class="globe">Globe</th><th class="flat">Flat</th></tr>
             </thead>
             <tbody></tbody>
           </table>
+          <p class="hint">"Measured" is the published almanac figure, not a reading taken by this app. The almanac
+          and the globe model come from the same astronomy, so their agreeing proves nothing by itself. Test the
+          almanac against the sky with "Your own measurements", below.</p>
         </section>
 
         <section id="moon-panel" class="sky-only" hidden>
@@ -714,7 +717,10 @@
             </thead>
             <tbody></tbody>
           </table>
-          <p class="hint">Globe and Flat are the speed, in km/h, the flight would need on each map.</p>
+          <p class="hint">Globe and Flat are the speed, in km/h, the flight would need on each map. Time is the
+          scheduled time of a real non-stop flight, averaged over the two directions so that the wind cancels out.
+          Rest the pointer on a time for the flight numbers and both times. The whole timetable, and where it was
+          read, is in <a href="https://github.com/spooneyryan/GlobeDart/blob/main/docs/flight-times.md" target="_blank" rel="noopener">the flight-times page</a>.</p>
         </section>
 
         <section>

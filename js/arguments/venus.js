@@ -4,7 +4,8 @@ import { seenFromEarth, widthSec, AU_KM } from '../planets.js';
 import { INK, label, line, day } from './sketch.js';
 
 // The times Venus passes between us and the sun that are offered. Each dated one is the first on or after the day given.
-const LISTED = [
+// An entry of this list that is the same one as "the next" is left off it.
+const ALL_LISTED = [
   ['next', 'The next'],
   ['2026', 'October 2026'],
   ['2025', 'March 2025'],
@@ -30,6 +31,9 @@ function passing(which) {
   const from = FROM[which] ?? Math.floor(Date.now() / DAY_MS) * DAY_MS;
   return keep(`when ${from}`, () => nextInLine('Venus', new Date(from)).getTime());
 }
+
+const LISTED = ALL_LISTED.filter(([which]) => which === 'next' || passing(which) !== passing('next'));
+const days = (n) => `${n} day${n === 1 ? '' : 's'}`;
 
 /** Venus through a telescope at a moment, as published and as two planets going round the sun make it. */
 function both(t) {
@@ -178,12 +182,12 @@ export default {
     for (let hour = 0; hour < 24; hour++) through.push(flatVenus(t + hour * 3600000, state, realKm));
     const [flatWide, flatNarrow] = [Math.max(...through.map((f) => f.widthSec)), Math.min(...through.map((f) => f.widthSec))];
     const [flatMost, flatLeast] = [Math.max(...through.map((f) => f.lit)), Math.min(...through.map((f) => f.lit))];
-    const where =
-      Math.abs(daysOff) < 0.75
-        ? 'Venus is passing between us and the sun'
-        : `This is ${Math.round(Math.abs(daysOff))} days ${daysOff < 0 ? 'before' : 'after'} Venus passes between us and the sun`;
+    // The scene is put at dusk or dawn, which can be most of a day from the slider's moment. So the days are the
+    // slider's own unless the time has been moved somewhere else.
+    const n = Math.abs(daysOff - own.days) <= 1 ? own.days : Math.round(daysOff);
+    const where = n === 0 ? 'Venus is passing between us and the sun' : `This is ${days(Math.abs(n))} ${n < 0 ? 'before' : 'after'} Venus passes between us and the sun`;
     return `
-    <p>${where} (${day(cycle.mid)}). ${daysOff < -0.75 ? 'It is the evening star, in the west after sunset.' : daysOff > 0.75 ? 'It is the morning star, in the east before sunrise.' : 'It is lost in the glare of the sun.'}</p>
+    <p>${where} (${day(cycle.mid)}). ${n < 0 ? 'It is the evening star, in the west after sunset.' : n > 0 ? 'It is the morning star, in the east before sunrise.' : 'It is lost in the glare of the sun.'}</p>
     <table class="data"><thead><tr><th></th><th class="measured">Measured</th><th class="globe">Two orbits</th><th class="flat">Flat</th></tr></thead><tbody>
     <tr><td>Width of the disc</td><td>${sec(seen.widthSec)}</td><td${bad(seen.widthSec, sum.widthSec, 0.5)}>${sec(sum.widthSec)}</td><td${bad(seen.widthSec, flat.widthSec, 0.15 * seen.widthSec)}>${sec(flat.widthSec)}</td></tr>
     <tr><td>Face lit</td><td>${percent(seen.lit)}</td><td${bad(seen.lit, sum.lit, 0.02)}>${percent(sum.lit)}</td><td${bad(seen.lit, flat.lit, 0.05)}>${percent(flat.lit)}</td></tr>
@@ -199,6 +203,10 @@ export default {
     lit half faces away from us. The second row is worked out from six published numbers for each orbit and from
     nothing seen in the sky. Over this whole stretch it is never more than <b class="g">${worstWidth.toFixed(2)}″</b> out in
     width or <b class="g">${(worstLit * 100).toFixed(2)}%</b> in the share that is lit.</p>
+    <p>Where the first two rows come from: "Measured" is the published almanac figure, worked out by Astronomy
+    Engine, and the second row uses the orbit figures published by NASA's Jet Propulsion Laboratory. Both rest on
+    the same observations, so their agreeing is not an independent test. The independent test is the top row
+    against Venus in a telescope, which is the check suggested above.</p>
     <p>On the flat model Venus is a light in the dome at the height of the stars, ${km(state.starHeightKm)} up. A light
     with no shape has no phases. If it is a ball lit by the flat model's sun, as its moon is, the third row is what
     that ball shows from here. Its width depends on how far off along the ground it is, and so does the lit share:

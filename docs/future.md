@@ -65,6 +65,13 @@ model has the moon hiding the sun. The scenery now suits the observer's place: f
 ice, or a deck on the open sea. Still to do: clouds, the moon's light on the ground at night, a coast (which
 would need to know which way the sea lies), the seasons, and the corona round a fully hidden sun.
 
+## Not built: real readings to stand beside the almanac
+
+Every "Measured" figure is the published almanac's. The page says so, and "Your own measurements" lets anyone put
+a reading of theirs against both models. What it does not have is a set of real, dated readings by named people,
+each with its source, shown beside the almanac. None is included because none has been collected and checked,
+and they must not be made up.
+
 ## 1. Connect to Google Earth
 
 Let a place, a route or a sight line in GlobeDart be opened in Google Earth, and the other way round.

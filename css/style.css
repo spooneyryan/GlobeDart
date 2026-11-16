@@ -505,6 +505,10 @@ output {
   line-height: 1.4;
 }
 
+.hint a {
+  color: var(--globe);
+}
+
 /* Anything marked hidden stays hidden, whatever its usual layout. */
 [hidden] {
   display: none !important;

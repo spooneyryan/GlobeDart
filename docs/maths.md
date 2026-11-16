@@ -443,7 +443,13 @@ So the sheet allows only two values for the sixth distance, from C to D: one for
 is neither, the four places are not on a flat surface. This uses no map, so it holds for every flat map. London,
 New York, Tokyo and Los Angeles miss by 1,500 km; London, Tokyo, Sydney and Santiago by over 10,000 km.
 
-- Code: `js/distances.js`, `flatSheetLayout`; `js/arguments/anymap.js`.
+Those figures put the whole error on one distance and keep the other five exact. A map can share it out
+instead. `flatSheetBestFit` looks for the arrangement of four points whose worst distance is least wrong, by
+nudging the points about for as long as that helps. It is a search, so what it gives is the best it found. For
+the first set the worst leg is then 176 km out, and for the second 1,227 km. It cannot be nothing: a sheet with
+all six right would have five right, and the sixth follows from those.
+
+- Code: `js/distances.js`, `flatSheetLayout`, `flatSheetBestFit`; `js/arguments/anymap.js`.
 - Checks: section 14 (run from `js/arguments/anymap.js`).
 
 ## 8. Over the horizon

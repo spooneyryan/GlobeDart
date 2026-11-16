@@ -3,7 +3,8 @@ import { seenFromEarth, orbitPlace, stations } from '../planets.js';
 import { INK, label, disc, line, day, turn } from './sketch.js';
 
 // The oppositions offered. Each dated one is the first on or after the day given.
-const LISTED = [
+// An entry of this list that is the same one as "the next" is left off it.
+const ALL_LISTED = [
   ['next', 'The next'],
   ['2027', 'February 2027'],
   ['2025', 'January 2025'],
@@ -28,6 +29,9 @@ function opposition(which) {
   const from = FROM[which] ?? Math.floor(Date.now() / DAY_MS) * DAY_MS;
   return keep(`when ${from}`, () => nextInLine('Mars', new Date(from)).getTime());
 }
+
+const LISTED = ALL_LISTED.filter(([which]) => which === 'next' || opposition(which) !== opposition('next'));
+const days = (n) => `${n} day${n === 1 ? '' : 's'}`;
 
 /**
  * Mars day by day round one opposition, three ways: as published, as two
@@ -195,7 +199,10 @@ export default {
     const worst = Math.max(...path.seen.map((p, i) => Math.abs(turn(p.lon, path.sum[i].lon))));
     const worstSteady = Math.max(...path.seen.map((p, i) => Math.abs(turn(p.lon, path.steady[i].lon))));
     const late = back && on && backSum && onSum ? Math.max(Math.abs(backSum.t - back.t), Math.abs(onSum.t - on.t)) / 3600000 : 0;
-    const where = Math.abs(daysOff) < 0.75 ? 'This is the night of the opposition' : `This is ${Math.round(Math.abs(daysOff))} days ${daysOff < 0 ? 'before' : 'after'} the opposition`;
+    // The scene is put at the middle of the night, which can be most of a day from the slider's moment. So the
+    // days are the slider's own unless the time has been moved somewhere else.
+    const n = Math.abs(daysOff - own.days) <= 1 ? own.days : Math.round(daysOff);
+    const where = n === 0 ? 'This is the night of the opposition' : `This is ${days(Math.abs(n))} ${n < 0 ? 'before' : 'after'} the opposition`;
     return `
     <p>${where} of ${day(path.mid)}, when the Earth passes between Mars and the sun. Mars is then at its nearest and
     brightest, and up all night.</p>
@@ -224,6 +231,11 @@ export default {
     moon, and it never turns. To follow the real path, the light would have to be told when to stop and when to go
     back, at every opposition separately, because no two loops are alike. That is a record of what Mars does. It is
     not a reason for it.</p>
+    <p>Where the two lines come from: the teal one is the published almanac position, worked out by Astronomy
+    Engine, and the blue one uses the orbit figures published by NASA's Jet Propulsion Laboratory. Both rest on
+    the same centuries of observations, so their agreeing is not an independent test and is not offered as one.
+    What it shows is that six numbers for each orbit are enough to draw the loop. The independent test is the
+    teal line against Mars itself, which anyone with a star chart and a notebook can make.</p>
     <p>The two large views show where each model puts Mars in tonight's sky. They are both simply told where it is
     overhead, so neither is being tested on its path there. The test is in the drawing.</p>
     <p class="try">Try: drag "Days from opposition" from one end to the other and watch the far end of the line of

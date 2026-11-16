@@ -158,3 +158,56 @@ export function flatSheetLayout({ ab, ac, bc, ad, bd }) {
     cd: [Math.hypot(cx - dx, cy - dy), Math.hypot(cx - dx, cy + dy)],
   };
 }
+
+/**
+ * The flat sheet that comes nearest to all six distances between four places
+ * when the error is shared out among them, not loaded onto one.
+ *
+ * It is found by trying: the four places start where flatSheetLayout puts
+ * them, and are nudged about the sheet for as long as that makes the worst of
+ * the six misses smaller. A search like this can stop short of the very best
+ * arrangement, so the answer is the best it found, and the true least may be
+ * a little under it. It can never be nothing, unless the six distances really
+ * do fit a flat sheet.
+ *
+ * Returns the worst miss, and all six misses in the order ab, ac, bc, ad, bd, cd.
+ */
+export function flatSheetBestFit({ ab, ac, bc, ad, bd, cd }) {
+  const want = [ab, ac, bc, ad, bd, cd];
+  const pairs = [[0, 1], [0, 2], [1, 2], [0, 3], [1, 3], [2, 3]];
+  const misses = (p) => pairs.map(([i, j], k) => Math.hypot(p[2 * i] - p[2 * j], p[2 * i + 1] - p[2 * j + 1]) - want[k]);
+  const worst = (p) => Math.max(...misses(p).map(Math.abs));
+  // A fixed list of directions to nudge in, so that the search gives the same answer every time.
+  let seed = 12345;
+  const next = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648) * 2 - 1;
+  const directions = [];
+  for (let i = 0; i < 8; i++) directions.push(Array.from({ length: 8 }, (_, k) => (k === i ? 1 : 0)));
+  for (let i = 0; i < 40; i++) {
+    const v = Array.from({ length: 8 }, next);
+    const size = Math.hypot(...v);
+    directions.push(v.map((x) => x / size));
+  }
+  const layout = flatSheetLayout({ ab, ac, bc, ad, bd });
+  let best = null;
+  for (const d of layout.d) {
+    let p = [...layout.a, ...layout.b, ...layout.c, ...d];
+    let score = worst(p);
+    for (let step = Math.max(...want) / 8; step > 0.01; ) {
+      let moved = false;
+      for (const dir of directions) {
+        for (const sign of [1, -1]) {
+          const trial = p.map((x, k) => x + sign * step * dir[k]);
+          const s = worst(trial);
+          if (s < score - 1e-9) {
+            p = trial;
+            score = s;
+            moved = true;
+          }
+        }
+      }
+      if (!moved) step /= 2;
+    }
+    if (!best || score < best.worstKm) best = { worstKm: score, misses: misses(p) };
+  }
+  return best;
+}

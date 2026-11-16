@@ -96,8 +96,9 @@ the page is what changes with the numbers, and the short instructions needed to 
 
 ## Ground rules the code follows
 
-- "Measured" values come from the ephemeris, which stands in for real measurements and can be checked by anyone with a stick, a compass and a clock.
+- "Measured" values are the published almanac figures, worked out by Astronomy Engine. The app takes no readings of its own, and says so on the page. The almanac and the globe model come from the same astronomy, so the globe matching it is true by construction and is not offered as the evidence. The evidence is that the almanac matches the sky, which anyone can test with a stick, a compass and a clock, and "Your own measurements" scores both models against such a reading.
 - Both models get the same single input for each object: the point on Earth it is directly overhead. Neither is handed the answer.
+- The flat model's own account of night counts. With straight light, a place beyond the reach of its sun's light is drawn dark, with the sun a dull disc where the model still has it, and the table says the sun cannot be seen. The score has a second line for it: in how many city-hours each model has the sun up or down rightly.
 - The flat model is given the kindest reading available: its sun is sized to look correct when overhead, it is scored on daytime moments only, and its sun and stars each get their own adjustable height.
 - The globe side has no free parameters. The flat side has every knob exposed.
 

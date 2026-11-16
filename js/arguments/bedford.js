@@ -67,9 +67,11 @@ export default {
     ${onShow}
     ${row('Flat', 0, 'flat')}
     </tbody></table>
-    <p>Over his six miles Wallace expected about ${said('5 ft', WALLACE.expectedM)}. The sketches of what the telescope showed were drawn by
-    the flat-earth side's own referee and printed in <i>The Field</i>. They show the disc standing above the
-    band, and the umpire awarded Wallace the bet. In 1901 Henry Oldham repeated it with three poles and found the
+    <p>Over his six miles Wallace expected about ${said('5 ft', WALLACE.expectedM)}. Each side had a referee, and the sketches
+    of what the telescopes showed were signed as correct by both, the flat-earth side's William Carpenter among
+    them. They were printed in <i>The Field</i> of 26 March 1870, and Wallace's own account (<i>My Life</i>, 1905)
+    has Carpenter drawing the pair seen through the level telescope himself. They show the disc standing above
+    the band, and the umpire awarded Wallace the bet. Hampden, who had put up the stake, never accepted it. In 1901 Henry Oldham repeated it with three poles and found the
     middle one about ${said('6 ft', 6 * FOOT_M)} high.</p>
     <p>For the flat reading to survive this test, the air at that height would have to bend light exactly
     as much as the globe curves, for the whole six miles: k = 1, and the disc back on the band.</p>

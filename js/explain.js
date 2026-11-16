@@ -45,15 +45,24 @@ export const EXPLAIN = {
     tool: 'sky',
     title: 'Where "measured" comes from',
     code: [['astro.js', 'observedSun', 'subsolarPoint']],
-    body: (c, { km }) => `
-      <p>"Measured" is where astronomers' published tables put the sun for this time and place. It stands in for
-      what you would measure yourself with a stick's shadow, a compass and a clock, and it agrees with careful
-      measurements to a small fraction of a degree.</p>
-      <p>Neither model is given that answer. Each is told one fact only: the place on Earth where the sun is
-      directly overhead at this moment.</p>
+    body: (c) => `
+      <p>"Measured" is the published almanac figure: where astronomers' tables put the sun for this time and
+      place. This app takes no readings of its own. The figures are worked out by Astronomy Engine, a published
+      library that follows the same theories of the sun, moon and planets as the printed almanacs, and agrees with
+      NASA's own to about a sixtieth of a degree.</p>
+      <p>That matters for how to read the tables. The almanac and the globe model come from the same astronomy, so
+      the globe column matching the measured one, often to 0.00°, is true by construction. It is not offered as
+      the evidence, and a sceptic is right to say so.</p>
+      <p>The evidence is that the almanac matches the sky. Navigators have set a sextant against it every day for
+      over two centuries, surveyors use it to find north, and everyone who has timed a sunset or travelled to an
+      eclipse has tested it. You can test it too, in a few minutes, with a stick's shadow, a compass and a clock:
+      "Your own measurements" takes the reading and scores both models against it. If your reading agrees with
+      the almanac, the flat column is then as far from your own measurement as it is from the one shown.</p>
+      <p>Neither model is handed the almanac's answer. Each is told one fact only: the place on Earth where the
+      sun is directly overhead at this moment.</p>
       ${steps(
         step('The sun is overhead at', '', `${latitude(c.sub.lat)}, ${longitude(c.sub.lon)}`),
-        step('Its distance from the Earth', '', km(c.sub.distKm)),
+        step('Its distance from the Earth', '', `${(c.sub.distKm / 1e6).toFixed(1)} million km`),
       )}`,
   },
 
@@ -132,7 +141,7 @@ export const EXPLAIN = {
       ${heading('globe', 'Measured, and globe')}
       ${steps(
         step("Sun's radius", 'r', km(SUN_RADIUS_KM)),
-        step("Sun's distance", 'D', km(c.sub.distKm)),
+        step("Sun's distance", 'D', `${(c.sub.distKm / 1e6).toFixed(1)} million km`),
         step('Width in the sky', '2 × atan(r ÷ D)', deg(c.globe.sizeDeg, 2)),
       )}
       <p>The flat model's sun is close, so it must look smaller the further away it is. It is given the most
@@ -210,7 +219,13 @@ export const EXPLAIN = {
         step('Score', '√(average of miss²)', ''),
       )}
       <p>Night is left out because the flat model never lets the sun set, and would score far worse with it in.
-      Squaring before averaging makes large misses count for more than small ones.</p>
+      Which hours are night is taken from the almanac, which is to say from when the sun is really seen to be up.
+      Leaving them out is a kindness to the flat model, not a way of marking it down. Squaring before averaging
+      makes large misses count for more than small ones.</p>
+      <p>The line beneath the chart asks the other question: for every one of those city-hours, night included,
+      does the model have the sun visible or not? The flat model is given its own rule for that. With straight
+      light the sun counts as visible wherever its light is said to reach. With curving light it counts as
+      visible until it sets.</p>
       <p>"Flat, as set" uses the sun height on the slider. "Flat, best" is the lowest score any height from 100 km
       to 1,000,000 km reaches; the chart shows the score at every height in between.</p>`,
   },
@@ -337,8 +352,10 @@ export const EXPLAIN = {
       <p><b>Sun height</b> is how far above the flat surface the sun sits. The globe has no such setting: it has
       nothing to adjust.</p>
       <p><b>How far its light reaches</b> is the size of the patch the sun lights, like a spotlight. It decides
-      where the flat map is shaded as day. It does not move the sun, so a place "beyond its light" still has the
-      sun in plain line of sight.</p>
+      where the flat map is shaded as day, and it is this model's account of night: beyond it the model has no
+      sunlight, so the observer's sky is drawn dark, the sun is drawn as a dull disc where the model still has it,
+      and the table says the sun cannot be seen. It does not move the sun. So the model has night fall with the
+      sun still well up in the sky, at a height of atan(sun height ÷ reach), and never on the horizon.</p>
       <p><b>Its light travels</b> switches to a version in which light curves upward, so that a far-off sun looks
       lower and can set. It has its own explanation.</p>
       <p><b>Flat map shading</b> switches between that spotlight and the places where it really is day.</p>`,
@@ -360,13 +377,13 @@ export const EXPLAIN = {
       <p>Nothing says how much light should curve, so the amount is set from what it has to explain: the sun is
       seen exactly on the horizon from as far as its light is said to reach. That is the most generous choice.</p>
       ${steps(
-        step('How much light curves', 'c = 2 × H ÷ reach²', `2 × ${km(state.sunHeightKm)} ÷ (${km(state.lightRangeKm)})² = ${(curve * 1e6).toFixed(1)} m of rise in the second kilometre per thousand km`),
+        step('How much light curves', 'c = 2 × H ÷ reach²', `2 × ${km(state.sunHeightKm)} ÷ (${km(state.lightRangeKm)})². A ray that sets off level is ${Math.round(curve * 5000 * 1000).toLocaleString('en-US')} m higher after 100 km, and ${km(curve * 500000)} higher after 1,000 km`),
         step("The sun's height above the horizon", 'atan((H − c × d² ÷ 2) ÷ d)', `from ${km(d)} away: ${deg(c.flat.trueEl)}${bent ? '' : ' (with straight light, as now set)'}`),
         step('Its bearing', 'the same as before', 'light that bends up does not move sideways'),
       )}
-      <p>This gives the flat model a sunset. It does not make it fit. Tried over a whole day from the reference
-      cities, the best pair of settings still leaves the sun about 26° from where it is measured, no better than
-      straight light. Three things are left as they were: the bearing to the sun, which is why sunrise is in the
+      <p>This gives the flat model a sunset. It does not make it fit. "How far off is each model?" scores it with
+      the curve in: the "Flat, best" bar there is the best any sun height can do with the reach as it is set, and
+      trying other reaches does not bring it near the measurements either. Three things are left as they were: the bearing to the sun, which is why sunrise is in the
       wrong direction; the distances across the map, which the bend is worked out from; and the sun's width,
       which should still shrink as it goes away.</p>
       <p>The moon and the stars are seen by the same light, so they are bent by the same amount.</p>`;
