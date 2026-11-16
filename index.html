@@ -214,15 +214,6 @@
             <button id="btn-sunset" title="Jump to sunset at the observer">Sunset</button>
             <button id="btn-now" title="Jump to the present moment">Now</button>
           </div>
-          <div class="row">
-            <button id="btn-play" class="primary">Play</button>
-            <select id="speed" aria-label="Playback speed">
-              <option value="1">1 min per second</option>
-              <option value="10" selected>10 min per second</option>
-              <option value="60">1 hour per second</option>
-              <option value="360">6 hours per second</option>
-            </select>
-          </div>
         </section>
 
         <section class="sky-only">
@@ -344,6 +335,16 @@
           <div id="view-tabs" role="group" aria-label="Which views to show">
             <button data-pair="outside" class="active" aria-pressed="true">From outside</button>
             <button data-pair="sky" aria-pressed="false">Observer's sky</button>
+          </div>
+          <div id="play-bar" class="sky-only" role="group" aria-label="Run the time">
+            <output id="clock" title="The moment on show, in universal time"></output>
+            <button id="btn-play" class="primary" aria-pressed="false">Play</button>
+            <select id="speed" aria-label="How fast the time runs" title="How fast the time runs: this much for each second that passes">
+              <option value="1">1 min/sec</option>
+              <option value="10" selected>10 min/sec</option>
+              <option value="60">1 hour/sec</option>
+              <option value="360">6 hours/sec</option>
+            </select>
           </div>
         </div>
         <div class="view" id="globe-view">

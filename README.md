@@ -433,6 +433,9 @@ each step, and a step's question makes room for its answer once it has been answ
   What is folded and what is tucked away are remembered on the device, and are not carried in links.
   What is folded is remembered in the browser's local storage.
 - Switching tool with "Sun, stars, maps", "The horizon" or "Level flight" brings up that tool's demonstrations.
+- "Play" and the speed the time runs at are in the bar above the views, at the far end from those three, with
+  the date and time on show beside them. They stay in sight with the settings folded, tucked away or scrolled
+  off. On a phone they share the row that switches between the two pairs of views, without the date and time.
 - "Start again from the beginning", and the name at the top, load the page afresh as a plain visit. Measurements
   that were saved are kept.
 - A plain visit opens on the present moment, or on that day's noon if it is night at the observer.

@@ -1358,6 +1358,36 @@ code {
   display: none;
 }
 
+/* Running the time: always in sight above the views, at the far end of the bar from the tools. */
+#play-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+/* Only the sun-and-stars tool has a time to run. */
+body:not([data-mode='sky']) #play-bar {
+  display: none;
+}
+
+#play-bar button,
+#play-bar select {
+  padding: 5px 12px;
+}
+
+#play-bar button {
+  min-width: 70px;
+}
+
+#clock {
+  margin-right: 4px;
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 /* ---------- over the horizon ---------- */
 
 .qty .num {
@@ -1807,6 +1837,31 @@ h4.flat {
   }
   #mode-tabs {
     flex: 1 1 260px;
+  }
+  /* On a phone the time runs from the end of the row that switches between the pairs of views. */
+  #view-tabs {
+    flex: 1 1 190px;
+  }
+  #play-bar {
+    flex: none;
+  }
+  /* Both rows of the bar stay one line tall, so the views lose no height to it. */
+  #view-bar #view-tabs button,
+  #view-bar #play-bar button {
+    padding: 4px 6px;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  #view-bar #play-bar button {
+    min-width: 50px;
+  }
+  #view-bar #play-bar select {
+    min-height: 34px;
+    padding: 4px 2px;
+    font-size: 13px;
+  }
+  #clock {
+    display: none;
   }
   #mode-tabs button {
     flex: 1;

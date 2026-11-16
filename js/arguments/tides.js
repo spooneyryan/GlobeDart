@@ -233,7 +233,7 @@ export default {
     up. At full moon they are on opposite sides of the map and one heap fills the other's low water${
       flatNew && flatFull && flatFull < 0.9 * flatNew ? `: the rise and fall at full moon is <b class="f">${percent(flatFull / flatNew)}</b> of what it is at new moon` : ''
     }. Every tide table has big tides at both.</p>
-    <p class="try">Try: press Play at 1 hour per second and watch the place under the moon go round the two views while
+    <p class="try">Try: set the speed above the views to 1 hour/sec, press Play, and watch the place under the moon go round the two views while
     "now" crosses the drawing. Then move the observer east or west and watch the high waters move with the moon.</p>`;
   },
   checks({ check, near }) {

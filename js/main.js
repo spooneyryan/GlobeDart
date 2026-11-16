@@ -2517,6 +2517,7 @@ function syncInputs() {
   const minutes = utcMinutes(state.date);
   $('time').value = Math.floor(minutes);
   $('time-label').textContent = hhmm(Math.floor(minutes));
+  $('clock').textContent = `${state.date.toLocaleDateString('en-GB', { timeZone: 'UTC', day: 'numeric', month: 'short', year: 'numeric' })}, ${hhmm(Math.floor(minutes))} UTC`;
   $('solar-time').textContent =
     `About ${hhmm(Math.floor(minutes + state.lon * 4))} by the sun at the observer (clock zones vary).`;
   setIfIdle($('lat'), state.lat.toFixed(2));
@@ -2552,6 +2553,7 @@ function syncInputs() {
   $('air-note').textContent =
     custom ? `This air bends light ${change ? `${Math.abs(change)}% ${change > 0 ? 'more' : 'less'} than` : 'the same as'} standard air.` : '';
   $('btn-play').textContent = state.playing ? 'Pause' : 'Play';
+  $('btn-play').setAttribute('aria-pressed', String(state.playing));
   // Over the horizon
   $('hz-shape').value = state.shape;
   $('hz-units').value = state.units;
