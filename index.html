@@ -76,6 +76,17 @@
           </label>
         </section>
 
+        <section class="sp-only">
+          <h2>From space</h2>
+          <label class="row">
+            <span>Go to</span>
+            <select id="sp-look"></select>
+          </label>
+          <label class="check"><input type="checkbox" id="sp-orbits" /> Draw the orbits</label>
+          <label class="check"><input type="checkbox" id="sp-names" /> Name everything</label>
+          <p class="hint">Drag to look round. Scroll or pinch to move in and out. Click a dot to go to it.</p>
+        </section>
+
         <section class="hz-only">
           <h2>Over the horizon</h2>
           <label class="row" id="hz-view-row">
@@ -310,12 +321,13 @@
             <button data-mode="sky" class="active" aria-pressed="true">Sun, stars, maps</button>
             <button data-mode="horizon" aria-pressed="false">The horizon</button>
             <button data-mode="flight" aria-pressed="false">Level flight</button>
+            <button data-mode="space" aria-pressed="false">From space</button>
           </div>
           <div id="view-tabs" role="group" aria-label="Which views to show">
             <button data-pair="outside" class="active" aria-pressed="true">From outside</button>
             <button data-pair="sky" aria-pressed="false">Observer's sky</button>
           </div>
-          <div id="play-bar" class="sky-only" role="group" aria-label="Run the time">
+          <div id="play-bar" class="clock-only" role="group" aria-label="Run the time">
             <button id="btn-play" class="play" aria-pressed="false">Play</button>
             <select id="speed" aria-label="How fast the time runs" title="How fast the time runs: this much for each second that passes">
               <option value="1">1 min/sec</option>
@@ -324,7 +336,7 @@
               <option value="360">6 hours/sec</option>
             </select>
           </div>
-          <div id="time-bar" class="sky-only" role="group" aria-label="The moment on show">
+          <div id="time-bar" class="clock-only" role="group" aria-label="The moment on show">
             <input type="date" id="date" aria-label="Date, in universal time" title="Date, in universal time (UTC)" />
             <label class="time-field" title="Time of day, in universal time (UTC)">
               <input type="range" id="time" min="0" max="1439" step="1" aria-label="Time of day, in universal time" />
@@ -422,6 +434,13 @@
             <span><i class="sw own"></i>dead straight, nose fixed against the stars</span>
           </div>
         </div>
+        <div class="view sp" id="space-view">
+          <div class="view-title globe">From space <small>the globe model's own picture</small></div>
+          <div class="legend">
+            <span id="space-readout"></span>
+            <span>To scale. The dots are markers, not the bodies.</span>
+          </div>
+        </div>
       </section>
 
       <aside id="results">
@@ -474,6 +493,14 @@
         <section class="fl-only">
           <h2>Who does notice <button type="button" class="info" data-info="fl.notice" aria-label="How this is worked out: Who does notice">i</button></h2>
           <div id="fl-notice"></div>
+        </section>
+
+        <section class="sp-only">
+          <h2>Where things are</h2>
+          <table id="sp-table" class="data">
+            <tbody></tbody>
+          </table>
+          <p class="hint" id="sp-note"></p>
         </section>
 
         <section class="hz-only">

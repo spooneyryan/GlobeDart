@@ -134,6 +134,8 @@ import { EXPLAIN } from './explain.js';
 import { initInfo, refreshInfo, infoButton, explainHtml } from './info.js';
 import { HorizonView } from './views/horizonView.js';
 import { FlightView } from './views/flightView.js';
+import { SpaceView, spaceDistance } from './views/spaceView.js';
+import { spaceScene } from './space.js';
 import { FLIGHT_LIMITS, flightScene, schulerMinutes } from './flight.js';
 import { earthUrl, buildKml, buildSightKml, parseKml, kmlText, KML_LIMITS } from './earth.js';
 import { makeAir, traceView } from './raytrace.js';
@@ -183,6 +185,11 @@ const state = {
   skyGrid: false, // lines of equal elevation and bearing drawn over the observer's sky
   playing: false,
   speed: 10, // simulated minutes per real second
+  // From space
+  spaceLook: 'earth', // what the view from space is looking at: one of SPACE_LOOKS
+  spaceOrbits: true,
+  spaceNames: true,
+  spaceSpeed: 60, // simulated minutes per real second while that view is on show
   demo: null,
   own: {}, // the values of the controls that belong to the argument on show
   // Where the horizon tool's line of sight is on the map, when that is known:
@@ -199,7 +206,7 @@ const state = {
   trails: false,
   route: null, // { from, to } as place names, or null
   // Over the horizon
-  mode: 'sky', // which tool is showing: 'sky' (sun, stars and maps), 'horizon' or 'flight'
+  mode: 'sky', // which tool is showing: 'sky' (sun, stars and maps), 'horizon', 'flight' or 'space'
   shape: 'ship',
   targetM: 50, // height of the thing being looked at
   targetKm: 20, // how far away it is
@@ -1727,6 +1734,93 @@ const FLIGHT_INTRO = {
     <p class="try">Press "Fly the lap", then change the speed and the length of the stretch.</p>`,
 };
 
+const SPACE_INTRO = {
+  title: 'From space',
+  body: () => `
+    <p>The globe model's own picture, seen from outside: the Sun, the Earth and Moon, and the five planets the
+    eye can see, each where the almanac puts it for the moment on show. Sizes and distances are to scale, which
+    is why most of it is dots until you go close.</p>
+    <p>There is no flat-model view to set beside this one. That model has no outside to stand in: its sun and
+    moon circle a few thousand km above the map, and "Sun, stars, maps" shows that from above.</p>
+    <p class="try">Press Play and choose how fast the time runs. Go to the Earth and watch it turn on its
+    tilted axis. Go out to Mars and watch a year go by. Drag to look round, scroll or pinch to move in and out,
+    and click a dot to go to it.</p>`,
+};
+
+// ---------- from space ----------
+
+// The four tools. An argument can use the first three (TOOLS, in js/arguments/index.js); the view from space has none yet.
+const MODES = [...TOOLS, 'space'];
+
+// What the view from space can be pointed at: a body, and how far from its middle to stand, in km. `above` is
+// how many degrees above the plane of the Earth's orbit to look from, where the look is of a whole orbit. `fit`
+// backs off further on a narrow screen so that the orbit still fits across it.
+const SPACE_LOOKS = [
+  { id: 'earth', label: 'The Earth', body: 'Earth', km: 42000 },
+  { id: 'earthmoon', label: 'The Earth and the Moon', body: 'Earth', km: 1.7e6, above: 30, fit: true },
+  { id: 'moon', label: 'The Moon', body: 'Moon', km: 12000 },
+  { id: 'sun', label: 'The Sun', body: 'Sun', km: 5e6 },
+  { id: 'inner', label: 'Out to Mars', body: 'Sun', km: 1e9, above: 40, fit: true },
+  { id: 'all', label: 'Out to Saturn', body: 'Sun', km: 6.2e9, above: 40, fit: true },
+  { id: 'mercury', label: 'Mercury', body: 'Mercury', km: 16000 },
+  { id: 'venus', label: 'Venus', body: 'Venus', km: 40000 },
+  { id: 'mars', label: 'Mars', body: 'Mars', km: 22000 },
+  { id: 'jupiter', label: 'Jupiter', body: 'Jupiter', km: 450000 },
+  { id: 'saturn', label: 'Saturn', body: 'Saturn', km: 380000 },
+];
+const SPACE_LOOK = Object.fromEntries(SPACE_LOOKS.map((look) => [look.id, look]));
+
+// How fast the time can be run, in minutes for each real second. Seen from space a day is a short time.
+const SPEEDS = {
+  sky: [[1, '1 min/sec'], [10, '10 min/sec'], [60, '1 hour/sec'], [360, '6 hours/sec']],
+  space: [[10, '10 min/sec'], [60, '1 hour/sec'], [360, '6 hours/sec'], [1440, '1 day/sec'], [10080, '1 week/sec'], [43200, '30 days/sec']],
+};
+/** How fast the time runs in the tool on show. */
+const clockSpeed = () => (state.mode === 'space' ? state.spaceSpeed : state.speed);
+let speedsFor = null;
+/** Offers the speeds that suit the tool on show. */
+function fillSpeeds() {
+  const key = state.mode === 'space' ? 'space' : 'sky';
+  if (speedsFor !== key) {
+    speedsFor = key;
+    $('speed').innerHTML = SPEEDS[key].map(([minutes, label]) => `<option value="${minutes}">${label}</option>`).join('');
+  }
+  $('speed').value = String(clockSpeed());
+}
+
+/** Points the view from space at whatever `state.spaceLook` names, from that look's own distance. */
+function applySpaceLook() {
+  const look = SPACE_LOOK[state.spaceLook] ?? SPACE_LOOKS[0];
+  spaceView?.go(look.body, look.km, { aboveDeg: look.above ?? null, fit: !!look.fit });
+}
+
+/** A click on a body's dot in the view from space goes to that body. */
+function goToBody(name) {
+  state.spaceLook = name.toLowerCase();
+  applySpaceLook();
+  requestUpdate();
+}
+
+/** The figures beside the view from space. All are the almanac's, read off the same places the view draws. */
+function renderSpace(sp) {
+  const phase = moonPhase(sp.date);
+  const rows = [
+    ['The Earth to the Sun', spaceDistance(sp.sun.distKm)],
+    ["The Earth's speed round the Sun", `${sp.earthKmPerSec.toFixed(1)} km a second`],
+    ['The Earth to the Moon', spaceDistance(sp.moon.distKm)],
+    ["The Moon's speed round the Earth", `${sp.moonKmPerSec.toFixed(2)} km a second`],
+    ['The Sun is overhead at', where(sp.sun.lat, sp.sun.lon)],
+    ['The Moon is overhead at', where(sp.moon.lat, sp.moon.lon)],
+    ["The Earth's axis leans over by", deg(sp.axisTiltDeg)],
+    ['Moon lit, seen from the Earth', `${percent(phase.fraction)}, ${phase.waxing ? 'growing' : 'shrinking'}`],
+  ];
+  const html = rows.map(([name, value]) => `<tr><td>${name}</td><td>${value}</td></tr>`).join('');
+  const body = $('sp-table').tBodies[0];
+  if (body.innerHTML !== html) body.innerHTML = html;
+  $('sp-note').textContent =
+    'These are the almanac\'s figures. "Sun, stars, maps" takes where the sun and moon are overhead from the same almanac, and the checks hold the two together.';
+}
+
 // ---------- showing the working ----------
 
 // What the tool on show last worked out. The info boxes read their numbers from it.
@@ -2078,6 +2172,8 @@ let globeSky;
 let flatSky;
 let hzViews = []; // the horizon tool's four
 let flViews = []; // the flight tool's four
+let spaceView = null; // the view from space, made the first time it is asked for
+let landPicture = null; // the picture of the land that the outside views share
 let needsUpdate = true;
 let hashTimer = null;
 
@@ -2150,6 +2246,21 @@ function finishUpdate(data) {
 function update() {
   $('views').dataset.mode = state.mode;
   document.body.dataset.mode = state.mode;
+  if (state.mode === 'space') {
+    const sp = spaceScene(state.date);
+    if (!spaceView) {
+      // Made the first time it is wanted: a fifth 3D picture is not worth starting for someone who never opens it.
+      spaceView = new SpaceView($('space-view'), app.land, landPicture, { onGo: goToBody, readout: $('space-readout') });
+      spaceView.resize();
+      spaceView.update(state, sp);
+      applySpaceLook();
+      if ((SPACE_LOOK[state.spaceLook] ?? SPACE_LOOKS[0]).body === 'Earth') spaceView.faceDaySide();
+    }
+    spaceView.update(state, sp);
+    renderSpace(sp);
+    finishUpdate(sp);
+    return;
+  }
   if (state.mode === 'flight') {
     const fl = computeFlight();
     for (const v of flViews) v.update(fl);
@@ -2688,7 +2799,7 @@ function setPair(pair) {
 
 /** Switches between the sun-and-stars tool and the horizon tool. */
 function setMode(mode) {
-  state.mode = TOOLS.includes(mode) ? mode : 'sky';
+  state.mode = MODES.includes(mode) ? mode : 'sky';
   if (state.mode !== 'horizon') state.sailing = false;
   if (state.mode !== 'flight') state.flying = false;
   // A demonstration belongs to one tool; leaving that tool ends it.
@@ -2702,8 +2813,10 @@ function setMode(mode) {
     sky: ['From outside', "Observer's sky"],
     horizon: ['From the side', 'Through a telescope'],
     flight: ['One lap, speeded up', 'To scale'],
+    space: ['From space', 'From space'], // one view, so the two buttons are not shown
   }[state.mode];
   document.querySelectorAll('#view-tabs button').forEach((btn, i) => (btn.textContent = names[i]));
+  fillSpeeds();
   requestUpdate();
 }
 
@@ -2726,7 +2839,7 @@ function renderDemo(c) {
         ? DEMOS[steps[tour.step]]
         : state.demo
           ? DEMOS[state.demo]
-          : { sky: INTRO, horizon: HORIZON_INTRO, flight: FLIGHT_INTRO }[state.mode];
+          : { sky: INTRO, horizon: HORIZON_INTRO, flight: FLIGHT_INTRO, space: SPACE_INTRO }[state.mode];
   $('tour-bar').hidden = !tour;
   $('tour-end').hidden = !ended;
   $('tour-ask').hidden = !asking;
@@ -2938,7 +3051,10 @@ function syncInputs() {
   $('fl-minutes-label').textContent = fmtTime(state.flightMinutes);
   $('fl-units').value = state.units;
   $('fl-fly').textContent = state.flying ? 'Stop' : 'Fly the lap';
-  $('speed').value = String(state.speed);
+  $('speed').value = String(clockSpeed());
+  $('sp-look').value = state.spaceLook;
+  $('sp-orbits').checked = state.spaceOrbits;
+  $('sp-names').checked = state.spaceNames;
 }
 
 function bindControls() {
@@ -2989,7 +3105,21 @@ function bindControls() {
     state.playing = !state.playing;
     requestUpdate();
   });
-  $('speed').addEventListener('change', (e) => (state.speed = Number(e.target.value)));
+  $('speed').addEventListener('change', (e) => (state[state.mode === 'space' ? 'spaceSpeed' : 'speed'] = Number(e.target.value)));
+
+  // ----- the view from space -----
+  $('sp-look').innerHTML = SPACE_LOOKS.map((look) => `<option value="${look.id}">${look.label}</option>`).join('');
+  $('sp-look').addEventListener('change', (e) => {
+    state.spaceLook = e.target.value;
+    applySpaceLook();
+    requestUpdate();
+  });
+  for (const [id, key] of [['sp-orbits', 'spaceOrbits'], ['sp-names', 'spaceNames']]) {
+    $(id).addEventListener('change', (e) => {
+      state[key] = e.target.checked;
+      requestUpdate();
+    });
+  }
 
   // ----- the observer, and the flat model's settings -----
 
@@ -3236,7 +3366,7 @@ function bindHorizonControls() {
     btn.addEventListener('click', () => {
       setMode(btn.dataset.mode);
       const listed = (group) => ARGUMENTS.some((a) => a.group === group && a.tool === state.mode);
-      if (!state.tour && !state.picking && !listed(demoGroup)) demoGroup = ARGUMENTS.find((a) => a.tool === state.mode).group;
+      if (!state.tour && !state.picking && !listed(demoGroup)) demoGroup = ARGUMENTS.find((a) => a.tool === state.mode)?.group ?? demoGroup;
     });
   }
   const set = (key, value) => {
@@ -3491,6 +3621,7 @@ function bindMeasurementForm() {
 //   horizon: tg shape, th its height, td its distance, eh eye height, k bending, sg line of sight on the map,
 //            s1 s2 s3 two sunsets, ly=1 layers of air (at, wt, lm, lg)
 //   flight:  fs speed, fa height, fm minutes
+//   space (v=s): sv what it looks at, so=0 no orbits drawn, sn=0 no names
 //   m the user's measurements                    o the user's horizon observations
 
 function writeHash() {
@@ -3532,6 +3663,12 @@ function writeHash() {
     p.set('mh', Number(state.moonHeightKm.toFixed(1)));
   }
   if (state.route) p.set('rt', `${state.route.from}~${state.route.to}`);
+  if (state.mode === 'space') {
+    p.set('v', 's');
+    p.set('sv', state.spaceLook);
+    if (!state.spaceOrbits) p.set('so', 0);
+    if (!state.spaceNames) p.set('sn', 0);
+  }
   if (state.mode === 'flight') {
     p.set('v', 'f');
     p.set('fs', Math.round(state.speedKmh));
@@ -3611,7 +3748,10 @@ function readHash() {
   state.starHeightKm = num('sh', MIN_HEIGHT_KM, MAX_HEIGHT_KM) ?? state.starHeightKm;
   const [from, to] = (p.get('rt') ?? '').split('~');
   state.route = city(from) && city(to) && from !== to ? { from, to } : null;
-  state.mode = { h: 'horizon', f: 'flight' }[p.get('v')] ?? 'sky';
+  state.mode = { h: 'horizon', f: 'flight', s: 'space' }[p.get('v')] ?? 'sky';
+  if (Object.hasOwn(SPACE_LOOK, p.get('sv') ?? '')) state.spaceLook = p.get('sv');
+  state.spaceOrbits = p.get('so') !== '0';
+  state.spaceNames = p.get('sn') !== '0';
   state.speedKmh = num('fs', ...FLIGHT_LIMITS.speedKmh) ?? state.speedKmh;
   state.altitudeM = num('fa', ...FLIGHT_LIMITS.altitudeM) ?? state.altitudeM;
   state.flightMinutes = num('fm', ...FLIGHT_LIMITS.minutes) ?? state.flightMinutes;
@@ -3673,6 +3813,7 @@ async function start() {
   const land = await (await fetch('data/land-110m.json')).json();
   app.land = land; // for an argument that draws a map of its own
   const landCanvas = makeLandCanvas(land);
+  landPicture = landCanvas;
   const onPick = (lat, lon) => setObserver({ lat, lon });
   const onLook = (look) => {
     state.follow = false;
@@ -3709,6 +3850,7 @@ async function start() {
     readHash();
     applyBareLink();
     setMode(state.mode);
+    applySpaceLook();
     globeView.focus(state.lat, state.lon);
     flatView.focus(state.lat, state.lon);
     requestUpdate();
@@ -3725,7 +3867,7 @@ async function start() {
     last = now;
     if (state.playing) {
       // "Play" only moves the clock: `state.speed` minutes for every real second. Everything else follows from the time.
-      state.date = new Date(state.date.getTime() + dt * state.speed * MINUTE_MS);
+      state.date = new Date(state.date.getTime() + dt * clockSpeed() * MINUTE_MS);
       needsUpdate = true;
     }
     if (state.flying && state.mode === 'flight') {
@@ -3744,12 +3886,13 @@ async function start() {
       update();
     }
     for (const v of [globeView, flatView, globeSky, flatSky]) v.render();
+    spaceView?.render();
     requestAnimationFrame(frame);
   };
   requestAnimationFrame(frame);
 
   // Handy for debugging and for scripted checks.
-  window.app = { currentKml, state, compute, computeHorizon, computeFlight, requestUpdate, measurements: () => measurements, observations: () => observations, views: { globeView, flatView, globeSky, flatSky } };
+  window.app = { currentKml, state, compute, computeHorizon, computeFlight, requestUpdate, measurements: () => measurements, observations: () => observations, views: { globeView, flatView, globeSky, flatSky, get spaceView() { return spaceView; } } };
 }
 
 start().catch((err) => {

@@ -64,7 +64,7 @@ export const GROUPS = [
 /** The same arguments, looked up by id. */
 export const ARGUMENT_BY_ID = Object.fromEntries(ARGUMENTS.map((a) => [a.id, a]));
 
-/** The three tools an argument can use: the sky and the two maps, the horizon, and level flight. */
+/** The three tools an argument can use: the sky and the two maps, the horizon, and level flight. The fourth tool, the view from space, has no arguments. */
 export const TOOLS = ['sky', 'horizon', 'flight'];
 
 /** The guided tours. Each is a list of arguments in the order they are shown, easiest first. The first is the one a bare link starts. */

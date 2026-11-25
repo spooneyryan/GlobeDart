@@ -102,6 +102,9 @@ import {
   moonShadowFlat,
 } from '../js/models.js';
 import { CITIES, REF_CITIES } from '../js/cities.js';
+import { spaceScene, earthTurn, placeDirection, overheadPlace, planetPath, moonPath, starDirection, distanceKm as kmApart } from '../js/space.js';
+import { subsolarPoint as sunOverhead, moonPoint as moonOverhead, planetSeen as planetFromEarth } from '../js/astro.js';
+import { globeAngleDeg as degreesApart } from '../js/models.js';
 import {
   shadowToElevation,
   shadowToAzimuth,
@@ -1160,6 +1163,69 @@ check(`all ${Object.keys(EXPLAIN).length} explanations work through with real nu
 const flatWorking = EXPLAIN['sky.elevation'].body(sample.sky, stubApp);
 check('the working shown for the flat sun carries the numbers the model produced',
   flatWorking.includes(stubApp.km(sample.sky.flat.groundKm)) && flatWorking.includes(stubApp.deg(sample.sky.flat.trueEl, 2)));
+
+// 19. From space: the globe model's picture of where everything is, held against the figures the rest of the app uses.
+{
+  // Four moments: an ordinary day, a June solstice, the Earth nearest the Sun, and an eclipse of the sun.
+  const moments = ['2026-11-25T12:00:00Z', '2026-06-21T03:00:00Z', '2027-01-03T00:00:00Z', '2024-04-08T18:17:00Z'].map((t) => new Date(t));
+  const scenes = moments.map((d) => spaceScene(d));
+  const worst = (measure) => Math.max(...moments.map((d, i) => measure(scenes[i], d)));
+  // The almanac gives the sun overhead where it is seen, and it is seen where it was eight minutes earlier,
+  // when the light left it. The picture from space shows where it is. The two differ by 0.006 degrees.
+  const sunOff = worst((sp, d) => degreesApart(sp.sun.lat, sp.sun.lon, sunOverhead(d).lat, sunOverhead(d).lon));
+  check('from space: the side of the Earth that faces the Sun is where the almanac has the sun overhead, to a hundredth of a degree',
+    sunOff < 0.01, `${sunOff.toFixed(4)} degrees`);
+  const sunKm = worst((sp, d) => Math.abs(sp.sun.distKm - sunOverhead(d).distKm));
+  check('from space: and the Sun is as far off as the almanac says, to 500 km in 150 million', sunKm < 500, `${sunKm.toFixed(0)} km`);
+  const moonOff = worst((sp, d) => degreesApart(sp.moon.lat, sp.moon.lon, moonOverhead(d).lat, moonOverhead(d).lon));
+  const moonKm = worst((sp, d) => Math.abs(sp.moon.distKm - moonOverhead(d).distKm));
+  check('from space: the Moon is over the place the almanac has it overhead, and as far off, to a thousandth of a degree and 1 km',
+    moonOff < 0.001 && moonKm < 1, `${moonOff.toFixed(5)} degrees, ${moonKm.toFixed(2)} km`);
+
+  // How the Earth is turned.
+  const turn = earthTurn(moments[0]);
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const size = (a) => Math.hypot(...a);
+  check("from space: the Earth's three axes are each one unit long and square to each other, with no mirror image",
+    [turn.x, turn.y, turn.z].every((a) => near(size(a), 1, 1e-12)) && cross(turn.x, turn.y).every((v, i) => near(v, turn.z[i], 1e-12)));
+  check("from space: the Earth's axis leans 23.4 degrees from square to its orbit", scenes.every((sp) => near(sp.axisTiltDeg, 23.44, 0.01)), scenes[0].axisTiltDeg.toFixed(3));
+  const polaris = STARS.find((star) => star.name === 'Polaris');
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const toPolaris = Math.acos(dot(turn.y, starDirection(polaris.ra, polaris.dec))) / (Math.PI / 180);
+  check("from space: the north end of the Earth's axis points within a degree of the pole star", toPolaris < 1, `${toPolaris.toFixed(2)} degrees`);
+  const there = overheadPlace(turn, placeDirection(turn, 51.5, -0.13));
+  check('from space: a place turned into a direction in space and back again is the same place', near(there.lat, 51.5, 1e-9) && near(there.lon, -0.13, 1e-9));
+
+  // How fast things move, and how far off they are.
+  const [ordinary, june, january] = scenes;
+  check('from space: the Earth moves round the Sun at about 30 km a second, fastest in January when it is nearest',
+    scenes.every((sp) => sp.earthKmPerSec > 29.2 && sp.earthKmPerSec < 30.4) && january.earthKmPerSec > june.earthKmPerSec && january.sun.distKm < june.sun.distKm,
+    `${january.earthKmPerSec.toFixed(2)} and ${june.earthKmPerSec.toFixed(2)} km/s at ${(january.sun.distKm / 1e6).toFixed(1)} and ${(june.sun.distKm / 1e6).toFixed(1)} million km`);
+  check('from space: the Moon moves round the Earth at about 1 km a second', scenes.every((sp) => sp.moonKmPerSec > 0.95 && sp.moonKmPerSec < 1.11), ordinary.moonKmPerSec.toFixed(3));
+
+  // A planet seen from the Earth in this picture is where the rest of the app has it (planetSeen in js/astro.js),
+  // which measures round the Earth's orbit from the March equinox and up from the orbit's plane. That figure is
+  // also for the planet as it is seen, a few minutes of light-time ago, so the two differ by a little.
+  let planetOff = 0;
+  for (const name of ['Venus', 'Mars', 'Jupiter']) {
+    const v = [0, 1, 2].map((i) => ordinary.at[name][i] - ordinary.at.Earth[i]);
+    const here = { lon: Math.atan2(-v[2], v[0]) / (Math.PI / 180), lat: Math.asin(v[1] / size(v)) / (Math.PI / 180) };
+    const seen = planetFromEarth(name, moments[0]);
+    planetOff = Math.max(planetOff, degreesApart(here.lat, here.lon, seen.lat, seen.lon));
+  }
+  check('from space: Venus, Mars and Jupiter lie in the directions from the Earth that the rest of the app has them, to 0.02 degrees', planetOff < 0.02, `${planetOff.toFixed(4)} degrees`);
+
+  // The orbits that are drawn.
+  const path = planetPath('Earth', moments[0], 360);
+  const fromSun = path.map((p) => size(p) / 1e6);
+  const step = kmApart(path[0], path[1]);
+  check("from space: the Earth's path over a year stays between 147 and 152.2 million km from the Sun, and joins up",
+    Math.min(...fromSun) > 147 && Math.max(...fromSun) < 152.2 && near(kmApart(path[359], path[0]), step, step * 0.1),
+    `${Math.min(...fromSun).toFixed(2)} to ${Math.max(...fromSun).toFixed(2)} million km`);
+  const moonKms = moonPath(moments[0], 120).map((p) => size(p));
+  check("from space: the Moon's path over a month stays between 356,000 and 407,000 km from the Earth",
+    Math.min(...moonKms) > 356000 && Math.max(...moonKms) < 407000, `${Math.round(Math.min(...moonKms))} to ${Math.round(Math.max(...moonKms))} km`);
+}
 
 console.log(failures ? `\n${failures} check(s) failed` : '\nAll checks passed');
 process.exit(failures ? 1 : 0);

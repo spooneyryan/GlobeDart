@@ -59,6 +59,7 @@ the whole argument about the sky:
 | `js/clouds.js` | Which side of a cloud each model's sun lights: the top, the underside, or neither |
 | `js/rotation.js` | A turning globe: speed of the ground, the weight the turn takes off, and how a pendulum's swing turns |
 | `js/flight.js` | Level flight: how fast the nose comes down to follow a globe, and what flying dead straight would do |
+| `js/space.js` | Where the Sun, the Earth, the Moon and five planets are in space, and how the Earth is turned, as the almanac has them |
 | `js/earth.js` | A link that opens Google Earth at a place, KML files of the view and of a line of sight, and a reader for KML and KMZ files |
 | `js/arguments/` | The demonstrations, one file per flat-earth argument, the list of them and of the tours, and the controls an argument can have of its own |
 | `js/explain.js` | What every number means and how it is worked out, written to be shown with the live numbers |
@@ -71,6 +72,8 @@ the whole argument about the sky:
 | `js/views/ground.js` | The ground under the observer's sky: the field, desert, snow or sea, its landmarks, and the shadows |
 | `js/views/horizonView.js` | The horizon drawings: the scene from the side and through a telescope, once per model |
 | `js/views/flightView.js` | The level-flight drawings: one lap speeded up, and a stretch to true scale |
+| `js/views/spaceView.js` | The view from space: everything to scale, with a camera that can go to any of the bodies |
+| `js/views/earthBall.js` | The ball of the Earth and its day and night, shared by the globe model's outside view and the view from space |
 | `js/main.js` | State, controls, result panels, shareable URL, and the helpers handed to each argument |
 | `js/cities.js` | Preset places and the reference observers used for scoring |
 | `data/land-110m.json` | Natural Earth 1:110m land outlines (public domain) |
@@ -331,6 +334,31 @@ The top row is one whole lap speeded up; the bottom row is a stretch of flight d
   the way round on either model. A gyro left free keeps its direction against the stars, so on the globe it shows
   the turn building up, and on the flat model nothing.
 
+## From space
+
+The "From space" button opens a fourth tool: one picture of the Sun, the Earth and Moon, and Mercury, Venus, Mars,
+Jupiter and Saturn, each where the almanac puts it for the moment on show.
+
+- It is the globe model's own picture, and there is no flat-model view beside it. That model has no outside to
+  stand in. Its sun and moon circle above the map, which "Sun, stars, maps" shows.
+- Sizes, distances and the Earth's tilt are to scale. From far enough off to see an orbit the bodies are too small
+  to see, so each also has a dot and a name. The dots are markers of a fixed size on screen.
+- "Go to" picks what to look at: a body, the Earth and Moon together, or the orbits out to Mars or out to Saturn.
+  Dragging looks round it, scrolling or pinching moves in and out, and clicking a dot goes to that body.
+- The time bar is the same one "Sun, stars, maps" uses, with faster speeds on offer, up to 30 days a second.
+- The Earth is lit as in the globe model's outside view, from the same code, and the observer's place is marked
+  on it. The Moon's shadow falls on the Earth at an eclipse of the sun, and the Earth's on the Moon at an eclipse
+  of the moon.
+- Not real: the lines of the orbits, the Earth's axis and its grid; the plain colours of the planets and the
+  Moon; and Saturn's rings, which are left out. The stars are the app's own short list, as dots in their true
+  directions.
+- The checks hold this picture against the figures the rest of the app uses: the side of the Earth that faces
+  the Sun is the place the almanac has the sun overhead, to a hundredth of a degree, and the same for the Moon.
+- There are no demonstrations or tours for this tool yet.
+
+A link ending `#v=s&sv=earthmoon` opens it. `sv` is what it looks at: `earth`, `earthmoon`, `moon`, `sun`,
+`inner`, `all`, or a planet's name in lower case.
+
 ## Google Earth
 
 In the sun-and-stars tool, "Open this place in Google Earth" opens Google Earth looking down at the observer, or
@@ -444,6 +472,7 @@ each step, and a step's question makes room for its answer once it has been answ
   What is folded and what is tucked away are remembered on the device, and are not carried in links.
   What is folded is remembered in the browser's local storage.
 - Switching tool with "Sun, stars, maps", "The horizon" or "Level flight" brings up that tool's demonstrations.
+  "From space" has none yet.
 - Everything that sets the moment on show is in the bar above the views, not in the settings. "Play" and the
   speed the time runs at are at the far end of the row from those three. Under them is a row with the date, the
   time of day as a slider, the time by the sun at the observer, and the jumps to sunrise, noon, sunset and now.

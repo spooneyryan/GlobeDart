@@ -517,7 +517,9 @@ output {
 /* The sun-and-stars tool and the horizon tool each show only their own panels. */
 body:not([data-mode='sky']) .sky-only,
 body:not([data-mode='horizon']) .hz-only,
-body:not([data-mode='flight']) .fl-only {
+body:not([data-mode='flight']) .fl-only,
+body:not([data-mode='space']) .sp-only,
+body:not([data-mode='sky']):not([data-mode='space']) .clock-only {
   display: none;
 }
 
@@ -567,10 +569,36 @@ body:not([data-mode='flight']) .fl-only {
   cursor: default;
 }
 
-#views[data-mode='sky'] .view:is(.hz, .fl),
+#views[data-mode='sky'] .view:is(.hz, .fl, .sp),
 #views[data-mode='horizon'] .view:not(.hz),
-#views[data-mode='flight'] .view:not(.fl) {
+#views[data-mode='flight'] .view:not(.fl),
+#views[data-mode='space'] .view:not(.sp) {
   display: none;
+}
+
+/* The view from space is one picture, not a pair for each model, so it has the room of all four. */
+.view.sp {
+  grid-column: 1 / -1;
+  grid-row: 2 / -1;
+}
+
+.view.sp canvas {
+  cursor: grab;
+}
+
+/* It has no second pair of views to switch to. */
+body[data-mode='space'] #view-tabs {
+  display: none;
+}
+
+.label.space {
+  font-size: 12px;
+  color: #eef3f8;
+}
+
+.label.space.minor {
+  font-size: 11px;
+  color: var(--muted);
 }
 
 .sw.nose {
@@ -1440,8 +1468,8 @@ code {
   margin-left: auto;
 }
 
-/* Only the sun-and-stars tool has a time to run. */
-body:not([data-mode='sky']) #play-bar {
+/* Only the sun-and-stars tool and the view from space have a time to run. */
+body:not([data-mode='sky']):not([data-mode='space']) #play-bar {
   display: none;
 }
 
@@ -1476,7 +1504,7 @@ button.play:hover {
   min-width: 0;
 }
 
-body:not([data-mode='sky']) #time-bar {
+body:not([data-mode='sky']):not([data-mode='space']) #time-bar {
   display: none;
 }
 
@@ -2093,6 +2121,10 @@ h4.flat {
   #views[data-pair='outside'] .view.sky,
   #views[data-pair='sky'] .view:not(.sky) {
     display: none;
+  }
+  /* The view from space is the only one of its tool, whichever pair was last on show. */
+  #views[data-mode='space'] .view.sp {
+    display: block;
   }
   .view-title small {
     display: none;

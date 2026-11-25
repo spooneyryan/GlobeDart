@@ -648,7 +648,6 @@ pendulum's line of swing does not turn at the equator, turns at the full rate at
 way in the south.
 
 - Code: `js/rotation.js`, `groundSpeedKmh`, `weightLost`, `pendulumDegPerHour`.
-- Checks: section 14 (run from `js/arguments/spin.js`).
 
 ## 12a. The air
 
@@ -669,6 +668,49 @@ What keeps the air is speed: a molecule's typical speed is `√(3 × R × T ÷ M
 
 - Code: `js/atmosphere.js`, `standardAir`, `scaleHeightM`, `molecularSpeedMS`; `js/arguments/air.js`.
 - Checks: section 14 (run from `js/arguments/air.js`).
+
+## 12b. From space
+
+Nothing in the view from space is worked out by the app. The almanac gives each planet's place from the Sun and
+the Moon's from the Earth, as distances along three fixed directions among the stars: x toward the March equinox,
+z toward the north pole of the sky, both for the year 2000. Tipping that over by the tilt of the Earth's axis,
+ε = 23.439°, lays the Earth's orbit flat:
+
+```
+across =  y cos ε + z sin ε
+up     = −y sin ε + z cos ε
+```
+
+**How the Earth is turned.** The rule is the one section 1 uses for what is overhead. A place at longitude λ and
+latitude φ has overhead the part of the sky with
+
+```
+right ascension = Greenwich sidereal time + λ
+declination     = φ
+```
+
+That is done for three places (0° N 0° E, the north pole, and 0° N 90° W), and those three directions are the
+Earth's own axes in space. Any other place follows from them, and so does the reverse: the place a direction in
+space is overhead.
+
+**Speeds.** How far the Earth has moved a minute later, divided by sixty seconds: about 30 km a second, fastest in
+early January when it is nearest the Sun. The Moon's, measured from the Earth, is about 1 km a second.
+
+**The Earth's shadow on the Moon.** With S the Sun's radius and D its distance, both in Earth radii, a point that
+is `behind` the Earth by that many radii along the line away from the Sun is in full shadow within, and in part
+shadow out to:
+
+```
+full = 1 − behind × (S − 1) ÷ D
+part = 1 + behind × (S + 1) ÷ D
+```
+
+of that line, in Earth radii, each made 2% larger for the Earth's air as in section 3a.
+
+- Code: `js/space.js`, `placesInSpace`, `earthTurn`, `overheadPlace`, `spaceScene`, `planetPath`, `moonPath`;
+  `js/views/spaceView.js` for the shadow on the Moon.
+- Checks: section 19.
+- Checks: section 14 (run from `js/arguments/spin.js`).
 
 ## 13. Two more that need no new maths
 
