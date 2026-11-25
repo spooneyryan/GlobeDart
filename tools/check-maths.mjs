@@ -102,7 +102,7 @@ import {
   moonShadowFlat,
 } from '../js/models.js';
 import { CITIES, REF_CITIES } from '../js/cities.js';
-import { spaceScene, earthTurn, placeDirection, overheadPlace, planetPath, moonPath, starDirection, distanceKm as kmApart } from '../js/space.js';
+import { spaceScene, earthTurn, placeDirection, overheadPlace, planetPath, moonPath, starDirection, nearestSurface, SPACE_BODY, distanceKm as kmApart } from '../js/space.js';
 import { subsolarPoint as sunOverhead, moonPoint as moonOverhead, planetSeen as planetFromEarth } from '../js/astro.js';
 import { globeAngleDeg as degreesApart } from '../js/models.js';
 import {
@@ -1225,6 +1225,23 @@ check('the working shown for the flat sun carries the numbers the model produced
   const moonKms = moonPath(moments[0], 120).map((p) => size(p));
   check("from space: the Moon's path over a month stays between 356,000 and 407,000 km from the Earth",
     Math.min(...moonKms) > 356000 && Math.max(...moonKms) < 407000, `${Math.round(Math.min(...moonKms))} to ${Math.round(Math.max(...moonKms))} km`);
+
+  // Moving freely, the camera's speed is set by the nearest surface. Three points on the line from the Earth
+  // to the Moon, and one in the middle of the Sun.
+  const toMoon = [0, 1, 2].map((i) => ordinary.at.Moon[i] - ordinary.at.Earth[i]);
+  const outFromEarth = (km) => [0, 1, 2].map((i) => ordinary.at.Earth[i] + (toMoon[i] / size(toMoon)) * km);
+  const low = nearestSurface(outFromEarth(42000), ordinary.at);
+  check("from space: 42,000 km from the Earth's middle the nearest surface is the Earth's, one Earth radius nearer",
+    low.name === 'Earth' && near(low.gapKm, 42000 - EARTH_RADIUS_KM, 1e-3), `${low.name}, ${low.gapKm.toFixed(1)} km`);
+  const high = nearestSurface(outFromEarth(size(toMoon) - 20000), ordinary.at);
+  check("from space: 20,000 km short of the Moon's middle the nearest surface is the Moon's, one Moon radius nearer",
+    high.name === 'Moon' && near(high.gapKm, 20000 - SPACE_BODY.Moon.radiusKm, 1e-3), `${high.name}, ${high.gapKm.toFixed(1)} km`);
+  // Half way, the two middles are equally far and the Earth is the larger, so its surface is the nearer.
+  const half = nearestSurface(outFromEarth(size(toMoon) / 2), ordinary.at);
+  check('from space: half way from the Earth to the Moon the nearer surface is that of the larger, the Earth', half.name === 'Earth', half.name);
+  const inside = nearestSurface([0, 0, 0], ordinary.at);
+  check("from space: the middle of the Sun is less than nothing from the Sun's surface, by the Sun's radius",
+    inside.name === 'Sun' && near(inside.gapKm, -SPACE_BODY.Sun.radiusKm, 1e-6), `${inside.name}, ${Math.round(inside.gapKm)} km`);
 }
 
 console.log(failures ? `\n${failures} check(s) failed` : '\nAll checks passed');

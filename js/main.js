@@ -135,7 +135,7 @@ import { initInfo, refreshInfo, infoButton, explainHtml } from './info.js';
 import { HorizonView } from './views/horizonView.js';
 import { FlightView } from './views/flightView.js';
 import { SpaceView, spaceDistance } from './views/spaceView.js';
-import { spaceScene } from './space.js';
+import { spaceScene, SPACE_BODIES } from './space.js';
 import { FLIGHT_LIMITS, flightScene, schulerMinutes } from './flight.js';
 import { earthUrl, buildKml, buildSightKml, parseKml, kmlText, KML_LIMITS } from './earth.js';
 import { makeAir, traceView } from './raytrace.js';
@@ -187,6 +187,8 @@ const state = {
   speed: 10, // simulated minutes per real second
   // From space
   spaceLook: 'earth', // what the view from space is looking at: one of SPACE_LOOKS
+  spaceStay: 'Earth', // the body its camera keeps its place beside as the time runs: one of SPACE_BODIES
+  spaceFree: false, // whether its camera is off its circle and moving freely
   spaceOrbits: true,
   spaceNames: true,
   spaceSpeed: 60, // simulated minutes per real second while that view is on show
@@ -1744,7 +1746,10 @@ const SPACE_INTRO = {
     moon circle a few thousand km above the map, and "Sun, stars, maps" shows that from above.</p>
     <p class="try">Press Play and choose how fast the time runs. Go to the Earth and watch it turn on its
     tilted axis. Go out to Mars and watch a year go by. Drag to look round, scroll or pinch to move in and out,
-    and click a dot to go to it.</p>`,
+    and click a dot to go to it.</p>
+    <p class="try">"Stay with" chooses the body the camera keeps beside as the time runs. Go out to Mars, stay
+    with the Earth, and the Sun goes round it: the same motion, seen by a camera that is carried along. Tick
+    "Move freely" to turn the camera and take it anywhere.</p>`,
 };
 
 // ---------- from space ----------
@@ -1788,10 +1793,38 @@ function fillSpeeds() {
   $('speed').value = String(clockSpeed());
 }
 
-/** Points the view from space at whatever `state.spaceLook` names, from that look's own distance. */
-function applySpaceLook() {
+// True once the camera has left the look last chosen: it has been moved freely, or told to stay with another
+// body. The "Go to" list then shows no choice, so that choosing the same look again goes back to it.
+let spaceAway = false;
+
+/** A body's name as it is listed: "The Sun", "Mars". */
+const bodyLabel = (name) => (['Sun', 'Earth', 'Moon'].includes(name) ? `The ${name}` : name);
+
+/** How to get about in the view from space, for each of the camera's two ways of moving. */
+const SPACE_HINTS = {
+  circle: 'Drag to look round. Scroll or pinch to move in and out. Click a dot to go to it.',
+  free: 'Drag to turn. Scroll or pinch to go forward and back. Hold a button on the view to move, or use the keys W, A, S and D, with E for up and Q for down. Shift goes three times as fast. You slow down as you come near something.',
+};
+
+/**
+ * Points the view from space at whatever `state.spaceLook` names, from that look's own distance. The camera
+ * then stays with that look's body, unless `stay` names another, as a link can.
+ */
+function applySpaceLook(stay = null) {
   const look = SPACE_LOOK[state.spaceLook] ?? SPACE_LOOKS[0];
-  spaceView?.go(look.body, look.km, { aboveDeg: look.above ?? null, fit: !!look.fit });
+  state.spaceStay = stay ?? look.body;
+  spaceAway = state.spaceStay !== look.body;
+  if (!spaceView) return;
+  spaceView.setFree(state.spaceFree);
+  spaceView.go(look.body, look.km, { aboveDeg: look.above ?? null, fit: !!look.fit });
+  spaceView.stayWith(state.spaceStay);
+}
+
+/** Called when the camera in the view from space is turned or moved freely: it is no longer at the look last chosen. */
+function leaveSpaceLook() {
+  if (spaceAway) return;
+  spaceAway = true;
+  $('sp-look').value = '';
 }
 
 /** A click on a body's dot in the view from space goes to that body. */
@@ -2250,11 +2283,12 @@ function update() {
     const sp = spaceScene(state.date);
     if (!spaceView) {
       // Made the first time it is wanted: a fifth 3D picture is not worth starting for someone who never opens it.
-      spaceView = new SpaceView($('space-view'), app.land, landPicture, { onGo: goToBody, readout: $('space-readout') });
+      spaceView = new SpaceView($('space-view'), app.land, landPicture, { onGo: goToBody, onMove: leaveSpaceLook, readout: $('space-readout') });
       spaceView.resize();
       spaceView.update(state, sp);
-      applySpaceLook();
-      if ((SPACE_LOOK[state.spaceLook] ?? SPACE_LOOKS[0]).body === 'Earth') spaceView.faceDaySide();
+      // A link may have asked for a body to stay with that is not the one its look is of.
+      applySpaceLook(state.spaceStay);
+      if ((SPACE_LOOK[state.spaceLook] ?? SPACE_LOOKS[0]).body === 'Earth' && state.spaceStay === 'Earth') spaceView.faceDaySide();
     }
     spaceView.update(state, sp);
     renderSpace(sp);
@@ -3052,7 +3086,11 @@ function syncInputs() {
   $('fl-units').value = state.units;
   $('fl-fly').textContent = state.flying ? 'Stop' : 'Fly the lap';
   $('speed').value = String(clockSpeed());
-  $('sp-look').value = state.spaceLook;
+  $('sp-look').value = spaceAway ? '' : state.spaceLook;
+  $('sp-stay').value = state.spaceStay;
+  $('sp-free').checked = state.spaceFree;
+  const hint = SPACE_HINTS[state.spaceFree ? 'free' : 'circle'];
+  if ($('sp-hint').textContent !== hint) $('sp-hint').textContent = hint;
   $('sp-orbits').checked = state.spaceOrbits;
   $('sp-names').checked = state.spaceNames;
 }
@@ -3108,10 +3146,24 @@ function bindControls() {
   $('speed').addEventListener('change', (e) => (state[state.mode === 'space' ? 'spaceSpeed' : 'speed'] = Number(e.target.value)));
 
   // ----- the view from space -----
-  $('sp-look').innerHTML = SPACE_LOOKS.map((look) => `<option value="${look.id}">${look.label}</option>`).join('');
+  // The first choice is never offered. It is what the list shows once the camera has left the look last chosen.
+  $('sp-look').innerHTML =
+    '<option value="" hidden disabled>Choose a view</option>' + SPACE_LOOKS.map((look) => `<option value="${look.id}">${look.label}</option>`).join('');
   $('sp-look').addEventListener('change', (e) => {
     state.spaceLook = e.target.value;
     applySpaceLook();
+    requestUpdate();
+  });
+  $('sp-stay').innerHTML = SPACE_BODIES.map(({ name }) => `<option value="${name}">${bodyLabel(name)}</option>`).join('');
+  $('sp-stay').addEventListener('change', (e) => {
+    state.spaceStay = e.target.value;
+    spaceAway = true;
+    spaceView?.stayWith(state.spaceStay);
+    requestUpdate();
+  });
+  $('sp-free').addEventListener('change', (e) => {
+    state.spaceFree = e.target.checked;
+    spaceView?.setFree(state.spaceFree);
     requestUpdate();
   });
   for (const [id, key] of [['sp-orbits', 'spaceOrbits'], ['sp-names', 'spaceNames']]) {
@@ -3621,7 +3673,8 @@ function bindMeasurementForm() {
 //   horizon: tg shape, th its height, td its distance, eh eye height, k bending, sg line of sight on the map,
 //            s1 s2 s3 two sunsets, ly=1 layers of air (at, wt, lm, lg)
 //   flight:  fs speed, fa height, fm minutes
-//   space (v=s): sv what it looks at, so=0 no orbits drawn, sn=0 no names
+//   space (v=s): sv what it looks at, sw the body it stays with if that is another, sf=1 moving freely,
+//            so=0 no orbits drawn, sn=0 no names
 //   m the user's measurements                    o the user's horizon observations
 
 function writeHash() {
@@ -3666,6 +3719,8 @@ function writeHash() {
   if (state.mode === 'space') {
     p.set('v', 's');
     p.set('sv', state.spaceLook);
+    if (state.spaceStay !== (SPACE_LOOK[state.spaceLook] ?? SPACE_LOOKS[0]).body) p.set('sw', state.spaceStay.toLowerCase());
+    if (state.spaceFree) p.set('sf', 1);
     if (!state.spaceOrbits) p.set('so', 0);
     if (!state.spaceNames) p.set('sn', 0);
   }
@@ -3750,6 +3805,8 @@ function readHash() {
   state.route = city(from) && city(to) && from !== to ? { from, to } : null;
   state.mode = { h: 'horizon', f: 'flight', s: 'space' }[p.get('v')] ?? 'sky';
   if (Object.hasOwn(SPACE_LOOK, p.get('sv') ?? '')) state.spaceLook = p.get('sv');
+  state.spaceStay = SPACE_BODIES.find((body) => body.name.toLowerCase() === p.get('sw'))?.name ?? SPACE_LOOK[state.spaceLook].body;
+  state.spaceFree = p.get('sf') === '1';
   state.spaceOrbits = p.get('so') !== '0';
   state.spaceNames = p.get('sn') !== '0';
   state.speedKmh = num('fs', ...FLIGHT_LIMITS.speedKmh) ?? state.speedKmh;
@@ -3850,7 +3907,7 @@ async function start() {
     readHash();
     applyBareLink();
     setMode(state.mode);
-    applySpaceLook();
+    applySpaceLook(state.spaceStay);
     globeView.focus(state.lat, state.lon);
     flatView.focus(state.lat, state.lon);
     requestUpdate();

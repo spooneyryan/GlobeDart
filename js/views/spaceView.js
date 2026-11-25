@@ -12,17 +12,22 @@
 //   - the colours of the planets, which are plain, and the Moon's, a plain grey
 //   - Saturn's rings, which are left out
 //
-// Lengths in the scene are in Earth radii. The thing being looked at is always
-// at the middle of the scene, and everything else is placed from there. The
-// numbers stay small near the camera that way, where a graphics card's seven
-// figures of precision would otherwise show as a wobble: the Earth is 23,000
-// of its own radii from the Sun.
+// Lengths in the scene are in Earth radii. The body the camera stays with is
+// always at the middle of the scene, and everything else is placed from there.
+// Each body is drawn from its own middle, and where that middle is from the
+// camera is worked out with sixteen figures before the graphics card sees it.
+// A graphics card's own seven figures would otherwise show as a wobble: the
+// Earth is 23,000 of its own radii from the Sun.
+//
+// The camera has two ways of moving. On its circle it goes round the body it
+// stays with and always looks at it. Moving freely it can be turned and taken
+// anywhere, and it still keeps its place beside that body as the time runs.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { DEG, EARTH_RADIUS_KM, SUN_RADIUS_KM } from '../astro.js';
 import { globeVec, SHADOW_GROWTH } from '../models.js';
 import { STARS } from '../stars.js';
-import { SPACE_BODIES, SPACE_BODY, PLANET_NAMES, MOON_MONTH_DAYS, placeDirection, planetPath, moonPath, starDirection } from '../space.js';
+import { SPACE_BODIES, SPACE_BODY, PLANET_NAMES, MOON_MONTH_DAYS, placeDirection, planetPath, moonPath, starDirection, nearestSurface } from '../space.js';
 import { View3D, COLORS, buildCoastPositions, buildGraticulePositions, buildLatitudePositions, lineSegments, PointCloud, scale3, outsideStarSize } from '../scene-utils.js';
 import { setEclipse } from './eclipseShade.js';
 import { makeEarthBall } from './earthBall.js';
@@ -46,6 +51,33 @@ const CLICK_REACH_PX = 22;
 const NAME_ORDER = ['Sun', 'Earth', 'Jupiter', 'Saturn', 'Mars', 'Venus', 'Mercury', 'Moon'];
 const NAME_LETTER_PX = 7;
 const NAME_HIGH_PX = 13;
+
+// Moving freely. Each second the camera covers this share of the distance to the nearest surface, so that it
+// slows down as it comes near something and is quick across the empty stretches. Shift makes it this many times faster.
+const FLY_RATE = 0.7;
+const FLY_FAST = 3;
+// The speed is worked out as if the nearest surface were never closer than this, in km, so that there is always a way off again.
+const FLY_SLOWEST_KM = 50;
+// How near a body the camera may come when moving freely: this many of the body's radii from its middle.
+const FLY_CLEAR = 1.02;
+// One notch of a mouse wheel reports about 100, and takes the camera a fifth of the way to the nearest surface.
+const WHEEL_SHARE = 0.002;
+// The most that one turn of a wheel, or one movement of a pinch, may cover: half the way to the nearest surface.
+const MOST_AT_ONCE = 0.5;
+// How far up or down the camera can be turned: just short of straight up, where left and right would lose their meaning.
+const STEEPEST = 88 * DEG;
+// The six ways the camera can be moved, in the order of their buttons: three across, two down. `move` is how
+// far forward, to the right and upward each one goes. `key` is the letter that does the same.
+const WAYS = {
+  up: { text: 'Up', key: 'E', move: [0, 0, 1] },
+  forward: { text: 'Forward', key: 'W', move: [1, 0, 0] },
+  down: { text: 'Down', key: 'Q', move: [0, 0, -1] },
+  left: { text: 'Left', key: 'A', move: [0, -1, 0] },
+  back: { text: 'Back', key: 'S', move: [-1, 0, 0] },
+  right: { text: 'Right', key: 'D', move: [0, 1, 0] },
+};
+// The keys that move it, by where they are on the keyboard, not by the letter printed on them.
+const KEYS = { KeyW: 'forward', ArrowUp: 'forward', KeyS: 'back', ArrowDown: 'back', KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right', KeyE: 'up', KeyQ: 'down' };
 
 // A plain colour for each body, and the size of its marker dot in CSS pixels.
 const LOOKS = {
@@ -142,6 +174,15 @@ function litBall(radius, colour) {
   return { mesh, uniforms };
 }
 
+/** Keeps a press belonging to the element it began on, wherever the pointer goes next. A press made by a script has no pointer to keep. */
+function capture(el, e) {
+  try {
+    el.setPointerCapture(e.pointerId);
+  } catch {
+    // The press still counts. Its release is seen only if it happens over the same element.
+  }
+}
+
 /** A closed or open line through a list of points [x, y, z], in scene units. */
 function pathLine(points, colour, closed) {
   const geo = new THREE.BufferGeometry();
@@ -161,13 +202,21 @@ export function spaceDistance(km) {
 
 export class SpaceView extends View3D {
   /**
-   * `onGo(name)` is called when a body's dot is clicked. `readout`, if given,
-   * is an element whose text is kept saying what is being looked at and from
-   * how far.
+   * `onGo(name)` is called when a body's dot is clicked, and `onMove()` when
+   * the camera is turned or moved freely. `readout`, if given, is an element
+   * whose text is kept saying what is being looked at and from how far.
    */
-  constructor(container, land, landCanvas, { onGo, readout = null }) {
+  constructor(container, land, landCanvas, { onGo, onMove = null, readout = null }) {
     super(container);
     this.readout = readout;
+    // Moving freely: off its circle, the camera can be turned and taken anywhere.
+    this.free = false;
+    this.onMove = onMove;
+    this.keys = new Set(); // the keys held down, of those in KEYS
+    this.pressed = new Set(); // the ways whose buttons are held down
+    this.fast = false; // Shift is down
+    this.flewAt = null; // when the camera was last moved by a held key or button
+    this.fingers = new Map(); // where each finger or mouse button that is down was last seen
     this.camera = new THREE.PerspectiveCamera(32, 1, 0.01, 2 * STAR_SHELL);
     this.camera.position.set(2.2, 1.6, 5.2);
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -216,7 +265,11 @@ export class SpaceView extends View3D {
         body.object = ball.mesh;
       }
       this.scene.add(body.object);
+      // The dot sits at the body's middle, and is placed with the body.
       body.dot = new PointCloud(1, look.colour, { depthTest: true });
+      body.dot.begin();
+      body.dot.add([0, 0, 0], look.dot);
+      body.dot.end(1);
       this.scene.add(body.dot.object);
       body.label = this.labels.add(name === 'Sun' || name === 'Moon' || name === 'Earth' ? `The ${name}` : name, 'space');
       body.label.test = () => body.named;
@@ -247,8 +300,95 @@ export class SpaceView extends View3D {
         const reach = Math.max(CLICK_REACH_PX, this.pixelsAcross(body) / 2);
         if (px < reach && (!best || px < best.px)) best = { px, name: body.name };
       }
-      if (best && best.name !== this.focus) onGo(best.name);
+      if (best && (this.free || best.name !== this.focus)) onGo(best.name);
     });
+
+    // ----- moving freely -----
+    // A drag turns the camera, and a wheel or a pinch takes it forward and back.
+    const el = this.renderer.domElement;
+    let spread = 0; // how far apart two fingers were, for a pinch
+    el.addEventListener('pointerdown', (e) => {
+      if (!this.free) return;
+      capture(el, e);
+      this.fingers.set(e.pointerId, [e.clientX, e.clientY]);
+      spread = 0;
+    });
+    el.addEventListener('pointermove', (e) => {
+      const was = this.fingers.get(e.pointerId);
+      if (!this.free || !was) return;
+      this.fingers.set(e.pointerId, [e.clientX, e.clientY]);
+      if (this.fingers.size === 1) this.turn(e.clientX - was[0], e.clientY - was[1]);
+      if (this.fingers.size === 2) {
+        const [a, b] = [...this.fingers.values()];
+        const now = Math.hypot(a[0] - b[0], a[1] - b[1]);
+        // Two fingers moved to twice as far apart go forward 0.69 of the way to the nearest surface: the
+        // natural logarithm of 2. Brought together to half as far apart, they come back as much.
+        if (spread > 0 && now > 0) this.advance(Math.log(now / spread));
+        spread = now;
+      }
+    });
+    const lift = (e) => {
+      this.fingers.delete(e.pointerId);
+      spread = 0;
+    };
+    el.addEventListener('pointerup', lift);
+    el.addEventListener('pointercancel', lift);
+    el.addEventListener(
+      'wheel',
+      (e) => {
+        if (!this.free) return;
+        e.preventDefault(); // the page would otherwise scroll
+        // Some browsers count a wheel in lines, not pixels: about three lines to the notch.
+        const turned = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
+        this.advance(-turned * WHEEL_SHARE);
+      },
+      { passive: false },
+    );
+
+    // Held keys move it, unless they are being typed into a list or a box.
+    const typing = (e) => e.target instanceof Element && !!e.target.closest('select, textarea, input:not([type=checkbox])');
+    window.addEventListener('keydown', (e) => {
+      this.fast = e.shiftKey;
+      if (!KEYS[e.code] || !this.free || this.hidden || typing(e) || e.ctrlKey || e.metaKey || e.altKey) return;
+      e.preventDefault(); // the arrow keys would otherwise scroll the page
+      this.keys.add(e.code);
+    });
+    window.addEventListener('keyup', (e) => {
+      this.fast = e.shiftKey;
+      this.keys.delete(e.code);
+    });
+    window.addEventListener('blur', () => this.keys.clear());
+
+    // The buttons do the same for a finger or a mouse. Each moves the camera for as long as it is held.
+    this.pad = document.createElement('div');
+    this.pad.className = 'fly-pad';
+    this.pad.hidden = true;
+    this.pad.setAttribute('role', 'group');
+    this.pad.setAttribute('aria-label', 'Move the camera');
+    for (const [way, { text, key }] of Object.entries(WAYS)) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = text;
+      button.title = `${text}: hold this, or the ${key} key`;
+      const hold = (on) => {
+        if (on) this.pressed.add(way);
+        else this.pressed.delete(way);
+        button.classList.toggle('held', on);
+      };
+      button.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        capture(button, e);
+        hold(true);
+      });
+      for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) button.addEventListener(type, () => hold(false));
+      button.addEventListener('contextmenu', (e) => e.preventDefault());
+      // Pressed from the keyboard, a button moves one step: a quarter of the way to the nearest surface.
+      button.addEventListener('click', (e) => {
+        if (e.detail === 0) this.shift(...WAYS[way].move.map((v) => v * 0.25));
+      });
+      this.pad.appendChild(button);
+    }
+    container.appendChild(this.pad);
   }
 
   /**
@@ -279,9 +419,7 @@ export class SpaceView extends View3D {
       body.at.fromArray(at);
       body.object.position.fromArray(at);
       body.label.pos.fromArray(at);
-      body.dot.begin();
-      body.dot.add(at, LOOKS[body.name].dot);
-      body.dot.end(1);
+      body.dot.object.position.fromArray(at);
       // Light comes from the Sun: the direction from this body to it.
       if (body.name !== 'Sun' && body.name !== 'Earth') body.uniforms.sunDir.value.set(sunAt[0] - at[0], sunAt[1] - at[1], sunAt[2] - at[2]).normalize();
     }
@@ -331,20 +469,23 @@ export class SpaceView extends View3D {
     }
     this.moonOrbit.position.copy(earth.at);
     this.moonOrbit.visible = state.spaceOrbits;
+    // As the time runs, a body can come to where a free camera is. The camera is moved out of its way.
+    if (this.free) this.keepClear();
     this.dirty = true;
   }
 
   /**
-   * Goes to a body. `distKm` is how far from its middle to stand, or null to
-   * stay as far off as the camera is now. `aboveDeg` is how far above the plane
-   * of the Earth's orbit to look from, or null to keep the present angle.
-   * `fit` backs off further on a tall, narrow screen, so that what fits across
-   * a wide one still fits.
+   * Goes to a body, looks at it, and stays with it from then on. `distKm` is
+   * how far from its middle to stand, or null to stay as far off as the camera
+   * is now, and no nearer than four of the body's radii. `aboveDeg` is how far
+   * above the plane of the Earth's orbit to look from, or null to keep the
+   * present angle. `fit` backs off further on a tall, narrow screen, so that
+   * what fits across a wide one still fits.
    */
   go(name, distKm = null, { aboveDeg = null, fit = false } = {}) {
     this.focus = name;
     this.controls.minDistance = this.bodies[name].radius * 1.15;
-    let dist = distKm === null ? this.camera.position.length() : distKm / UNIT_KM;
+    let dist = distKm === null ? Math.max(this.camera.position.length(), this.bodies[name].radius * 4) : distKm / UNIT_KM;
     if (fit) dist /= Math.min(1, this.camera.aspect);
     dist = Math.min(FARTHEST, Math.max(this.controls.minDistance, dist));
     if (aboveDeg !== null) {
@@ -370,17 +511,138 @@ export class SpaceView extends View3D {
     this.dirty = true;
   }
 
-  /** How far the camera is from the middle of what it is looking at, in km. */
+  /**
+   * Changes which body the camera stays with as the time runs. On its circle
+   * the camera goes to that body, as far from it as it was from the last one.
+   * Moving freely it stays exactly where it is and looks the same way, and
+   * only what it travels beside changes: its place is measured from the new
+   * body in place of the old.
+   */
+  stayWith(name) {
+    if (name === this.focus) return;
+    if (!this.free || !this.sp) {
+      this.go(name);
+      return;
+    }
+    const [was, now] = [this.sp.at[this.focus], this.sp.at[name]];
+    this.camera.position.add(new THREE.Vector3((was[0] - now[0]) / UNIT_KM, (was[1] - now[1]) / UNIT_KM, (was[2] - now[2]) / UNIT_KM));
+    this.focus = name;
+    this.controls.minDistance = this.bodies[name].radius * 1.15;
+    this.update(this.state, this.sp);
+  }
+
+  /** Takes the camera off its circle to move freely, or puts it back. */
+  setFree(on) {
+    if (on === this.free) return;
+    this.free = on;
+    this.controls.enabled = !on;
+    this.pad.hidden = !on;
+    this.keys.clear();
+    this.pressed.clear();
+    this.fingers.clear();
+    // Back on its circle, the camera looks at the body it stays with again, from wherever it has got to.
+    if (!on) this.controls.update();
+    this.dirty = true;
+  }
+
+  /** Where the camera is and which body's surface is nearest it: nearestSurface's answer (js/space.js). */
+  nearest() {
+    const from = this.sp.at[this.focus];
+    const p = this.camera.position;
+    return nearestSurface([from[0] + p.x * UNIT_KM, from[1] + p.y * UNIT_KM, from[2] + p.z * UNIT_KM], this.sp.at);
+  }
+
+  /**
+   * Turns a free camera by a drag of `dx` pixels across and `dy` down. The
+   * picture follows the pointer, as it does on the circle: the camera turns
+   * the other way, by the angle one pixel takes up,
+   *
+   *   the angle the camera takes in from top to bottom ÷ the picture's height
+   *
+   * for each pixel. Left and right are measured round the plane of the
+   * Earth's orbit, and up and down from it.
+   */
+  turn(dx, dy) {
+    if (!this.free) return;
+    const perPixel = (this.camera.fov * DEG) / this.height;
+    const facing = this.camera.getWorldDirection(new THREE.Vector3());
+    const round = Math.atan2(facing.z, facing.x) - dx * perPixel;
+    const up = Math.max(-STEEPEST, Math.min(STEEPEST, Math.asin(Math.max(-1, Math.min(1, facing.y))) + dy * perPixel));
+    const p = this.camera.position;
+    this.camera.lookAt(p.x + Math.cos(up) * Math.cos(round), p.y + Math.sin(up), p.z + Math.cos(up) * Math.sin(round));
+    this.dirty = true;
+    this.onMove?.();
+  }
+
+  /**
+   * Moves a free camera: `along` the way it faces, `across` to its right and
+   * `up`, each as a share of the distance to the nearest surface. Covering a
+   * share of what is left each time, it can come as near a body as it likes
+   * and never reach it.
+   */
+  shift(along, across = 0, up = 0) {
+    if (!this.free || !this.sp) return;
+    const forward = this.camera.getWorldDirection(new THREE.Vector3());
+    const right = new THREE.Vector3().crossVectors(forward, this.camera.up).normalize();
+    const above = new THREE.Vector3().crossVectors(right, forward);
+    const pace = Math.max(this.nearest().gapKm, FLY_SLOWEST_KM) / UNIT_KM;
+    this.camera.position.addScaledVector(forward, along * pace).addScaledVector(right, across * pace).addScaledVector(above, up * pace);
+    this.keepClear();
+    this.dirty = true;
+    this.onMove?.();
+  }
+
+  /** Forward, or back for less than nothing, by a share of the distance to the nearest surface: one turn of a wheel or one movement of a pinch. */
+  advance(share) {
+    this.shift(Math.max(-MOST_AT_ONCE, Math.min(MOST_AT_ONCE, share)));
+  }
+
+  /** Keeps a free camera outside every body, and no further from the body it stays with than the view reaches. */
+  keepClear() {
+    const out = new THREE.Vector3();
+    for (const body of Object.values(this.bodies)) {
+      const least = body.radius * FLY_CLEAR;
+      out.copy(this.camera.position).sub(body.at);
+      if (out.length() >= least) continue;
+      if (out.lengthSq() === 0) out.set(0, 1, 0);
+      this.camera.position.copy(body.at).add(out.setLength(least));
+    }
+    if (this.camera.position.length() > FARTHEST) this.camera.position.setLength(FARTHEST);
+  }
+
+  /**
+   * Moves a free camera for the keys and buttons that are held, by the time
+   * since the last picture. In t seconds it covers
+   *
+   *   FLY_RATE × t × the distance to the nearest surface
+   *
+   * in each of the ways being held, and FLY_FAST times that with Shift down.
+   */
+  fly() {
+    const now = performance.now();
+    // Never more than a tenth of a second at once: after a pause nothing leaps ahead.
+    const dt = Math.min(0.1, (now - (this.flewAt ?? now)) / 1000);
+    this.flewAt = now;
+    if (!this.free || this.hidden) return;
+    const held = new Set(this.pressed);
+    for (const code of this.keys) held.add(KEYS[code]);
+    const share = FLY_RATE * (this.fast ? FLY_FAST : 1) * dt;
+    const sum = [0, 0, 0];
+    for (const way of held) WAYS[way].move.forEach((v, i) => (sum[i] += v * share));
+    if (sum.some((v) => v !== 0)) this.shift(...sum);
+  }
+
+  /** How far the camera is from the middle of the body it stays with, in km. */
   rangeKm() {
     return this.camera.position.length() * UNIT_KM;
   }
 
   /** Things that depend on where the camera is, put right just before each picture is drawn. */
   arrange() {
-    const dist = this.camera.position.length();
     // The camera draws what lies between a nearest and a farthest distance, and tells near from far less well
-    // the wider that range is. The nearest is kept at a hundredth of the way to what is being looked at.
-    this.camera.near = Math.max(0.0005, dist * 0.01);
+    // the wider that range is. The nearest is kept at a twentieth of the way to the nearest surface.
+    const nearest = this.sp ? this.nearest() : { name: this.focus, gapKm: this.rangeKm() };
+    this.camera.near = Math.max(0.0005, (Math.max(0, nearest.gapKm) / UNIT_KM) * 0.05);
     this.camera.updateProjectionMatrix();
     // The stars go wherever the camera goes, so that moving about never shifts them.
     this.starCloud.object.position.copy(this.camera.position);
@@ -411,10 +673,17 @@ export class SpaceView extends View3D {
     };
     this.observerLabel.test = () => names && earthPx > 120 && near(this.observerLabel);
     this.northLabel.test = () => names && earthPx > 120;
-    if (this.readout) this.readout.textContent = `${this.bodies[this.focus].label.el.textContent} from ${spaceDistance(this.rangeKm())}`;
+    if (this.readout) {
+      const called = (name) => this.bodies[name].label.el.textContent;
+      const within = (name) => called(name).replace(/^The /, 'the ');
+      this.readout.textContent = this.free
+        ? `Moving freely, staying with ${within(this.focus)}. Nearest: ${within(nearest.name)}, ${spaceDistance(Math.max(0, nearest.gapKm))} off.`
+        : `${called(this.focus)} from ${spaceDistance(this.rangeKm())}`;
+    }
   }
 
   render() {
+    this.fly();
     if (!this.dirty || this.hidden) return;
     this.arrange();
     super.render();

@@ -72,7 +72,7 @@ the whole argument about the sky:
 | `js/views/ground.js` | The ground under the observer's sky: the field, desert, snow or sea, its landmarks, and the shadows |
 | `js/views/horizonView.js` | The horizon drawings: the scene from the side and through a telescope, once per model |
 | `js/views/flightView.js` | The level-flight drawings: one lap speeded up, and a stretch to true scale |
-| `js/views/spaceView.js` | The view from space: everything to scale, with a camera that can go to any of the bodies |
+| `js/views/spaceView.js` | The view from space: everything to scale, with a camera that can go to any of the bodies, stay with any of them, or move freely |
 | `js/views/earthBall.js` | The ball of the Earth and its day and night, shared by the globe model's outside view and the view from space |
 | `js/main.js` | State, controls, result panels, shareable URL, and the helpers handed to each argument |
 | `js/cities.js` | Preset places and the reference observers used for scoring |
@@ -345,6 +345,14 @@ Jupiter and Saturn, each where the almanac puts it for the moment on show.
   to see, so each also has a dot and a name. The dots are markers of a fixed size on screen.
 - "Go to" picks what to look at: a body, the Earth and Moon together, or the orbits out to Mars or out to Saturn.
   Dragging looks round it, scrolling or pinching moves in and out, and clicking a dot goes to that body.
+- "Stay with" picks the body the camera keeps its place beside as the time runs. Stay with the Sun and the Earth
+  goes round it. Stay with the Earth, from far enough off to have the Sun in the picture, and the Sun goes round
+  the Earth. It is the same motion both times, seen by a camera that is carried along with one body or the other.
+- "Move freely" takes the camera off its circle. Dragging turns it, scrolling or pinching goes forward and back,
+  and the six buttons on the view move it while they are held. So do the keys W, A, S and D, with E for up and Q
+  for down, three times as fast with Shift. Each second it covers 0.7 of the distance to the nearest surface, so it
+  slows as it comes near a body and is quick across the gaps. That speed is for getting about and is nothing's
+  real speed. The camera still stays with the chosen body as the time runs, and "Go to" still works.
 - The time bar is the same one "Sun, stars, maps" uses, with faster speeds on offer, up to 30 days a second.
 - The Earth is lit as in the globe model's outside view, from the same code, and the observer's place is marked
   on it. The Moon's shadow falls on the Earth at an eclipse of the sun, and the Earth's on the Moon at an eclipse
@@ -357,7 +365,9 @@ Jupiter and Saturn, each where the almanac puts it for the moment on show.
 - There are no demonstrations or tours for this tool yet.
 
 A link ending `#v=s&sv=earthmoon` opens it. `sv` is what it looks at: `earth`, `earthmoon`, `moon`, `sun`,
-`inner`, `all`, or a planet's name in lower case.
+`inner`, `all`, or a planet's name in lower case. `sw` is the body the camera stays with, where that is not the
+one it looks at (`sw=earth` with `sv=inner`, say), and `sf=1` has it moving freely. Where a free camera has got
+to is not kept in a link.
 
 ## Google Earth
 

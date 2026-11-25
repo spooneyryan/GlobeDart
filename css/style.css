@@ -601,6 +601,43 @@ body[data-mode='space'] #view-tabs {
   color: var(--muted);
 }
 
+/* The buttons that move the camera in the view from space, when it is moving freely. Each works while it is held. */
+.fly-pad {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.fly-pad button {
+  padding: 6px 8px;
+  font-size: 12px;
+  background: rgba(8, 13, 20, 0.82);
+  touch-action: none;
+}
+
+.fly-pad button.held {
+  background: #1d4d8f;
+  border-color: #2f6fc4;
+}
+
+@media (max-width: 720px) {
+  /* Large enough for a thumb. */
+  .fly-pad {
+    top: 6px;
+    right: 6px;
+  }
+  .fly-pad button {
+    padding: 9px 7px;
+  }
+}
+
 .sw.nose {
   background: #f2f6fa;
 }

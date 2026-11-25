@@ -707,8 +707,30 @@ part = 1 + behind × (S + 1) ÷ D
 
 of that line, in Earth radii, each made 2% larger for the Earth's air as in section 3a.
 
-- Code: `js/space.js`, `placesInSpace`, `earthTurn`, `overheadPlace`, `spaceScene`, `planetPath`, `moonPath`;
-  `js/views/spaceView.js` for the shadow on the Moon.
+**Staying with a body.** The picture is always drawn with one body at its middle, and every other place is that
+place less the body's own. The camera keeps its place in that picture as the time runs, so it travels with the
+body. Changing the body changes nothing about where anything is. A camera moving freely keeps its place in space
+when the body is changed: its place is re-measured,
+
+```
+from the new body = from the old body + (the old body's place − the new body's place)
+```
+
+**Moving freely.** The camera's speed is chosen for getting about and is nothing's real speed. With `gap` the
+distance from the camera to the nearest surface of any of the eight bodies, each second it moves
+
+```
+0.7 × gap          three times that with Shift held
+```
+
+so it slows as it comes near a body and is quick across the empty stretches. Straight out from a body, a gap of a
+grows to a gap of b in ln(b ÷ a) ÷ 0.7 seconds: from 1,000 km above the Earth to the Moon's distance takes about
+8.5 seconds. The gap is never taken as less than 50 km, and the camera is kept 2% of a body's radius clear of its
+surface. One notch of a mouse wheel covers a fifth of the gap.
+
+- Code: `js/space.js`, `placesInSpace`, `earthTurn`, `overheadPlace`, `spaceScene`, `planetPath`, `moonPath`,
+  `nearestSurface`; `js/views/spaceView.js` for the shadow on the Moon, staying with a body (`stayWith`) and
+  moving freely (`turn`, `shift`, `fly`).
 - Checks: section 19.
 - Checks: section 14 (run from `js/arguments/spin.js`).
 

@@ -203,3 +203,24 @@ export function moonPath(date, steps = 120) {
   const start = date.getTime() - (MOON_MONTH_DAYS * DAY_MS) / 2;
   return Array.from({ length: steps + 1 }, (_, i) => fromAlmanac(Astronomy.GeoMoon(Astronomy.MakeTime(new Date(start + i * stepMs))), Astronomy.KM_PER_AU));
 }
+
+// ---------- moving about ----------
+
+/**
+ * The body whose surface is nearest a point, and how far off that surface is,
+ * in km. `point` is in km from the Sun, like the places in `at`
+ * (placesInSpace). For each body the distance is
+ *
+ *   how far the point is from the body's middle − the body's radius
+ *
+ * so a point inside a body is less than nothing from its surface. The view
+ * uses this to set how fast a freely moving camera goes.
+ */
+export function nearestSurface(point, at) {
+  let best = null;
+  for (const { name, radiusKm } of SPACE_BODIES) {
+    const gapKm = distanceKm(point, at[name]) - radiusKm;
+    if (!best || gapKm < best.gapKm) best = { name, gapKm };
+  }
+  return best;
+}
