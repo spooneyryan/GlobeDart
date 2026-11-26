@@ -20,8 +20,9 @@
 // Earth is 23,000 of its own radii from the Sun.
 //
 // The camera has two ways of moving. On its circle it goes round the body it
-// stays with and always looks at it. Moving freely it can be turned and taken
-// anywhere, and it still keeps its place beside that body as the time runs.
+// stays with and always looks at it. Moving freely it can be turned, rolled
+// and taken anywhere, and it still keeps its place beside that body as the
+// time runs.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { DEG, EARTH_RADIUS_KM, SUN_RADIUS_KM } from '../astro.js';
@@ -66,6 +67,9 @@ const WHEEL_SHARE = 0.002;
 const MOST_AT_ONCE = 0.5;
 // How far up or down the camera can be turned: just short of straight up, where left and right would lose their meaning.
 const STEEPEST = 88 * DEG;
+// A drag with the right button rolls nothing while the pointer is nearer the middle of the picture than this, in
+// pixels: that close, which way round the middle it is going has no meaning.
+const ROLL_CLEAR_PX = 12;
 // The six ways the camera can be moved, in the order of their buttons: three across, two down. `move` is how
 // far forward, to the right and upward each one goes. `key` is the letter that does the same.
 const WAYS = {
@@ -304,7 +308,8 @@ export class SpaceView extends View3D {
     });
 
     // ----- moving freely -----
-    // A drag turns the camera, and a wheel or a pinch takes it forward and back.
+    // A drag turns the camera, a drag with the right button rolls it, and a wheel or a pinch takes it towards
+    // whatever is under the pointer, or back from it.
     const el = this.renderer.domElement;
     let spread = 0; // how far apart two fingers were, for a pinch
     el.addEventListener('pointerdown', (e) => {
@@ -317,13 +322,17 @@ export class SpaceView extends View3D {
       const was = this.fingers.get(e.pointerId);
       if (!this.free || !was) return;
       this.fingers.set(e.pointerId, [e.clientX, e.clientY]);
-      if (this.fingers.size === 1) this.turn(e.clientX - was[0], e.clientY - was[1]);
+      if (this.fingers.size === 1) {
+        if (e.buttons & 2) this.roll(this.sweep(was, [e.clientX, e.clientY]));
+        else this.turn(e.clientX - was[0], e.clientY - was[1]);
+      }
       if (this.fingers.size === 2) {
         const [a, b] = [...this.fingers.values()];
         const now = Math.hypot(a[0] - b[0], a[1] - b[1]);
         // Two fingers moved to twice as far apart go forward 0.69 of the way to the nearest surface: the
-        // natural logarithm of 2. Brought together to half as far apart, they come back as much.
-        if (spread > 0 && now > 0) this.advance(Math.log(now / spread));
+        // natural logarithm of 2. Brought together to half as far apart, they come back as much. The camera
+        // goes along the line through the point half way between them.
+        if (spread > 0 && now > 0) this.advance(Math.log(now / spread), this.ndc({ clientX: (a[0] + b[0]) / 2, clientY: (a[1] + b[1]) / 2 }));
         spread = now;
       }
     });
@@ -340,10 +349,14 @@ export class SpaceView extends View3D {
         e.preventDefault(); // the page would otherwise scroll
         // Some browsers count a wheel in lines, not pixels: about three lines to the notch.
         const turned = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
-        this.advance(-turned * WHEEL_SHARE);
+        this.advance(-turned * WHEEL_SHARE, this.ndc(e));
       },
       { passive: false },
     );
+    // The right button is for rolling, so it brings up no menu.
+    el.addEventListener('contextmenu', (e) => {
+      if (this.free) e.preventDefault();
+    });
 
     // Held keys move it, unless they are being typed into a list or a box.
     const typing = (e) => e.target instanceof Element && !!e.target.closest('select, textarea, input:not([type=checkbox])');
@@ -480,7 +493,8 @@ export class SpaceView extends View3D {
    * is now, and no nearer than four of the body's radii. `aboveDeg` is how far
    * above the plane of the Earth's orbit to look from, or null to keep the
    * present angle. `fit` backs off further on a tall, narrow screen, so that
-   * what fits across a wide one still fits.
+   * what fits across a wide one still fits. A camera that has been rolled is
+   * set level again.
    */
   go(name, distKm = null, { aboveDeg = null, fit = false } = {}) {
     this.focus = name;
@@ -495,6 +509,7 @@ export class SpaceView extends View3D {
       this.camera.position.set(Math.cos(up) * Math.cos(round), Math.sin(up), Math.cos(up) * Math.sin(round));
     }
     this.camera.position.setLength(dist);
+    this.camera.up.set(0, 1, 0);
     this.controls.update();
     if (this.sp) this.update(this.state, this.sp);
     this.dirty = true;
@@ -540,8 +555,11 @@ export class SpaceView extends View3D {
     this.keys.clear();
     this.pressed.clear();
     this.fingers.clear();
-    // Back on its circle, the camera looks at the body it stays with again, from wherever it has got to.
-    if (!on) this.controls.update();
+    // Back on its circle, the camera is level again and looks at the body it stays with, from wherever it has got to.
+    if (!on) {
+      this.camera.up.set(0, 1, 0);
+      this.controls.update();
+    }
     this.dirty = true;
   }
 
@@ -559,19 +577,75 @@ export class SpaceView extends View3D {
    *
    *   the angle the camera takes in from top to bottom ÷ the picture's height
    *
-   * for each pixel. Left and right are measured round the plane of the
-   * Earth's orbit, and up and down from it.
+   * for each pixel. Left and right are measured round the camera's own "up",
+   * and up and down from the level that is square to it. That "up" is the
+   * north of the Earth's orbit until the camera is rolled.
    */
   turn(dx, dy) {
     if (!this.free) return;
     const perPixel = (this.camera.fov * DEG) / this.height;
+    const pole = this.camera.up;
     const facing = this.camera.getWorldDirection(new THREE.Vector3());
-    const round = Math.atan2(facing.z, facing.x) - dx * perPixel;
-    const up = Math.max(-STEEPEST, Math.min(STEEPEST, Math.asin(Math.max(-1, Math.min(1, facing.y))) + dy * perPixel));
-    const p = this.camera.position;
-    this.camera.lookAt(p.x + Math.cos(up) * Math.cos(round), p.y + Math.sin(up), p.z + Math.cos(up) * Math.sin(round));
+    const rise = facing.dot(pole);
+    const up = Math.max(-STEEPEST, Math.min(STEEPEST, Math.asin(Math.max(-1, Math.min(1, rise))) + dy * perPixel));
+    // The level part of the way it faces. Facing straight along its "up" it has none, and the top of the
+    // picture, or the bottom, is what lies ahead.
+    const level = facing.clone().addScaledVector(pole, -rise);
+    if (level.lengthSq() < 1e-12) level.setFromMatrixColumn(this.camera.matrixWorld, 1).multiplyScalar(rise < 0 ? 1 : -1);
+    level.normalize().applyAxisAngle(pole, dx * perPixel);
+    this.camera.lookAt(this.camera.position.clone().addScaledVector(level, Math.cos(up)).addScaledVector(pole, Math.sin(up)));
     this.dirty = true;
     this.onMove?.();
+  }
+
+  /**
+   * The angle a pointer goes round the middle of the picture in moving from
+   * `was` to `now`, each [x, y] in the page's pixels. Clockwise is more than
+   * nothing. With a and b the two places measured from the middle,
+   *
+   *   angle = atan2(a.x × b.y − a.y × b.x, a.x × b.x + a.y × b.y)
+   *
+   * It is nothing if either place is within ROLL_CLEAR_PX of the middle.
+   */
+  sweep(was, now) {
+    const r = this.renderer.domElement.getBoundingClientRect();
+    const [mx, my] = [r.left + r.width / 2, r.top + r.height / 2];
+    const [ax, ay, bx, by] = [was[0] - mx, was[1] - my, now[0] - mx, now[1] - my];
+    if (Math.hypot(ax, ay) < ROLL_CLEAR_PX || Math.hypot(bx, by) < ROLL_CLEAR_PX) return 0;
+    return Math.atan2(ax * by - ay * bx, ax * bx + ay * by);
+  }
+
+  /**
+   * Rolls a free camera about the way it faces, so that the picture goes
+   * round clockwise by `angle`: it follows the pointer, as it does in a turn.
+   * The camera goes round the other way. What is turned is the camera's own
+   * "up", and `turn` measures from that afterwards.
+   */
+  roll(angle) {
+    if (!this.free || !angle) return;
+    const facing = this.camera.getWorldDirection(new THREE.Vector3());
+    this.camera.up.applyAxisAngle(facing, -angle).normalize();
+    this.camera.lookAt(this.camera.position.clone().add(facing));
+    this.dirty = true;
+    this.onMove?.();
+  }
+
+  /**
+   * The direction from the camera out through one point of the picture. `at`
+   * is that point as `ndc` gives it: x and y each run from −1 to 1 across the
+   * picture, with y upward. With `half` the tangent of half the angle the
+   * camera takes in from top to bottom, the direction is
+   *
+   *   forward + right × x × half × (width ÷ height) + above × y × half
+   *
+   * made one unit long. The middle of the picture gives the way the camera faces.
+   */
+  through(at) {
+    const forward = this.camera.getWorldDirection(new THREE.Vector3());
+    const right = new THREE.Vector3().crossVectors(forward, this.camera.up).normalize();
+    const above = new THREE.Vector3().crossVectors(right, forward);
+    const half = Math.tan((this.camera.fov * DEG) / 2);
+    return forward.addScaledVector(right, at.x * half * this.camera.aspect).addScaledVector(above, at.y * half).normalize();
   }
 
   /**
@@ -585,16 +659,28 @@ export class SpaceView extends View3D {
     const forward = this.camera.getWorldDirection(new THREE.Vector3());
     const right = new THREE.Vector3().crossVectors(forward, this.camera.up).normalize();
     const above = new THREE.Vector3().crossVectors(right, forward);
+    this.carry(forward.multiplyScalar(along).addScaledVector(right, across).addScaledVector(above, up));
+  }
+
+  /** Moves a free camera by `step`: a direction, times a share of the distance to the nearest surface. */
+  carry(step) {
     const pace = Math.max(this.nearest().gapKm, FLY_SLOWEST_KM) / UNIT_KM;
-    this.camera.position.addScaledVector(forward, along * pace).addScaledVector(right, across * pace).addScaledVector(above, up * pace);
+    this.camera.position.addScaledVector(step, pace);
     this.keepClear();
     this.dirty = true;
     this.onMove?.();
   }
 
-  /** Forward, or back for less than nothing, by a share of the distance to the nearest surface: one turn of a wheel or one movement of a pinch. */
-  advance(share) {
-    this.shift(Math.max(-MOST_AT_ONCE, Math.min(MOST_AT_ONCE, share)));
+  /**
+   * One turn of a wheel or one movement of a pinch: towards the point of the
+   * picture `at` (as `ndc` gives it), or back from it for less than nothing,
+   * by a share of the distance to the nearest surface. The camera moves along
+   * the line through that point and does not turn, so whatever is under the
+   * pointer stays under it.
+   */
+  advance(share, at = new THREE.Vector2()) {
+    if (!this.free || !this.sp) return;
+    this.carry(this.through(at).multiplyScalar(Math.max(-MOST_AT_ONCE, Math.min(MOST_AT_ONCE, share))));
   }
 
   /** Keeps a free camera outside every body, and no further from the body it stays with than the view reaches. */

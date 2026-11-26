@@ -348,8 +348,10 @@ Jupiter and Saturn, each where the almanac puts it for the moment on show.
 - "Stay with" picks the body the camera keeps its place beside as the time runs. Stay with the Sun and the Earth
   goes round it. Stay with the Earth, from far enough off to have the Sun in the picture, and the Sun goes round
   the Earth. It is the same motion both times, seen by a camera that is carried along with one body or the other.
-- "Move freely" takes the camera off its circle. Dragging turns it, scrolling or pinching goes forward and back,
-  and the six buttons on the view move it while they are held. So do the keys W, A, S and D, with E for up and Q
+- "Move freely" takes the camera off its circle. Dragging turns it, and dragging with the right mouse button rolls
+  it: the picture goes round its middle with the pointer. Scrolling or pinching goes towards whatever is under the
+  pointer, or back from it. "Go to", or going back to the circle, sets a rolled camera level again.
+  The six buttons on the view move it while they are held. So do the keys W, A, S and D, with E for up and Q
   for down, three times as fast with Shift. Each second it covers 0.7 of the distance to the nearest surface, so it
   slows as it comes near a body and is quick across the gaps. That speed is for getting about and is nothing's
   real speed. The camera still stays with the chosen body as the time runs, and "Go to" still works.

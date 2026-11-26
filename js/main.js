@@ -1803,7 +1803,7 @@ const bodyLabel = (name) => (['Sun', 'Earth', 'Moon'].includes(name) ? `The ${na
 /** How to get about in the view from space, for each of the camera's two ways of moving. */
 const SPACE_HINTS = {
   circle: 'Drag to look round. Scroll or pinch to move in and out. Click a dot to go to it.',
-  free: 'Drag to turn. Scroll or pinch to go forward and back. Hold a button on the view to move, or use the keys W, A, S and D, with E for up and Q for down. Shift goes three times as fast. You slow down as you come near something.',
+  free: 'Drag to turn. Drag with the right mouse button to roll the view round its middle. Scroll or pinch to go towards whatever is under the pointer, or back from it. Hold a button on the view to move, or use the keys W, A, S and D, with E for up and Q for down. Shift goes three times as fast. You slow down as you come near something.',
 };
 
 /**

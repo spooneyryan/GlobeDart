@@ -728,9 +728,32 @@ grows to a gap of b in ln(b ÷ a) ÷ 0.7 seconds: from 1,000 km above the Earth 
 8.5 seconds. The gap is never taken as less than 50 km, and the camera is kept 2% of a body's radius clear of its
 surface. One notch of a mouse wheel covers a fifth of the gap.
 
+A wheel or a pinch moves the camera along the line from it through the point of the picture under the pointer, or
+half way between the two fingers. The camera does not turn, so whatever is under the pointer stays under it. With
+x and y that point's place in the picture, each from −1 to 1 with y upward, and `half` the tangent of half the
+angle the camera takes in from top to bottom, the line's direction is
+
+```
+forward + right × x × half × (width ÷ height) + above × y × half
+```
+
+**Turning and rolling.** The camera keeps an "up" of its own, which starts as the north of the Earth's orbit. A
+drag turns the camera left and right round that "up", and up and down from the level that is square to it, as far
+as 88°. Each pixel of the drag is the angle one pixel of the picture takes up, so the picture follows the pointer.
+A drag with the right mouse button rolls the camera about the way it faces, and it is the "up" that is turned.
+The picture goes round by the angle the pointer goes round the middle of the picture. With a and b the pointer's
+places before and after, measured from the middle with y downward,
+
+```
+angle = atan2(a.x × b.y − a.y × b.x, a.x × b.x + a.y × b.y)          clockwise is more than nothing
+```
+
+Within 12 pixels of the middle nothing is rolled. "Go to", and going back to the circle, set the "up" back to the
+north of the Earth's orbit.
+
 - Code: `js/space.js`, `placesInSpace`, `earthTurn`, `overheadPlace`, `spaceScene`, `planetPath`, `moonPath`,
   `nearestSurface`; `js/views/spaceView.js` for the shadow on the Moon, staying with a body (`stayWith`) and
-  moving freely (`turn`, `shift`, `fly`).
+  moving freely (`turn`, `roll`, `through`, `shift`, `advance`, `fly`).
 - Checks: section 19.
 - Checks: section 14 (run from `js/arguments/spin.js`).
 
