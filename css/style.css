@@ -1858,10 +1858,11 @@ h4.flat {
   border-top: 1px solid var(--line);
 }
 
-/* One line of working: what it is, then how it is found, with the value on the right. */
+/* One line of working: what it is, then how it is found, with the value on the right. The words always keep
+   at least half the width. A value too long for the other half goes on to more lines. */
 .step {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(50%, 1fr) auto;
   gap: 1px 12px;
   padding: 5px 0;
   border-bottom: 1px solid var(--line);
@@ -1884,7 +1885,7 @@ h4.flat {
   align-self: center;
   text-align: right;
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  text-wrap: balance;
 }
 
 .info-code {
