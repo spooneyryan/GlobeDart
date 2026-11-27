@@ -10,7 +10,7 @@ phases, the same face, eclipses of the moon, eclipses of the sun and the tides. 
 and wobble (so the insets could show its markings the right way up). For eclipses of the sun the shadow is now
 drawn on the globe and the flat map themselves, with the area that sees a partial eclipse. Still to do there:
 timing an eclipse of your own against both models. For the tides: a real tide-gauge record to set the sum
-against, which would be the first data in the app that is not astronomy or a map.
+against, bundled the way the sunlight records are.
 
 ## Also built: a guided tour
 

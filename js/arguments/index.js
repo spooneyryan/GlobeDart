@@ -24,6 +24,7 @@ import sunset from './sunset.js';
 import angles from './angles.js';
 import sunrise from './sunrise.js';
 import december from './december.js';
+import sunlight from './sunlight.js';
 import polaris from './polaris.js';
 import southern from './southern.js';
 import flights from './flights.js';
@@ -49,7 +50,7 @@ import tides from './tides.js';
 import twopeaks from './twopeaks.js';
 
 /** Every argument, in the order the app lists them. */
-export const ARGUMENTS = [sunset, clouds, angles, sunrise, december, polaris, southern, retrograde, venus, phases, sameface, eclipse, suneclipse, tides, flights, icewall, anymap, ship, twopeaks, eyelevel, looming, waterlevel, bedford, twosunsets, pilots, spin, air];
+export const ARGUMENTS = [sunset, clouds, angles, sunrise, december, sunlight, polaris, southern, retrograde, venus, phases, sameface, eclipse, suneclipse, tides, flights, icewall, anymap, ship, twopeaks, eyelevel, looming, waterlevel, bedford, twosunsets, pilots, spin, air];
 
 /** The headings the arguments are listed under, in order. */
 export const GROUPS = [
@@ -70,7 +71,7 @@ export const TOOLS = ['sky', 'horizon', 'flight'];
 /** The guided tours. Each is a list of arguments in the order they are shown, easiest first. The first is the one a bare link starts. */
 export const TOURS = [
   { id: 'short', label: 'The short tour', about: 'Six of the strongest arguments, easiest first.', steps: ['sunset', 'sunrise', 'angles', 'southern', 'flights', 'ship'] },
-  { id: 'sky', label: 'Sun, stars and planets', about: 'What the sky does over a day, over a year, and from different places, and what two of the planets do in it.', steps: ['sunset', 'clouds', 'sunrise', 'december', 'angles', 'polaris', 'southern', 'retrograde', 'venus'] },
+  { id: 'sky', label: 'Sun, stars and planets', about: 'What the sky does over a day, over a year, and from different places, and what two of the planets do in it.', steps: ['sunset', 'clouds', 'sunrise', 'december', 'sunlight', 'angles', 'polaris', 'southern', 'retrograde', 'venus'] },
   { id: 'moon', label: 'The moon', about: 'Its phases, its face, the shadow that crosses it, the shadow it casts and the tides it raises.', steps: ['phases', 'sameface', 'eclipse', 'suneclipse', 'tides'] },
   { id: 'horizon', label: 'The horizon', about: 'Ships, mountains, skylines and still water.', steps: ['ship', 'twopeaks', 'eyelevel', 'waterlevel', 'bedford', 'looming', 'twosunsets'] },
   { id: 'travel', label: 'Travel, motion and air', about: 'Flights, voyages, pilots, the spin and the air.', steps: ['flights', 'icewall', 'anymap', 'pilots', 'spin', 'air'] },

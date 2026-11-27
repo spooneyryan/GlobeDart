@@ -81,6 +81,8 @@ the whole argument about the sky:
 | `data/star-catalogue.json` | What the SIMBAD database gives for each of the 96 stars, kept so the star table can be checked offline |
 | `tools/check-stars.mjs` | Compares the star table with SIMBAD online |
 | `tools/fetch-bright-stars.mjs` | Fetches the Bright Star Catalogue from VizieR and rewrites `data/bright-stars.json` |
+| `data/sunlight.js` | Sunlight as NOAA's instruments recorded it at four stations on the two solstices of 2023, in five-minute averages |
+| `tools/fetch-sunlight.mjs` | Fetches those records from NOAA and rewrites `data/sunlight.js` |
 | `vendor/` | three.js 0.187 and astronomy-engine 2.1.19, copied in unmodified (both MIT) |
 | `docs/refraction-plan.md` | Plan for modelling refraction properly. All four stages are built |
 | `docs/maths.md` | Every formula in one place: in words, in symbols, where it is in the code, and what checks it |
@@ -109,7 +111,7 @@ the page is what changes with the numbers, and the short instructions needed to 
 
 ## Ground rules the code follows
 
-- "Measured" values are the published almanac figures, worked out by Astronomy Engine. The app takes no readings of its own, and says so on the page. The almanac and the globe model come from the same astronomy, so the globe matching it is true by construction and is not offered as the evidence. The evidence is that the almanac matches the sky, which anyone can test with a stick, a compass and a clock, and "Your own measurements" scores both models against such a reading.
+- "Measured" values are the published almanac figures, worked out by Astronomy Engine. The one exception is the "Measured sunlight" demonstration, whose measured column is instrument readings. The app takes no readings of its own, and says so on the page. The almanac and the globe model come from the same astronomy, so the globe matching it is true by construction and is not offered as the evidence. The evidence is that the almanac matches the sky, which anyone can test with a stick, a compass and a clock, and "Your own measurements" scores both models against such a reading.
 - Both models get the same single input for each object: the point on Earth it is directly overhead. Neither is handed the answer.
 - The flat model's own account of night counts. With straight light, a place beyond the reach of its sun's light is drawn dark, with the sun a dull disc where the model still has it, and the table says the sun cannot be seen. The score has a second line for it: in how many city-hours each model has the sun up or down rightly. For the almanac and both models alike the sun is up while any of its disc shows above the horizon, as it appears through the air.
 - The flat model is given the kindest reading available: its sun is sized to look correct when overhead, it is scored on daytime moments only, and its sun and stars each get their own adjustable height.
@@ -395,8 +397,6 @@ A pin can become the observer. Two pins, or the two ends of a path, can become t
 sets the horizon tool's distance. The file is read in the browser and sent nowhere. A KMZ file, which is a zipped
 KML, is unzipped in the browser too. Only pins and paths are read.
 
-## The tours
-
 ## Live cameras
 
 In the sun-and-stars tool, "Find live cameras near this place" opens Windy's map of webcams round the observer.
@@ -409,13 +409,38 @@ first, so that the app is showing the same moment.
   refresh every few minutes and are not true live video; each says how old its picture is.
 - Nothing is sent anywhere until the link is clicked. The app still loads nothing from the internet.
 
+## Measured sunlight
+
+Everywhere else in the app, "measured" means the almanac. The "Measured sunlight" demonstration is the exception:
+its measured column is what instruments read.
+
+- NOAA's Global Monitoring Laboratory keeps instruments at fixed stations that record, every minute, how much
+  sunlight is falling on level ground. The app holds two whole days from four of them: the South Pole, American
+  Samoa, Boulder in Colorado, and Utqiagvik (Barrow) in the north of Alaska, on 21 June and 21 December 2023.
+- The records are a saved copy in `data/sunlight.js`, fetched by `node tools/fetch-sunlight.mjs`, which names the
+  files and says what is done to them. Readings NOAA has not marked as good are left out, and the rest are
+  averaged over five minutes at a time. Nothing else is changed.
+- It counts as light when the reading is over 5 W/m², about what a clear sky gives with the sun's top edge on the
+  horizon. The globe has it light while any of the sun's disc is above the horizon. The flat model has it light
+  while the place is within reach of its sun's light, which is its own account of day and night.
+- Over the four stations the globe disagrees with the instruments for 35 minutes on the June day and 45 minutes
+  on the December day, at the ends of the day. A flat sun whose light reaches 10,000 km is out for about four and
+  a half hours in June and almost 29 hours in December. No reach of its light brings it within 25 hours of the
+  instruments over the two days together. The maths check holds each of these.
+- On the flat map the South Pole is the whole rim, not one place. The station is put on the rim at its own
+  longitude, which decides when its light comes, not for how long.
+- Four stations and two days are a sample, chosen to span the Earth from south to north on the two days when the
+  difference is greatest. NOAA publishes every day of every station for anyone to repeat this with.
+
+## The tours
+
 "Take a tour" starts the short tour and lists the others beneath it. Each walks through a few arguments in order, easiest first, and is meant for one
 person showing another.
 
 | Tour | Steps |
 |---|---|
 | The short tour | sunset, sunrise direction, sun angles from many cities, southern stars, southern flights, a ship over the horizon |
-| Sun, stars and planets | sunset, clouds lit from beneath, sunrise direction, December daylight, sun angles, the pole star, southern stars, Mars doubling back, the phases of Venus |
+| Sun, stars and planets | sunset, clouds lit from beneath, sunrise direction, December daylight, measured sunlight, sun angles, the pole star, southern stars, Mars doubling back, the phases of Venus |
 | The moon | phases, the same face, eclipses of the moon, eclipses of the sun, the tides |
 | The horizon | a ship, two mountains, the horizon at eye level, water finding its level, the Bedford Level, things seen from too far away, two sunsets |
 | Travel, motion and air | southern flights, the ice wall, any flat map, pilots and the nose, feeling the spin, air without a container |
@@ -482,7 +507,7 @@ screen. Every setting has a short name there. The full list is above `writeHash`
 ## The demonstrations
 
 The bar at the top lists the demonstrations under six headings: the sun, the moon, stars and planets, distances, the
-horizon, and motion and air. Picking a heading shows its demonstrations beneath it. There are twenty-seven, each answering one
+horizon, and motion and air. Picking a heading shows its demonstrations beneath it. There are twenty-eight, each answering one
 flat-earth claim, which is quoted above its explanation.
 
 ## Writing an argument
@@ -558,7 +583,8 @@ GlobeDart unchanged or nearly unchanged. The full terms are in `LICENSE`.
 three.js and Astronomy Engine in `vendor/` are other people's work under the MIT licence. In `data/`, the map is
 Natural Earth's, in the public domain. The star figures come from the SIMBAD database, and the background stars
 from the Bright Star Catalogue (Hoffleit and Warren, 1991) through VizieR, both operated at CDS, Strasbourg,
-France. Those keep their own terms.
+France. Those keep their own terms. The sunlight records are NOAA's, a United States government agency, and are
+in the public domain.
 
 ## Not built yet
 
