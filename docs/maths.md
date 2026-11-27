@@ -737,23 +737,40 @@ angle the camera takes in from top to bottom, the line's direction is
 forward + right × x × half × (width ÷ height) + above × y × half
 ```
 
-**Turning and rolling.** The camera keeps an "up" of its own, which starts as the north of the Earth's orbit. A
-drag turns the camera left and right round that "up", and up and down from the level that is square to it, as far
-as 88°. Each pixel of the drag is the angle one pixel of the picture takes up, so the picture follows the pointer.
-A drag with the right mouse button rolls the camera about the way it faces, and it is the "up" that is turned.
-The picture goes round by the angle the pointer goes round the middle of the picture. With a and b the pointer's
-places before and after, measured from the middle with y downward,
+**Turning.** The camera keeps an "up" of its own, which starts as the north of the Earth's orbit. A drag turns
+the camera left and right round that "up", and up and down from the level that is square to it, as far as 88°.
+Each pixel of the drag is the angle one pixel of the picture takes up, so the picture follows the pointer.
+
+**Going round a body.** A drag with the right mouse button takes hold of a ball and turns it, as a hand turns a
+ball. The ball is round the body the drag began on, or round the nearest body if it began on none. Where the body
+is large in the picture the ball is the body. From far off the body is too small to hold, and the ball is larger.
+With d the camera's distance from the body's middle,
 
 ```
-angle = atan2(a.x × b.y − a.y × b.x, a.x × b.x + a.y × b.y)          clockwise is more than nothing
+the ball's radius = the larger of the body's radius and d × sin(0.6 × half the angle the camera takes in from top to bottom)
 ```
 
-Within 12 pixels of the middle nothing is rolled. "Go to", and going back to the circle, set the "up" back to the
-north of the Earth's orbit.
+The point of the ball under the pointer is where the line of sight through the pointer first meets it. With w
+the camera's place from the ball's middle, u the line's direction and b = u · w, that is
+
+```
+−b − √(b² − (w · w − radius²))          along the line
+```
+
+where what is under the root is not less than nothing. With p and q the points under the pointer before and
+after, measured from the ball's middle, the camera is carried round that middle by the least turn that takes q to
+p. The way it faces and its "up" are turned with it. So the point that was under the pointer is still under it,
+and the body can be seen from any side and any way up.
+
+Where what is under the root is less than nothing the line misses the ball, and there is no point to hold. Then
+p and q are the two lines of sight themselves, less the part of each that lies along the line from the camera to
+the ball's middle. The least turn from one to the other is round that line, so the picture twists about the body
+by the angle the pointer goes round it. Nothing in the scene is turned either way: only the camera moves. "Go
+to", and going back to the circle, set the "up" back to the north of the Earth's orbit.
 
 - Code: `js/space.js`, `placesInSpace`, `earthTurn`, `overheadPlace`, `spaceScene`, `planetPath`, `moonPath`,
-  `nearestSurface`; `js/views/spaceView.js` for the shadow on the Moon, staying with a body (`stayWith`) and
-  moving freely (`turn`, `roll`, `through`, `shift`, `advance`, `fly`).
+  `nearestSurface`, `ballPoint`; `js/views/spaceView.js` for the shadow on the Moon, staying with a body
+  (`stayWith`) and moving freely (`turn`, `swing`, `through`, `shift`, `advance`, `fly`).
 - Checks: section 19.
 - Checks: section 14 (run from `js/arguments/spin.js`).
 

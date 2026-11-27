@@ -102,7 +102,7 @@ import {
   moonShadowFlat,
 } from '../js/models.js';
 import { CITIES, REF_CITIES } from '../js/cities.js';
-import { spaceScene, earthTurn, placeDirection, overheadPlace, planetPath, moonPath, starDirection, nearestSurface, SPACE_BODY, distanceKm as kmApart } from '../js/space.js';
+import { spaceScene, earthTurn, placeDirection, overheadPlace, planetPath, moonPath, starDirection, nearestSurface, ballPoint, SPACE_BODY, distanceKm as kmApart } from '../js/space.js';
 import { subsolarPoint as sunOverhead, moonPoint as moonOverhead, planetSeen as planetFromEarth } from '../js/astro.js';
 import { globeAngleDeg as degreesApart } from '../js/models.js';
 import {
@@ -1242,6 +1242,30 @@ check('the working shown for the flat sun carries the numbers the model produced
   const inside = nearestSurface([0, 0, 0], ordinary.at);
   check("from space: the middle of the Sun is less than nothing from the Sun's surface, by the Sun's radius",
     inside.name === 'Sun' && near(inside.gapKm, -SPACE_BODY.Sun.radiusKm, 1e-6), `${inside.name}, ${Math.round(inside.gapKm)} km`);
+
+  // Taking hold of a body: the point of a ball under a line of sight. The eye is 10 from the middle of a ball
+  // of radius 2, and the ball is away from the middle of everything so that its place is tested too.
+  const ballAt = [5, -3, 7];
+  const eyeAt = [15, -3, 7];
+  const lineAt = (angle) => [-Math.cos(angle), Math.sin(angle), 0];
+  const fromBall = (p) => [p[0] - ballAt[0], p[1] - ballAt[1], p[2] - ballAt[2]];
+  const straight = fromBall(ballPoint(eyeAt, lineAt(0), ballAt, 2));
+  check('from space: a line of sight straight at a ball meets it one radius from its middle, on the near side',
+    near(straight[0], 2, 1e-12) && straight[1] === 0 && straight[2] === 0, straight.join(', '));
+  // 5° off the middle the line still meets the ball. The point is on the ball, and on the line.
+  const onBall = ballPoint(eyeAt, lineAt(5 * Math.PI / 180), ballAt, 2);
+  const alongLine = kmApart(onBall, eyeAt);
+  check('from space: a line of sight 5° off the middle of a ball meets it at a point on the ball and on the line',
+    near(size(fromBall(onBall)), 2, 1e-12) && near(kmApart(onBall, [0, 1, 2].map((i) => eyeAt[i] + lineAt(5 * Math.PI / 180)[i] * alongLine)), 0, 1e-12),
+    `${size(fromBall(onBall)).toFixed(6)} from the middle, ${alongLine.toFixed(4)} along the line`);
+  // The ball's edge, as the eye sees it, is at the angle whose sine is 2 ÷ 10: 11.537°. A line just inside that
+  // meets the ball, √(10² − 2²) from the eye, where a line from the eye just touches. A line just outside misses.
+  const edgeAngle = Math.asin(2 / 10);
+  const grazing = ballPoint(eyeAt, lineAt(edgeAngle - 1e-9), ballAt, 2);
+  check("from space: a line of sight just inside a ball's edge meets it where a line from the eye just touches",
+    !!grazing && near(kmApart(grazing, eyeAt), Math.sqrt(96), 1e-3), grazing ? `${kmApart(grazing, eyeAt).toFixed(4)} from the eye` : 'missed');
+  check("from space: lines of sight just outside a ball's edge, 30° off it, and straight away from it all miss",
+    ballPoint(eyeAt, lineAt(edgeAngle + 1e-9), ballAt, 2) === null && ballPoint(eyeAt, lineAt(30 * Math.PI / 180), ballAt, 2) === null && ballPoint(eyeAt, [1, 0, 0], ballAt, 2) === null);
 }
 
 console.log(failures ? `\n${failures} check(s) failed` : '\nAll checks passed');

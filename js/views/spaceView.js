@@ -20,15 +20,15 @@
 // Earth is 23,000 of its own radii from the Sun.
 //
 // The camera has two ways of moving. On its circle it goes round the body it
-// stays with and always looks at it. Moving freely it can be turned, rolled
-// and taken anywhere, and it still keeps its place beside that body as the
-// time runs.
+// stays with and always looks at it. Moving freely it can be turned and taken
+// anywhere, and taken round any body in any direction. It still keeps its
+// place beside the body it stays with as the time runs.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { DEG, EARTH_RADIUS_KM, SUN_RADIUS_KM } from '../astro.js';
 import { globeVec, SHADOW_GROWTH } from '../models.js';
 import { STARS } from '../stars.js';
-import { SPACE_BODIES, SPACE_BODY, PLANET_NAMES, MOON_MONTH_DAYS, placeDirection, planetPath, moonPath, starDirection, nearestSurface } from '../space.js';
+import { SPACE_BODIES, SPACE_BODY, PLANET_NAMES, MOON_MONTH_DAYS, placeDirection, planetPath, moonPath, starDirection, nearestSurface, ballPoint } from '../space.js';
 import { View3D, COLORS, buildCoastPositions, buildGraticulePositions, buildLatitudePositions, lineSegments, PointCloud, scale3, outsideStarSize } from '../scene-utils.js';
 import { setEclipse } from './eclipseShade.js';
 import { makeEarthBall } from './earthBall.js';
@@ -67,9 +67,11 @@ const WHEEL_SHARE = 0.002;
 const MOST_AT_ONCE = 0.5;
 // How far up or down the camera can be turned: just short of straight up, where left and right would lose their meaning.
 const STEEPEST = 88 * DEG;
-// A drag with the right button rolls nothing while the pointer is nearer the middle of the picture than this, in
-// pixels: that close, which way round the middle it is going has no meaning.
-const ROLL_CLEAR_PX = 12;
+// A drag with the right button takes hold of a ball round a body and turns it. Where the body is large in the
+// picture the ball is the body. From far off the body is too small to hold, and the ball is larger: seen from
+// the camera, its edge is never nearer its middle than this share of the angle from the middle of the picture
+// to the top.
+const BALL_LEAST = 0.6;
 // The six ways the camera can be moved, in the order of their buttons: three across, two down. `move` is how
 // far forward, to the right and upward each one goes. `key` is the letter that does the same.
 const WAYS = {
@@ -221,6 +223,7 @@ export class SpaceView extends View3D {
     this.fast = false; // Shift is down
     this.flewAt = null; // when the camera was last moved by a held key or button
     this.fingers = new Map(); // where each finger or mouse button that is down was last seen
+    this.held = null; // the body a drag with the right button has hold of
     this.camera = new THREE.PerspectiveCamera(32, 1, 0.01, 2 * STAR_SHELL);
     this.camera.position.set(2.2, 1.6, 5.2);
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -293,23 +296,14 @@ export class SpaceView extends View3D {
     this.moonOrbitAt = null;
 
     // A click on a dot or a ball goes to that body.
-    const seen = new THREE.Vector3();
     this.onClick((e) => {
-      const click = this.ndc(e);
-      let best = null;
-      for (const body of Object.values(this.bodies)) {
-        seen.copy(body.at).project(this.camera);
-        if (seen.z < -1 || seen.z > 1) continue; // behind the camera
-        const px = Math.hypot(((seen.x - click.x) * this.width) / 2, ((seen.y - click.y) * this.height) / 2);
-        const reach = Math.max(CLICK_REACH_PX, this.pixelsAcross(body) / 2);
-        if (px < reach && (!best || px < best.px)) best = { px, name: body.name };
-      }
-      if (best && (this.free || best.name !== this.focus)) onGo(best.name);
+      const name = this.bodyAt(e);
+      if (name && (this.free || name !== this.focus)) onGo(name);
     });
 
     // ----- moving freely -----
-    // A drag turns the camera, a drag with the right button rolls it, and a wheel or a pinch takes it towards
-    // whatever is under the pointer, or back from it.
+    // A drag turns the camera, a drag with the right button takes it round a body, and a wheel or a pinch
+    // takes it towards whatever is under the pointer, or back from it.
     const el = this.renderer.domElement;
     let spread = 0; // how far apart two fingers were, for a pinch
     el.addEventListener('pointerdown', (e) => {
@@ -323,7 +317,7 @@ export class SpaceView extends View3D {
       if (!this.free || !was) return;
       this.fingers.set(e.pointerId, [e.clientX, e.clientY]);
       if (this.fingers.size === 1) {
-        if (e.buttons & 2) this.roll(this.sweep(was, [e.clientX, e.clientY]));
+        if (e.buttons & 2) this.swing(was, [e.clientX, e.clientY]);
         else this.turn(e.clientX - was[0], e.clientY - was[1]);
       }
       if (this.fingers.size === 2) {
@@ -338,6 +332,7 @@ export class SpaceView extends View3D {
     });
     const lift = (e) => {
       this.fingers.delete(e.pointerId);
+      this.held = null;
       spread = 0;
     };
     el.addEventListener('pointerup', lift);
@@ -353,7 +348,7 @@ export class SpaceView extends View3D {
       },
       { passive: false },
     );
-    // The right button is for rolling, so it brings up no menu.
+    // The right button is for going round a body, so it brings up no menu.
     el.addEventListener('contextmenu', (e) => {
       if (this.free) e.preventDefault();
     });
@@ -412,6 +407,25 @@ export class SpaceView extends View3D {
   pixelsAcross(body) {
     const d = Math.max(1e-9, this.camera.position.distanceTo(body.at));
     return ((2 * body.radius) / d) * (this.height / (this.camera.fov * DEG));
+  }
+
+  /**
+   * The body whose dot or ball is under a pointer, or null. Of those within
+   * reach it is the one whose middle is nearest the pointer in the picture.
+   * `e` is anything with a clientX and a clientY.
+   */
+  bodyAt(e) {
+    const at = this.ndc(e);
+    const seen = new THREE.Vector3();
+    let best = null;
+    for (const body of Object.values(this.bodies)) {
+      seen.copy(body.at).project(this.camera);
+      if (seen.z < -1 || seen.z > 1) continue; // behind the camera
+      const px = Math.hypot(((seen.x - at.x) * this.width) / 2, ((seen.y - at.y) * this.height) / 2);
+      const reach = Math.max(CLICK_REACH_PX, this.pixelsAcross(body) / 2);
+      if (px < reach && (!best || px < best.px)) best = { px, name: body.name };
+    }
+    return best?.name ?? null;
   }
 
   /**
@@ -493,8 +507,8 @@ export class SpaceView extends View3D {
    * is now, and no nearer than four of the body's radii. `aboveDeg` is how far
    * above the plane of the Earth's orbit to look from, or null to keep the
    * present angle. `fit` backs off further on a tall, narrow screen, so that
-   * what fits across a wide one still fits. A camera that has been rolled is
-   * set level again.
+   * what fits across a wide one still fits. A camera that is no longer level
+   * is set level again.
    */
   go(name, distKm = null, { aboveDeg = null, fit = false } = {}) {
     this.focus = name;
@@ -555,6 +569,7 @@ export class SpaceView extends View3D {
     this.keys.clear();
     this.pressed.clear();
     this.fingers.clear();
+    this.held = null;
     // Back on its circle, the camera is level again and looks at the body it stays with, from wherever it has got to.
     if (!on) {
       this.camera.up.set(0, 1, 0);
@@ -579,7 +594,7 @@ export class SpaceView extends View3D {
    *
    * for each pixel. Left and right are measured round the camera's own "up",
    * and up and down from the level that is square to it. That "up" is the
-   * north of the Earth's orbit until the camera is rolled.
+   * north of the Earth's orbit until the camera is taken round a body (`swing`).
    */
   turn(dx, dy) {
     if (!this.free) return;
@@ -599,33 +614,46 @@ export class SpaceView extends View3D {
   }
 
   /**
-   * The angle a pointer goes round the middle of the picture in moving from
-   * `was` to `now`, each [x, y] in the page's pixels. Clockwise is more than
-   * nothing. With a and b the two places measured from the middle,
+   * A drag with the right button from `was` to `now`, each [x, y] in the
+   * page's pixels. It takes hold of a ball round a body and turns it, as a
+   * hand turns a ball: the point of the ball that was under the pointer is
+   * still under it afterwards. The body is the one the drag began on, or the
+   * nearest if it began on none.
    *
-   *   angle = atan2(a.x × b.y − a.y × b.x, a.x × b.x + a.y × b.y)
+   * Nothing in the scene is turned. The camera goes round the body's middle
+   * the other way, and the way it faces and its own "up" go round with it. So
+   * the body can be seen from any side and any way up.
    *
-   * It is nothing if either place is within ROLL_CLEAR_PX of the middle.
+   * With p and q the points of the ball under the pointer before and after,
+   * measured from the body's middle (ballPoint, js/space.js), the camera is
+   * given the least turn that carries q to p. Off the ball there is no such
+   * point. There p and q are the two lines of sight, less the part of each
+   * that lies along the line to the body's middle. The least turn from one to
+   * the other is round that line, so the picture twists about the body by the
+   * angle the pointer goes round it.
    */
-  sweep(was, now) {
-    const r = this.renderer.domElement.getBoundingClientRect();
-    const [mx, my] = [r.left + r.width / 2, r.top + r.height / 2];
-    const [ax, ay, bx, by] = [was[0] - mx, was[1] - my, now[0] - mx, now[1] - my];
-    if (Math.hypot(ax, ay) < ROLL_CLEAR_PX || Math.hypot(bx, by) < ROLL_CLEAR_PX) return 0;
-    return Math.atan2(ax * by - ay * bx, ax * bx + ay * by);
-  }
-
-  /**
-   * Rolls a free camera about the way it faces, so that the picture goes
-   * round clockwise by `angle`: it follows the pointer, as it does in a turn.
-   * The camera goes round the other way. What is turned is the camera's own
-   * "up", and `turn` measures from that afterwards.
-   */
-  roll(angle) {
-    if (!this.free || !angle) return;
-    const facing = this.camera.getWorldDirection(new THREE.Vector3());
-    this.camera.up.applyAxisAngle(facing, -angle).normalize();
-    this.camera.lookAt(this.camera.position.clone().add(facing));
+  swing(was, now) {
+    if (!this.free || !this.sp) return;
+    this.held ??= this.bodyAt({ clientX: was[0], clientY: was[1] }) ?? this.nearest().name;
+    const body = this.bodies[this.held];
+    const eye = this.camera.position;
+    const far = eye.distanceTo(body.at);
+    const ball = Math.max(body.radius, far * Math.sin((BALL_LEAST * this.camera.fov * DEG) / 2));
+    if (far <= ball) return;
+    const lines = [was, now].map(([x, y]) => this.through(this.ndc({ clientX: x, clientY: y })));
+    const on = lines.map((way) => ballPoint(eye.toArray(), way.toArray(), body.at.toArray(), ball));
+    const toMiddle = body.at.clone().sub(eye).normalize();
+    const [p, q] = on.every(Boolean)
+      ? on.map((at) => new THREE.Vector3(...at).sub(body.at).normalize())
+      : lines.map((way) => way.addScaledVector(toMiddle, -way.dot(toMiddle)).normalize());
+    // A line of sight straight away from the body is no way round it.
+    if (p.lengthSq() === 0 || q.lengthSq() === 0) return;
+    const round = new THREE.Quaternion().setFromUnitVectors(q, p);
+    const facing = this.camera.getWorldDirection(new THREE.Vector3()).applyQuaternion(round);
+    eye.sub(body.at).applyQuaternion(round).add(body.at);
+    this.camera.up.applyQuaternion(round).normalize();
+    this.camera.lookAt(eye.clone().add(facing));
+    this.keepClear();
     this.dirty = true;
     this.onMove?.();
   }

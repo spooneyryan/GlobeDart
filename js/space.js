@@ -224,3 +224,27 @@ export function nearestSurface(point, at) {
   }
   return best;
 }
+
+/**
+ * The point of a ball that is under a line of sight: where the line first
+ * meets the ball's surface. `eye` is where the line starts, which must be
+ * outside the ball, and `way` is its direction, one unit long. The lengths
+ * can be in any one unit. With w the eye's place from the ball's middle and
+ * b = way · w, the line meets the surface
+ *
+ *   −b − √(b² − (w · w − radius²))
+ *
+ * along it, where what is under the root is not less than nothing. Where it
+ * is less, the line misses the ball and the answer is null, as it is for a
+ * line that points away from the ball. The view uses this to let a drag take
+ * hold of a body and turn it.
+ */
+export function ballPoint(eye, way, centre, radius) {
+  const w = minus(eye, centre);
+  const far = length(w);
+  const b = dot(way, w);
+  const under = b * b - (far * far - radius * radius);
+  if (b >= 0 || under < 0) return null;
+  const t = -b - Math.sqrt(under);
+  return [eye[0] + way[0] * t, eye[1] + way[1] * t, eye[2] + way[2] * t];
+}
