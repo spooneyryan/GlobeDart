@@ -163,6 +163,13 @@ export class GlobeView extends View3D {
     this.sunGlow.position.fromArray(sunEnd);
     this.sunLabel.pos.fromArray(sunEnd);
     this.sunLabel.el.textContent = `To the sun, ${(c.sub.distKm / 1e6).toFixed(1)} million km →`;
+    // The sun can be left out. Then nothing marks it, and the whole ball is lit evenly.
+    const showSun = state.sun !== false;
+    this.sunRay.object.visible = this.sunGlow.visible = this.subsolarDot.visible = this.sunLabel.visible = showSun;
+    this.uniforms.plain.value = showSun ? 0 : 1;
+    // What is sighted is the sun, unless the stars or the moon are on show. With no sun there is then nothing to sight.
+    const sighting = showSun || !!c.stars || !!c.moon;
+    const showObserver = state.observer !== false;
 
     // The moon's shadow. The shading is done by the ball's shader, from where the sun and moon are.
     const shade = c.moon?.shade;
@@ -199,8 +206,9 @@ export class GlobeView extends View3D {
     const here = onSphere(state.lat, state.lon);
     this.observerDot.position.fromArray(here);
     this.observerLabel.pos.fromArray(here);
+    this.observerDot.visible = this.observerLabel.visible = showObserver;
     this.observerLine.begin();
-    if (c.sight.obs.el > -1) {
+    if (showObserver && sighting && c.sight.obs.el > -1) {
       const dir = frameDirection(globeFrame(state.lat, state.lon), c.sight.obs.az, c.sight.obs.el);
       this.observerLine.add(here, add3(here, dir, 1.1));
     }
@@ -208,7 +216,7 @@ export class GlobeView extends View3D {
 
     // The same from every city where it is above the horizon. On this model the lines come out parallel.
     this.sightLines.begin();
-    if (state.sightLines) {
+    if (state.sightLines && sighting) {
       for (const city of c.sight.cities) {
         if (city.obs.el <= 0) continue;
         const from = onSphere(city.lat, city.lon);

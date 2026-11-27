@@ -444,10 +444,28 @@ screen. Every setting has a short name there. The full list is above `writeHash`
   it follows nothing (`fw=0` and `lk`), whether the time is running (`pl=1`) and how fast (`cs`, and `scs` for
   the view from space), and whether the lap is being flown (`fy=1`). While the time runs the link is rewritten
   once a second.
+- What is drawn is in it: `su=0` leaves the sun off the globe and the map, `ob=0` leaves the observer off them,
+  and `hp` lists the views that are switched off (`hp=flat-view~flat-sky`).
+- So is the layout of the sidebars, where it has been changed: `tk` says which are tucked away (`c` the settings,
+  `r` the results, `0` neither) and `fd` which sections are folded, each as its sidebar's letter and its heading
+  (`fd=c-display~r-cities`, or `0` for none). A link without them leaves the reader's own layout alone, and a
+  link with them lays the screen out for that visit only.
 - Not in a link, because none of it is a setting: where the outside views and the view from space have been
   dragged round to, a target on its way out to sea, the steps of a tour while they are being chosen, and what is
-  typed into a form and not yet added. Which parts of the sidebars are folded away is kept on this computer, so
-  that a link does not rearrange someone else's screen.
+  typed into a form and not yet added.
+
+### What to show, and saved setups
+
+- "What to show", in the settings, can leave the sun off the globe and the flat map. Its marker, its light and
+  the line between day and night all go, and both are lit evenly, which makes a route easier to see. The
+  observer's dot and sight lines can be left off in the same way. Neither changes the observer's sky or any
+  figure.
+- The same section has a box for each view of the tool on show. A view that is switched off gives its room to
+  the others.
+- "Saved setups" keeps everything as it is now under a name, on this computer. A setup is a link, so loading
+  one is the same as following it. "Save to a file" writes the kept setups as a small JSON file, and "Load from
+  a file" adds a file's setups to the ones kept here. A setup from a file is read exactly as a link is, with
+  every number held to the range its control allows.
 
 ## The demonstrations
 

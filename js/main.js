@@ -206,6 +206,9 @@ const state = {
   moon: false,
   moonHeightKm: 5000, // flat model only: how high its moon sits
   trails: false,
+  sun: true, // whether the sun, and the day and night it makes, are drawn on the globe and the map
+  observer: true, // whether the observer is marked on the globe and the map
+  hiddenPanes: '', // the views that have been switched off: their ids, joined by "~"
   route: null, // { from, to } as place names, or null
   // Over the horizon
   mode: 'sky', // which tool is showing: 'sky' (sun, stars and maps), 'horizon', 'flight' or 'space'
@@ -1373,8 +1376,8 @@ function sightKml() {
 
 // ---------- Google Earth: files out and in ----------
 
-function saveFile(name, text) {
-  const url = URL.createObjectURL(new Blob([text], { type: 'application/vnd.google-earth.kml+xml' }));
+function saveFile(name, text, type = 'application/vnd.google-earth.kml+xml') {
+  const url = URL.createObjectURL(new Blob([text], { type }));
   const link = document.createElement('a');
   link.href = url;
   link.download = name;
@@ -2219,6 +2222,7 @@ let hashWrittenAt = 0; // when the link was last rewritten
 let linkPair = null;
 let linkLook = null;
 let linkFull = false;
+let linkLayout = null; // { tucked, folded }: the sidebars as the link has them, or null if it says nothing
 // The two pairs of views the sun-and-stars tool can show.
 const PAIRS = ['outside', 'sky'];
 /** The pair on show before anyone chooses: the demonstration's own, or the views from outside. */
@@ -2305,6 +2309,7 @@ function finishUpdate(data) {
 function update() {
   $('views').dataset.mode = state.mode;
   document.body.dataset.mode = state.mode;
+  applyPanes();
   if (state.mode === 'space') {
     const sp = spaceScene(state.date);
     if (!spaceView) {
@@ -2998,6 +3003,16 @@ function fromInputTime(value) {
 /** Makes every control show what the state holds. A box that is being typed in is left alone. */
 function syncInputs() {
   syncSides();
+  $('show-sun').checked = state.sun;
+  $('show-observer').checked = state.observer;
+  // The views of the tool on show, each with a box to switch it off.
+  const paneList = $('pane-list');
+  if (paneList.dataset.mode !== state.mode) {
+    paneList.dataset.mode = state.mode;
+    paneList.innerHTML = (PANES[state.mode] ?? []).map((id) => `<label class="check"><input type="checkbox" data-pane="${id}" /> ${esc(PANE_NAMES[id])}</label>`).join('');
+  }
+  const off = hiddenPanes();
+  for (const box of paneList.querySelectorAll('input')) box.checked = !off.includes(box.dataset.pane);
   setIfIdle($('m-time'), toInputTime(state.date));
   $('m-where').textContent =
     `It will be recorded at the observer's place, ${where(state.lat, state.lon)}. ` +
@@ -3708,6 +3723,9 @@ function bindMeasurementForm() {
 //   st=1 stars, star which one, sh their height, tr trails                  mo=1 moon, mh its height
 //   rt route            v tool: h horizon, f flight, s space                u=i feet and miles
 //   vp the pair of views on show: outside or sky
+//   su=0 no sun on the globe or the map, ob=0 no observer marked on them, hp the views switched off
+//   tk the sidebars tucked away: c the settings, r the results, 0 neither
+//   fd the sections folded away, each as its sidebar's letter and its heading: c-display~r-cities, or 0 for none
 //   fw=0 the observer's sky follows nothing, lk where it then looks: bearing, tilt and angle of view, in degrees
 //   pl=1 the time is running, cs how fast in minutes a second, scs how fast in the view from space
 //   horizon: tg shape, th its height, td its distance, eh eye height, k bending, sg line of sight on the map,
@@ -3720,8 +3738,8 @@ function bindMeasurementForm() {
 //
 // Not in a link, because none of it is a setting: where the outside views and the view from space have been
 // dragged round to, a target that is on its way out to sea, the steps of a tour while they are being chosen,
-// and what is typed into a form and not yet added. Which parts of the sidebars are folded away is kept on
-// this computer, not in the link, so that a link does not rearrange someone else's screen.
+// and what is typed into a form and not yet added. The layout of the sidebars (tk, fd) is written only where
+// it has been changed, and a link without it leaves the reader's own layout as it is.
 
 function writeHash() {
   hashWrittenAt = performance.now();
@@ -3762,6 +3780,17 @@ function writeHash() {
   if (state.moon) p.set('mo', 1);
   if (live(state.moon, 'moonHeightKm')) p.set('mh', Number(state.moonHeightKm.toFixed(1)));
   if (state.route) p.set('rt', `${state.route.from}~${state.route.to}`);
+
+  // What is drawn, and how the screen is laid out. The layout is written only where it is not as it starts.
+  if (!state.sun) p.set('su', 0);
+  if (!state.observer) p.set('ob', 0);
+  if (state.hiddenPanes) p.set('hp', state.hiddenPanes);
+  const layout = layoutNow();
+  const start = layoutAtStart();
+  if (layout.tucked !== start.tucked || layout.folded.join('~') !== start.folded.join('~')) {
+    p.set('tk', layout.tucked || '0');
+    p.set('fd', layout.folded.join('~') || '0');
+  }
 
   // The views, and the clock.
   const pair = $('views').dataset.pair;
@@ -3879,6 +3908,11 @@ function readHash() {
   state.mode = { h: 'horizon', f: 'flight', s: 'space' }[p.get('v')] ?? 'sky';
   // The views and the clock. A speed has to be one of those on offer.
   linkPair = PAIRS.includes(p.get('vp')) ? p.get('vp') : null;
+  // What is drawn, and the layout of the sidebars. A link that says nothing of the layout leaves it alone.
+  state.sun = p.has('su') ? p.get('su') !== '0' : base.sun;
+  state.observer = p.has('ob') ? p.get('ob') !== '0' : base.observer;
+  state.hiddenPanes = p.has('hp') ? cleanPanes(p.get('hp').split('~')) : base.hiddenPanes;
+  linkLayout = p.has('tk') || p.has('fd') ? { tucked: p.get('tk'), folded: p.has('fd') ? p.get('fd').split('~') : null } : null;
   state.follow = p.get('fw') !== '0';
   const look = (p.get('lk') ?? '').split(',').map(Number);
   linkLook = !state.follow && look.length === 3 && look.every(Number.isFinite) ? { az: look[0], pitch: look[1], fov: look[2] } : null;
@@ -3938,6 +3972,219 @@ function readHash() {
   observations = mergeObservations(observations, decodeObservations(p.get('o')));
 }
 
+// ---------- what is on show ----------
+
+// The views of each tool, in the order they are laid out, and a short name for each. The view from space is
+// the only one of its tool, so it has no box to switch it off.
+const PANES = {
+  sky: ['globe-view', 'flat-view', 'globe-sky', 'flat-sky'],
+  horizon: ['hz-globe-side', 'hz-flat-side', 'hz-globe-scope', 'hz-flat-scope'],
+  flight: ['fl-globe-lap', 'fl-flat-lap', 'fl-globe-stretch', 'fl-flat-stretch'],
+};
+const PANE_NAMES = {
+  'globe-view': 'The globe, from outside',
+  'flat-view': 'The flat map, from outside',
+  'globe-sky': "The observer's sky, globe model",
+  'flat-sky': "The observer's sky, flat model",
+  'hz-globe-side': 'From the side, globe model',
+  'hz-flat-side': 'From the side, flat model',
+  'hz-globe-scope': 'Through a telescope, globe model',
+  'hz-flat-scope': 'Through a telescope, flat model',
+  'fl-globe-lap': 'The lap, globe model',
+  'fl-flat-lap': 'The lap, flat model',
+  'fl-globe-stretch': 'To scale, globe model',
+  'fl-flat-stretch': 'To scale, flat model',
+};
+/** The views that are switched off, as a list of their ids. */
+const hiddenPanes = () => (state.hiddenPanes ? state.hiddenPanes.split('~') : []);
+/** A list of ids as the state keeps it: only real views, in their own order, joined by "~". */
+const cleanPanes = (ids) => Object.keys(PANE_NAMES).filter((id) => ids.includes(id)).join('~');
+
+let panesFor = null;
+/**
+ * Takes the views that are switched off out of the picture, and lets the rest share the room. A view left
+ * alone on its row is given the whole width.
+ */
+function applyPanes() {
+  const views = $('views');
+  // Nothing to do unless what decides the layout has changed: the tool, the pair, the list, or the width.
+  const key = `${state.mode}|${views.dataset.pair}|${state.hiddenPanes}|${window.innerWidth}`;
+  if (key === panesFor) return;
+  panesFor = key;
+  const off = hiddenPanes();
+  const all = [...views.querySelectorAll('.view')];
+  for (const view of all) view.classList.toggle('off', off.includes(view.id));
+  views.toggleAttribute('data-fewer', (PANES[state.mode] ?? []).some((id) => off.includes(id)));
+  const shown = all.filter((view) => getComputedStyle(view).display !== 'none');
+  for (const view of all) view.classList.toggle('span', shown.length % 2 === 1 && view === shown[shown.length - 1]);
+}
+
+function bindShown() {
+  for (const [id, key] of [['show-sun', 'sun'], ['show-observer', 'observer']]) {
+    $(id).addEventListener('change', (e) => {
+      state[key] = e.target.checked;
+      requestUpdate();
+    });
+  }
+  $('pane-list').addEventListener('change', (e) => {
+    const id = e.target.dataset?.pane;
+    if (!id) return;
+    const off = new Set(hiddenPanes());
+    if (e.target.checked) off.delete(id);
+    else off.add(id);
+    // One view of the tool always stays, or there would be nothing to look at.
+    if ((PANES[state.mode] ?? []).every((pane) => off.has(pane))) {
+      off.delete(id);
+      toast('One view always stays on show');
+    }
+    state.hiddenPanes = cleanPanes([...off]);
+    requestUpdate();
+  });
+}
+
+// ---------- the layout of the sidebars, for a link ----------
+
+const SIDES = ['controls', 'results'];
+/** A section that folds, as a link names it: its sidebar's first letter and its heading, as "c-display". */
+const foldName = (f) => `${f.section.closest('aside').id[0]}-${f.key.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`;
+/** The sidebars as they are: which are tucked away (their first letters), and which sections are folded. */
+const layoutNow = () => ({
+  tucked: SIDES.filter((side) => document.body.classList.contains(`tuck-${side}`)).map((side) => side[0]).join(''),
+  folded: folds.filter((f) => f.section.classList.contains('folded')).map(foldName),
+});
+/** The sidebars as they are on a first visit. */
+const layoutAtStart = () => ({ tucked: '', folded: folds.filter((f) => FOLDED_AT_FIRST.includes(f.key)).map(foldName) });
+
+/**
+ * Lays the sidebars out as the link last read has them. It is for this visit only: what this computer
+ * remembers of the layout is changed only when the reader folds or tucks something themselves.
+ */
+function applyLinkLayout() {
+  if (!linkLayout) return;
+  const { tucked, folded } = linkLayout;
+  linkLayout = null;
+  if (tucked !== null) for (const side of SIDES) document.body.classList.toggle(`tuck-${side}`, tucked.includes(side[0]));
+  if (folded !== null) for (const f of folds) f.set(folded.includes(foldName(f)));
+  syncSides();
+  requestUpdate();
+}
+
+// ---------- saved setups ----------
+//
+// A setup is a link: everything that is set, as it would be written after the #. Setups are kept on this
+// computer under a name, and can be saved to a file and read back from one. Reading one goes through
+// readHash like any other link, so nothing in a file is trusted further than a link would be.
+
+const SETUPS_KEY = 'globedart.setups';
+const SETUP_LIMITS = { count: 50, name: 60, link: 20000, fileBytes: 2e6 };
+let setups = []; // { name, link }
+
+/** Whatever of a list is a sound setup: a name, and a link that starts with #. */
+function cleanSetups(list) {
+  if (!Array.isArray(list)) return [];
+  const sound = [];
+  for (const item of list) {
+    const name = typeof item?.name === 'string' ? item.name.trim().slice(0, SETUP_LIMITS.name) : '';
+    const link = typeof item?.link === 'string' ? item.link : '';
+    if (!name || !link.startsWith('#') || link.length > SETUP_LIMITS.link) continue;
+    // A name is kept once. The later of two with the same name is the one kept.
+    const same = sound.findIndex((s) => s.name === name);
+    if (same >= 0) sound[same] = { name, link };
+    else sound.push({ name, link });
+  }
+  return sound.slice(0, SETUP_LIMITS.count);
+}
+
+/** What a setup is of, read from its link: the tool and the day. */
+function setupAbout(link) {
+  const p = new URLSearchParams(link.slice(1));
+  const tool = { h: 'The horizon', f: 'Level flight', s: 'From space' }[p.get('v')] ?? 'Sun, stars, maps';
+  const day = /^\d{4}-\d{2}-\d{2}/.exec(p.get('t') ?? '')?.[0];
+  const demo = DEMOS[p.get('demo')]?.label;
+  return [demo ?? tool, day].filter(Boolean).join(', ');
+}
+
+function renderSetups() {
+  $('setup-list').innerHTML = setups
+    .map(
+      (s, i) => `<div class="own-card" data-i="${i}">
+        <div class="own-head"><div><b>${esc(s.name)}</b><small>${esc(setupAbout(s.link))}</small></div></div>
+        <div class="buttons two"><button data-act="load">Load</button><button data-act="remove">Remove</button></div>
+      </div>`,
+    )
+    .join('');
+  $('setup-name').placeholder = `Setup ${setups.length + 1}`;
+}
+
+function keepSetups() {
+  remember(SETUPS_KEY, { list: setups });
+  renderSetups();
+}
+
+function bindSetups() {
+  setups = cleanSetups(recall(SETUPS_KEY).list);
+  renderSetups();
+  /** The setup on show now, under the name in the box or the next free one. */
+  const present = () => {
+    writeHash();
+    return { name: $('setup-name').value.trim().slice(0, SETUP_LIMITS.name) || `Setup ${setups.length + 1}`, link: location.hash };
+  };
+  $('setup-keep').addEventListener('click', () => {
+    const setup = present();
+    const had = setups.some((s) => s.name === setup.name);
+    if (!had && setups.length >= SETUP_LIMITS.count) {
+      toast(`No more than ${SETUP_LIMITS.count} setups can be kept. Remove one first.`);
+      return;
+    }
+    setups = cleanSetups([...setups, setup]);
+    $('setup-name').value = '';
+    keepSetups();
+    toast(had ? `"${setup.name}" replaced` : `"${setup.name}" kept on this computer`);
+  });
+  $('setup-list').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-act]');
+    const setup = setups[Number(btn?.closest('.own-card')?.dataset.i)];
+    if (!setup) return;
+    if (btn.dataset.act === 'remove') {
+      setups = setups.filter((s) => s !== setup);
+      keepSetups();
+      toast(`"${setup.name}" removed`);
+      return;
+    }
+    // Loading one is following its link. If the link is the one already on show there is nothing to follow.
+    writeHash();
+    if (location.hash !== setup.link) location.hash = setup.link;
+    toast(`"${setup.name}" loaded`);
+  });
+  $('setup-export').addEventListener('click', () => {
+    // With none kept, the file holds the setup on show.
+    const list = setups.length ? setups : [present()];
+    saveFile('globedart-setups.json', JSON.stringify({ app: 'GlobeDart', kind: 'setups', version: 1, setups: list }, null, 2), 'application/json');
+  });
+  $('setup-import').addEventListener('click', () => $('setup-file').click());
+  $('setup-file').addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // so that the same file can be chosen again
+    if (!file) return;
+    let found = [];
+    try {
+      if (file.size > SETUP_LIMITS.fileBytes) throw new Error('too large');
+      found = cleanSetups(JSON.parse(await file.text())?.setups);
+    } catch {
+      found = [];
+    }
+    if (!found.length) {
+      toast('No setups could be read from that file');
+      return;
+    }
+    const before = setups.length;
+    setups = cleanSetups([...setups, ...found]);
+    keepSetups();
+    const added = setups.length - before;
+    toast(`${found.length} read from the file: ${added} added${found.length > added ? `, ${Math.min(found.length - added, found.length)} replaced or left out` : ''}`);
+  });
+}
+
 /**
  * Puts the views as the link last read has them: the pair on show, and where the observer's sky looks when
  * it follows nothing. A link typed by hand that names no pair leaves the pair alone, unless `always`.
@@ -3964,7 +4211,10 @@ async function start() {
   // A link written by the app carries its time. Without one, this is a plain visit.
   if (!new URLSearchParams(location.hash.slice(1)).has('t')) openInDaylight();
   bindControls();
+  bindShown();
+  bindSetups();
   bindFolds();
+  applyLinkLayout();
   // The outlines of the land (Natural Earth, 1:110m), drawn on both maps from the same latitudes and longitudes.
   const land = await (await fetch('data/land-110m.json')).json();
   app.land = land; // for an argument that draws a map of its own
@@ -4009,6 +4259,7 @@ async function start() {
     applyBareLink();
     setMode(state.mode);
     applyLinkViews(false);
+    applyLinkLayout();
     applySpaceLook(state.spaceStay);
     globeView.focus(state.lat, state.lon);
     flatView.focus(state.lat, state.lon);

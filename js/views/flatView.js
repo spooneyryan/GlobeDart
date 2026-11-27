@@ -101,6 +101,7 @@ export class FlatView extends View3D {
       subXZ: { value: new THREE.Vector2() }, // the point on the map under the sun
       range: { value: 1.5 }, // how far the model says the sun's light reaches
       observedMix: { value: 0 },
+      plain: { value: 0 }, // 1 lights the whole map evenly, with no day and no night
       sunDirGlobe: { value: new THREE.Vector3(1, 0, 0) }, // the place the sun is overhead, as a direction on the globe
       // The flat model's own sun and moon, for its moon's shadow: heights and half-widths in Earth radii.
       sunH: { value: 1 },
@@ -132,6 +133,7 @@ export class FlatView extends View3D {
           uniform vec2 subXZ;
           uniform float range;
           uniform float observedMix;
+          uniform float plain;
           uniform vec3 sunDirGlobe;
           uniform float sunH;
           uniform float sunHalf;
@@ -172,7 +174,7 @@ export class FlatView extends View3D {
             float day = mix(spot, real, observedMix);
             // The moon's shadow: the flat model's own, or the real one when the real daylight is drawn.
             float shade = mix(flatShade(vP), mix(1.0, globeShade(n), real), observedMix);
-            gl_FragColor = vec4(c * (0.26 + 0.74 * day) * shade, 1.0);
+            gl_FragColor = vec4(c * mix((0.26 + 0.74 * day) * shade, 0.82, plain), 1.0);
           }`,
       }),
     );
@@ -298,6 +300,13 @@ export class FlatView extends View3D {
     const below = flatVec(c.sub.lat, c.sub.lon);
     const sunPos = [below[0], h, below[2]];
     const observedLighting = state.flatLighting === 'observed';
+    // The sun can be left out. Then nothing marks it or its light, and the whole map is lit evenly.
+    const showSun = state.sun !== false;
+    for (const part of [this.sun, this.sunGlow, this.sunDrop.object, this.sunTrack.object, this.terminator.object, this.sunLabel]) part.visible = showSun;
+    this.uniforms.plain.value = showSun ? 0 : 1;
+    // What is sighted is the sun, unless the stars or the moon are on show. With no sun there is then nothing to sight.
+    const sighting = showSun || !!c.stars || !!c.moon;
+    const showObserver = state.observer !== false;
 
     this.uniforms.subXZ.value.set(below[0], below[2]);
     this.uniforms.range.value = range;
@@ -325,7 +334,7 @@ export class FlatView extends View3D {
     this.spotRing.begin();
     ring(this.spotRing, circle(below[0], below[2], range, LIFT * 1.5), 180);
     this.spotRing.end();
-    this.spotRing.object.visible = !observedLighting;
+    this.spotRing.object.visible = !observedLighting && showSun;
 
     // The real edge between day and night: every place 90° round the Earth from the place the sun is
     // overhead. With s the direction of that place on the globe, u and v are two directions square to it and
@@ -421,9 +430,10 @@ export class FlatView extends View3D {
     const here = onMap(state.lat, state.lon);
     this.observerDot.position.fromArray(here);
     this.observerLabel.pos.fromArray(here);
+    this.observerDot.visible = this.observerLabel.visible = showObserver;
     // The amber line runs to wherever the model puts the thing being sighted: the sun, or the chosen star.
     this.observerModel.begin();
-    this.observerModel.add(here, above(c.sight.flat, c.sight.flat.heightKm / EARTH_RADIUS_KM));
+    if (showObserver && sighting) this.observerModel.add(here, above(c.sight.flat, c.sight.flat.heightKm / EARTH_RADIUS_KM));
     this.observerModel.end();
     // A teal line leaves the ground in the direction that is measured there: the bearing counted round from
     // the map's north (toward the pole) and the height up from the flat ground (flatFrame in js/models.js).
@@ -435,11 +445,11 @@ export class FlatView extends View3D {
       return add3(from, dir, length);
     };
     this.observerMeasured.begin();
-    if (c.sight.obs.el > 0) this.observerMeasured.add(here, sightEnd(here, state.lat, state.lon, c.sight.obs));
+    if (showObserver && sighting && c.sight.obs.el > 0) this.observerMeasured.add(here, sightEnd(here, state.lat, state.lon, c.sight.obs));
     this.observerMeasured.end();
 
     this.sightLines.begin();
-    if (state.sightLines) {
+    if (state.sightLines && sighting) {
       for (const city of c.sight.cities) {
         if (city.obs.el <= 0) continue;
         const from = onMap(city.lat, city.lon);

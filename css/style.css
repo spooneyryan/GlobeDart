@@ -1888,6 +1888,27 @@ h4.flat {
   text-wrap: balance;
 }
 
+/* A view that has been switched off, and the room the others then share: as many rows as are needed, and the
+   whole width for a view left alone on its row. */
+.view.off {
+  display: none !important;
+}
+
+#views[data-fewer] {
+  grid-template-rows: auto;
+  grid-auto-rows: minmax(0, 1fr);
+}
+
+.view.span {
+  grid-column: 1 / -1;
+}
+
+#setup-name {
+  flex: 1;
+  min-width: 0;
+  max-width: 190px;
+}
+
 .info-code {
   color: var(--muted);
   font-size: 12px;

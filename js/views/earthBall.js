@@ -30,6 +30,7 @@ export function makeEarthBall(landCanvas) {
   const uniforms = {
     map: { value: makeLandTexture(landCanvas) },
     sunDir: { value: new THREE.Vector3(1, 0, 0) },
+    plain: { value: 0 }, // 1 lights the whole ball evenly, with no day and no night
     ...eclipseUniforms(),
   };
   const mesh = new THREE.Mesh(
@@ -48,6 +49,7 @@ export function makeEarthBall(landCanvas) {
       fragmentShader: `
         uniform sampler2D map;
         uniform vec3 sunDir;
+        uniform float plain;
         varying vec3 vN;
         ${ECLIPSE_GLSL}
         void main() {
@@ -61,7 +63,8 @@ export function makeEarthBall(landCanvas) {
           float day = smoothstep(-0.015, 0.015, d);
           float twilight = smoothstep(-0.31, 0.0, d);
           // The moon's shadow, when it is on the Earth: an eclipse of the sun. It only darkens the day side.
-          gl_FragColor = vec4(c * (0.2 + 0.18 * twilight + 0.62 * day) * mix(1.0, globeShade(n), day), 1.0);
+          float lit = (0.2 + 0.18 * twilight + 0.62 * day) * mix(1.0, globeShade(n), day);
+          gl_FragColor = vec4(c * mix(lit, 0.82, plain), 1.0);
         }`,
     }),
   );

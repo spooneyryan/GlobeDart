@@ -315,6 +315,30 @@
         </section>
 
         <section>
+          <h2>What to show</h2>
+          <label class="check sky-only" title="The sun, its light, and day and night, on the globe and on the flat map"><input type="checkbox" id="show-sun" /> The sun, on the globe and the map</label>
+          <label class="check sky-only" title="The observer's dot and sight lines, on the globe and on the flat map"><input type="checkbox" id="show-observer" /> The observer, on the globe and the map</label>
+          <div id="pane-list" role="group" aria-label="Which views to show"></div>
+          <p class="hint">A view that is switched off gives its room to the others.</p>
+        </section>
+
+        <section>
+          <h2>Saved setups</h2>
+          <p class="hint">A setup is everything as it is now: the tool, the time, the place and every setting. Kept setups stay on this computer.</p>
+          <label class="row">
+            <span>Name</span>
+            <input type="text" id="setup-name" maxlength="60" />
+          </label>
+          <button id="setup-keep">Keep this setup</button>
+          <div id="setup-list" class="own-list"></div>
+          <div class="buttons two">
+            <button id="setup-export" title="Save the kept setups to a file, or this one if none is kept">Save to a file</button>
+            <button id="setup-import" title="Add the setups in a file to the ones kept here">Load from a file</button>
+          </div>
+          <input type="file" id="setup-file" accept=".json,application/json" hidden />
+        </section>
+
+        <section>
           <button id="btn-share">Copy link to this view</button>
           <button id="btn-reset">Start again from the beginning</button>
         </section>
