@@ -2266,17 +2266,25 @@ function followLook(c) {
   const s = c.stars;
   const obs = c.moon ? c.moon.obs : s ? s.measured[s.selected] : c.obs;
   const flat = c.moon ? c.moon.flat : s ? s.flat[s.selected] : c.flat;
-  // Where it is measured and where the flat model puts it are both kept in view while they are within 115°
-  // of each other round the horizon: the view looks half way between. Further apart, it looks at the measured one.
+  // Where it is measured and where the flat model puts it are both kept in view while they are within 90° of
+  // each other round the horizon: the view looks half way between. Further apart the view comes round to the
+  // measured one alone, little by little, and is there by 150°. `both` is how far it is still looking at both:
+  //
+  //   n = (150 − the angle between them) ÷ 60, held between 0 and 1          both = n² × (3 − 2n)
+  //
+  // A sudden change at one angle would make the view jump as the two drew apart, as they do where the sun
+  // goes all the way round the sky.
   const diff = wrap180(flat.az - obs.az);
-  const together = Math.abs(diff) < 115;
-  const az = together ? obs.az + diff / 2 : obs.az;
-  const top = Math.max(obs.el, together ? flat.el : 0, 0);
+  const near = clamp((150 - Math.abs(diff)) / 60, 0, 1);
+  const both = near * near * (3 - 2 * near);
+  const az = obs.az + (diff / 2) * both;
+  const alone = Math.max(obs.el, 0);
+  const top = alone + (Math.max(obs.el, flat.el, 0) - alone) * both;
   const aspect = globeSky.width / globeSky.height;
   const ground = groundInView(top);
   // The share of the view's height that the title and the readout cover, which what is followed has to clear.
   const covered = Math.min(0.42, (Math.max(globeSky.coveredTop(), flatSky.coveredTop()) + 14) / globeSky.height);
-  const fov = clamp(Math.max(58, (top + ground + 2) / (1 - covered), together ? (Math.abs(diff) + 26) / aspect : 0), 58, 92);
+  const fov = clamp(Math.max(58, (top + ground + 2) / (1 - covered), (both * (Math.abs(diff) + 26)) / aspect), 58, 92);
   // Keep that much ground in view unless it would push what is followed up under the readout.
   return { az, pitch: clamp(Math.max(fov / 2 - ground, top + 2 + (covered - 0.5) * fov), -10, 82), fov };
 }
