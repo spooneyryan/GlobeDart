@@ -233,6 +233,10 @@ const state = {
   flying: false, // the speeded-up lap is running
 };
 
+// What everything is set to at the start. A link leaves out a setting that is still as it is here, where that
+// setting belongs to a tool that is not on show or to something that is switched off.
+const DEFAULT = Object.freeze({ ...state, own: {}, ownTour: [] });
+
 // ---------- formatting ----------
 
 const deg = (n, d = 1) => `${n.toFixed(d)}°`;
@@ -2209,6 +2213,18 @@ let spaceView = null; // the view from space, made the first time it is asked fo
 let landPicture = null; // the picture of the land that the outside views share
 let needsUpdate = true;
 let hashTimer = null;
+let hashWrittenAt = 0; // when the link was last rewritten
+// What the link last read said about the views, to be put in place once the views are there: which pair is
+// on show, where the observer's sky looks when it follows nothing, and whether the link carried everything.
+let linkPair = null;
+let linkLook = null;
+let linkFull = false;
+// The two pairs of views the sun-and-stars tool can show.
+const PAIRS = ['outside', 'sky'];
+/** The pair on show before anyone chooses: the demonstration's own, or the views from outside. */
+const startingPair = () => (state.demo ? (DEMOS[state.demo].pair ?? PAIRS[0]) : PAIRS[0]);
+// The boxes of "Work it out from the weather", in the horizon tool.
+const WEATHER_INPUTS = ['hz-w-temp', 'hz-w-pressure', 'hz-w-lapse'];
 
 function requestUpdate() {
   needsUpdate = true;
@@ -2270,9 +2286,11 @@ function finishUpdate(data) {
   renderDemo(data);
   showWorkings(data);
   syncInputs();
-  // The link is rewritten a moment after things stop changing, not on every frame of a drag.
+  // The link is rewritten a moment after things stop changing, not on every frame of a drag. While the time or
+  // the lap is running nothing stops changing, so then it is rewritten once a second all the same.
   clearTimeout(hashTimer);
-  hashTimer = setTimeout(writeHash, 300);
+  if ((state.playing || state.flying) && performance.now() - hashWrittenAt > 1000) writeHash();
+  else hashTimer = setTimeout(writeHash, 300);
 }
 
 /** One pass from the state to the screen, for whichever tool is on show. */
@@ -3143,7 +3161,10 @@ function bindControls() {
     state.playing = !state.playing;
     requestUpdate();
   });
-  $('speed').addEventListener('change', (e) => (state[state.mode === 'space' ? 'spaceSpeed' : 'speed'] = Number(e.target.value)));
+  $('speed').addEventListener('change', (e) => {
+    state[state.mode === 'space' ? 'spaceSpeed' : 'speed'] = Number(e.target.value);
+    requestUpdate();
+  });
 
   // ----- the view from space -----
   // The first choice is never offered. It is what the list shows once the camera has left the look last chosen.
@@ -3511,7 +3532,13 @@ function bindHorizonControls() {
             ? `That gives k = ${k.toFixed(2)}: light bends more sharply than the sea curves. The slider stops at 1.`
             : `That gives k = ${k.toFixed(2)}.`;
   };
-  for (const id of ['hz-w-temp', 'hz-w-pressure', 'hz-w-lapse']) $(id).addEventListener('input', showWeather);
+  for (const id of WEATHER_INPUTS) {
+    $(id).addEventListener('input', () => {
+      showWeather();
+      // What is typed here goes into the link.
+      requestUpdate();
+    });
+  }
   $('hz-w-use').addEventListener('click', () => {
     const k = weather();
     if (k !== null) setK(k);
@@ -3662,22 +3689,36 @@ function bindMeasurementForm() {
 // ---------- shareable state ----------
 //
 // Everything that is set goes into the address after the #, so a link shows someone else exactly the same
-// scene, and the same figures, to check. The short names:
+// scene, and the same figures, to check. A setting that belongs to a tool not on show, or to something that
+// is switched off, is left out while it is still as it starts, which keeps a link short. The short names:
 //
 //   t time (UTC)        lat, lon observer        h flat sun's height, km     r how far its light reaches, km
 //   fb=1 its light curves                        fl how the flat map is lit  rf air: 0 none, 1 standard, 2 own (tc °C, ph hPa)
 //   sl sight lines      ag grid on the sky       demo demonstration          a its own controls
+//   dg the heading whose demonstrations are listed, when none of them is chosen
 //   tn tour, ts step, tv=1 answer on show, tl the steps of a tour of one's own
 //   st=1 stars, star which one, sh their height, tr trails                  mo=1 moon, mh its height
-//   rt route            v tool: h horizon, f flight                         u=i feet and miles
+//   rt route            v tool: h horizon, f flight, s space                u=i feet and miles
+//   vp the pair of views on show: outside or sky
+//   fw=0 the observer's sky follows nothing, lk where it then looks: bearing, tilt and angle of view, in degrees
+//   pl=1 the time is running, cs how fast in minutes a second, scs how fast in the view from space
 //   horizon: tg shape, th its height, td its distance, eh eye height, k bending, sg line of sight on the map,
-//            s1 s2 s3 two sunsets, ly=1 layers of air (at, wt, lm, lg)
-//   flight:  fs speed, fa height, fm minutes
-//   space (v=s): sv what it looks at, sw the body it stays with if that is another, sf=1 moving freely,
+//            s1 s2 s3 two sunsets, ly=1 layers of air (at, wt, lm, lg),
+//            kw the weather to work the bending out from: °C, hPa, °C for each 100 m
+//   flight:  fs speed, fa height, fm minutes, fy=1 the lap is running
+//   space:   sv what it looks at, sw the body it stays with if that is another, sf=1 moving freely,
 //            so=0 no orbits drawn, sn=0 no names
 //   m the user's measurements                    o the user's horizon observations
+//
+// Not in a link, because none of it is a setting: where the outside views and the view from space have been
+// dragged round to, a target that is on its way out to sea, the steps of a tour while they are being chosen,
+// and what is typed into a form and not yet added. Which parts of the sidebars are folded away is kept on
+// this computer, not in the link, so that a link does not rearrange someone else's screen.
 
 function writeHash() {
+  hashWrittenAt = performance.now();
+  // A setting is written while what it belongs to is on show, and otherwise only if it has been changed.
+  const live = (shown, key) => shown || state[key] !== DEFAULT[key];
   const p = new URLSearchParams({
     t: state.date.toISOString().slice(0, 19) + 'Z',
     lat: state.lat.toFixed(3),
@@ -3690,80 +3731,101 @@ function writeHash() {
     ...(bentLight() ? { fb: 1 } : {}),
     rf: { off: 0, standard: 1, custom: 2 }[state.refraction],
   });
-  if (state.refraction === 'custom') {
-    p.set('tc', state.tempC);
-    p.set('ph', state.pressureHpa);
-  }
+  const ownAir = state.refraction === 'custom';
+  if (live(ownAir, 'tempC')) p.set('tc', state.tempC);
+  if (live(ownAir, 'pressureHpa')) p.set('ph', state.pressureHpa);
   if (state.demo) {
     p.set('demo', state.demo);
     const own = encodeOwn(DEMOS[state.demo], state.own);
     if (own) p.set('a', own);
+  } else if (demoGroup !== GROUPS[0].id) {
+    p.set('dg', demoGroup);
   }
   if (state.tour) {
     if (state.tour.id !== TOURS[0].id) p.set('tn', state.tour.id);
-    if (state.tour.id === OWN_TOUR) p.set('tl', state.ownTour.join('~'));
     p.set('ts', state.tour.step + 1);
     if (state.tour.shown) p.set('tv', 1);
   }
-  if (state.stars) {
-    p.set('st', 1);
-    p.set('star', state.star);
-    p.set('sh', Math.round(state.starHeightKm));
-    if (state.trails) p.set('tr', 1);
-  }
-  if (state.moon) {
-    p.set('mo', 1);
-    p.set('mh', Number(state.moonHeightKm.toFixed(1)));
-  }
+  if (state.ownTour.length) p.set('tl', state.ownTour.join('~'));
+  if (state.stars) p.set('st', 1);
+  if (live(state.stars, 'star')) p.set('star', state.star);
+  if (live(state.stars, 'starHeightKm')) p.set('sh', Math.round(state.starHeightKm));
+  if (state.trails) p.set('tr', 1);
+  if (state.moon) p.set('mo', 1);
+  if (live(state.moon, 'moonHeightKm')) p.set('mh', Number(state.moonHeightKm.toFixed(1)));
   if (state.route) p.set('rt', `${state.route.from}~${state.route.to}`);
-  if (state.mode === 'space') {
-    p.set('v', 's');
-    p.set('sv', state.spaceLook);
-    if (state.spaceStay !== (SPACE_LOOK[state.spaceLook] ?? SPACE_LOOKS[0]).body) p.set('sw', state.spaceStay.toLowerCase());
-    if (state.spaceFree) p.set('sf', 1);
-    if (!state.spaceOrbits) p.set('so', 0);
-    if (!state.spaceNames) p.set('sn', 0);
+
+  // The views, and the clock.
+  const pair = $('views').dataset.pair;
+  if (pair !== startingPair()) p.set('vp', pair);
+  if (!state.follow) {
+    p.set('fw', 0);
+    const { az, pitch, fov } = globeSky.look;
+    p.set('lk', [az, pitch, fov].map((n) => Number(n.toFixed(1))).join(','));
   }
-  if (state.mode === 'flight') {
-    p.set('v', 'f');
-    p.set('fs', Math.round(state.speedKmh));
-    p.set('fa', Math.round(state.altitudeM));
-    p.set('fm', Math.round(state.flightMinutes));
-    if (imperial()) p.set('u', 'i');
+  if (state.playing) p.set('pl', 1);
+  if (live(false, 'speed')) p.set('cs', state.speed);
+  if (live(false, 'spaceSpeed')) p.set('scs', state.spaceSpeed);
+
+  // The view from space.
+  const space = state.mode === 'space';
+  if (space) p.set('v', 's');
+  if (live(space, 'spaceLook')) p.set('sv', state.spaceLook);
+  if (state.spaceStay !== (SPACE_LOOK[state.spaceLook] ?? SPACE_LOOKS[0]).body) p.set('sw', state.spaceStay.toLowerCase());
+  if (state.spaceFree) p.set('sf', 1);
+  if (!state.spaceOrbits) p.set('so', 0);
+  if (!state.spaceNames) p.set('sn', 0);
+
+  // Level flight.
+  const flight = state.mode === 'flight';
+  if (flight) p.set('v', 'f');
+  if (live(flight, 'speedKmh')) p.set('fs', Math.round(state.speedKmh));
+  if (live(flight, 'altitudeM')) p.set('fa', Math.round(state.altitudeM));
+  if (live(flight, 'flightMinutes')) p.set('fm', Math.round(state.flightMinutes));
+  if (state.flying) p.set('fy', 1);
+
+  // The horizon.
+  const horizon = state.mode === 'horizon';
+  if (horizon) p.set('v', 'h');
+  if (live(horizon, 'shape')) p.set('tg', state.shape);
+  if (live(horizon, 'targetM')) p.set('th', tidy(state.targetM));
+  if (live(horizon, 'targetKm')) p.set('td', Number(state.targetKm.toFixed(2)));
+  if (live(horizon, 'eyeM')) p.set('eh', tidy(state.eyeM));
+  if (live(horizon, 'k')) p.set('k', state.k.toFixed(2));
+  if (sightShown()) {
+    const { from, to, waterM } = state.sight;
+    p.set('sg', [from.lat, from.lon, to.lat, to.lon].map((n) => Number(n.toFixed(5))).concat(Number(waterM.toFixed(2))).join(','));
   }
-  if (state.mode === 'horizon') {
-    p.set('v', 'h');
-    p.set('tg', state.shape);
-    p.set('th', tidy(state.targetM));
-    p.set('td', Number(state.targetKm.toFixed(2)));
-    p.set('eh', tidy(state.eyeM));
-    p.set('k', state.k.toFixed(2));
-    if (sightShown()) {
-      const { from, to, waterM } = state.sight;
-      p.set('sg', [from.lat, from.lon, to.lat, to.lon].map((n) => Number(n.toFixed(5))).concat(Number(waterM.toFixed(2))).join(','));
-    }
-    if (state.sunsetLowM !== 0.2 || state.sunsetHighM !== 1.7 || state.sunsetSeconds !== null) {
-      p.set('s1', tidy(state.sunsetLowM));
-      p.set('s2', tidy(state.sunsetHighM));
-      if (state.sunsetSeconds !== null) p.set('s3', state.sunsetSeconds);
-    }
-    if (state.layers) {
-      p.set('ly', 1);
-      p.set('at', state.airC);
-      p.set('wt', state.waterC);
-      p.set('lm', state.layerM);
-      p.set('lg', state.lapse100);
-    }
-    if (imperial()) p.set('u', 'i');
+  if (live(false, 'sunsetLowM') || live(false, 'sunsetHighM') || state.sunsetSeconds !== null) {
+    p.set('s1', tidy(state.sunsetLowM));
+    p.set('s2', tidy(state.sunsetHighM));
+    if (state.sunsetSeconds !== null) p.set('s3', state.sunsetSeconds);
   }
+  if (state.layers) p.set('ly', 1);
+  if (live(state.layers, 'airC')) p.set('at', state.airC);
+  if (live(state.layers, 'waterC')) p.set('wt', state.waterC);
+  if (live(state.layers, 'layerM')) p.set('lm', state.layerM);
+  if (live(state.layers, 'lapse100')) p.set('lg', state.lapse100);
+  // The weather, where all three boxes hold a number and one of them has been changed.
+  const weather = WEATHER_INPUTS.map((id) => $(id).value.trim());
+  if (weather.every((v) => v !== '' && Number.isFinite(Number(v))) && WEATHER_INPUTS.some((id, i) => Number(weather[i]) !== Number($(id).defaultValue))) {
+    p.set('kw', weather.map(Number).join(','));
+  }
+  if (imperial()) p.set('u', 'i');
   if (measurements.length) p.set('m', encodeMeasurements(measurements));
   if (observations.length) p.set('o', encodeObservations(observations));
   history.replaceState(null, '', `#${p}`);
 }
 
-/** Reads a link back into the state. Every number is held to the range its control allows, and anything unreadable is passed over. */
+/**
+ * Reads a link back into the state. Every number is held to the range its control allows, and anything
+ * unreadable is passed over. A link written by the app always carries the time, and whatever such a link
+ * leaves out is as it is at the start. A link typed by hand, with no time in it, changes only what it names.
+ */
 function readHash() {
   const p = new URLSearchParams(location.hash.slice(1));
+  linkFull = p.has('t');
+  const base = linkFull ? DEFAULT : state;
   const num = (key, min, max) => {
     const v = Number(p.get(key));
     return p.has(key) && Number.isFinite(v) ? clamp(v, min, max) : null;
@@ -3777,11 +3839,11 @@ function readHash() {
   if (p.has('sl')) state.sightLines = p.get('sl') === '1';
   state.skyGrid = p.get('ag') === '1';
   if (p.has('rf')) state.refraction = { 0: 'off', 2: 'custom' }[p.get('rf')] ?? 'standard';
-  state.tempC = num('tc', ...AIR_LIMITS.tempC) ?? state.tempC;
-  state.pressureHpa = num('ph', ...AIR_LIMITS.pressureHpa) ?? state.pressureHpa;
+  state.tempC = num('tc', ...AIR_LIMITS.tempC) ?? base.tempC;
+  state.pressureHpa = num('ph', ...AIR_LIMITS.pressureHpa) ?? base.pressureHpa;
   if (p.get('fl') === 'observed' || p.get('fl') === 'model') state.flatLighting = p.get('fl');
   state.flatLight = p.get('fb') === '1' ? 'bent' : 'straight';
-  if (DEMOS[p.get('demo')]) state.demo = p.get('demo');
+  state.demo = DEMOS[p.get('demo')] ? p.get('demo') : base.demo;
   if (p.has('tl')) state.ownTour = cleanTourSteps(p.get('tl').split('~'));
   // A tour is named by "tn"; a step number alone means the first tour, as it did when there was only one.
   const tourId =
@@ -3792,31 +3854,44 @@ function readHash() {
   state.picking = false;
   if (state.tour && !state.tour.shown) state.demo = null;
   // A link written by the app always carries the time. One without it was typed by hand.
-  const wanted = !p.has('t') && (state.tour?.shown || (!state.tour && state.demo));
+  // It opens the demonstration it names. One that names none leaves the demonstration on show as it is.
+  const wanted = !p.has('t') && (state.tour?.shown || (!state.tour && p.has('demo') && state.demo));
   bareLink = wanted ? { demo: state.demo, own: p.get('a'), tourShown: !!state.tour?.shown } : null;
   if (state.demo) demoGroup = DEMOS[state.demo].group;
+  else if (p.get('dg') === TOURS_GROUP || GROUPS.some((g) => g.id === p.get('dg'))) demoGroup = p.get('dg');
+  else if (linkFull) demoGroup = GROUPS[0].id;
   state.stars = p.get('st') === '1';
   state.moon = p.get('mo') === '1';
-  state.moonHeightKm = num('mh', MIN_HEIGHT_KM, MAX_HEIGHT_KM) ?? state.moonHeightKm;
+  state.moonHeightKm = num('mh', MIN_HEIGHT_KM, MAX_HEIGHT_KM) ?? base.moonHeightKm;
   state.trails = p.get('tr') === '1';
-  if (starIndex(p.get('star')) >= 0) state.star = p.get('star');
-  state.starHeightKm = num('sh', MIN_HEIGHT_KM, MAX_HEIGHT_KM) ?? state.starHeightKm;
+  state.star = starIndex(p.get('star')) >= 0 ? p.get('star') : base.star;
+  state.starHeightKm = num('sh', MIN_HEIGHT_KM, MAX_HEIGHT_KM) ?? base.starHeightKm;
   const [from, to] = (p.get('rt') ?? '').split('~');
   state.route = city(from) && city(to) && from !== to ? { from, to } : null;
   state.mode = { h: 'horizon', f: 'flight', s: 'space' }[p.get('v')] ?? 'sky';
-  if (Object.hasOwn(SPACE_LOOK, p.get('sv') ?? '')) state.spaceLook = p.get('sv');
+  // The views and the clock. A speed has to be one of those on offer.
+  linkPair = PAIRS.includes(p.get('vp')) ? p.get('vp') : null;
+  state.follow = p.get('fw') !== '0';
+  const look = (p.get('lk') ?? '').split(',').map(Number);
+  linkLook = !state.follow && look.length === 3 && look.every(Number.isFinite) ? { az: look[0], pitch: look[1], fov: look[2] } : null;
+  state.playing = p.get('pl') === '1';
+  const speed = (key, kind) => (p.has(key) && SPEEDS[kind].some(([minutes]) => minutes === Number(p.get(key))) ? Number(p.get(key)) : null);
+  state.speed = speed('cs', 'sky') ?? base.speed;
+  state.spaceSpeed = speed('scs', 'space') ?? base.spaceSpeed;
+  state.flying = p.get('fy') === '1';
+  state.spaceLook = Object.hasOwn(SPACE_LOOK, p.get('sv') ?? '') ? p.get('sv') : base.spaceLook;
   state.spaceStay = SPACE_BODIES.find((body) => body.name.toLowerCase() === p.get('sw'))?.name ?? SPACE_LOOK[state.spaceLook].body;
   state.spaceFree = p.get('sf') === '1';
   state.spaceOrbits = p.get('so') !== '0';
   state.spaceNames = p.get('sn') !== '0';
-  state.speedKmh = num('fs', ...FLIGHT_LIMITS.speedKmh) ?? state.speedKmh;
-  state.altitudeM = num('fa', ...FLIGHT_LIMITS.altitudeM) ?? state.altitudeM;
-  state.flightMinutes = num('fm', ...FLIGHT_LIMITS.minutes) ?? state.flightMinutes;
-  if (TARGET_SHAPES.includes(p.get('tg'))) state.shape = p.get('tg');
-  state.targetM = num('th', ...HZ_LIMITS.targetM) ?? state.targetM;
-  state.targetKm = num('td', ...HZ_LIMITS.targetKm) ?? state.targetKm;
-  state.eyeM = num('eh', ...HZ_LIMITS.eyeM) ?? state.eyeM;
-  state.k = num('k', 0, 1) ?? state.k;
+  state.speedKmh = num('fs', ...FLIGHT_LIMITS.speedKmh) ?? base.speedKmh;
+  state.altitudeM = num('fa', ...FLIGHT_LIMITS.altitudeM) ?? base.altitudeM;
+  state.flightMinutes = num('fm', ...FLIGHT_LIMITS.minutes) ?? base.flightMinutes;
+  state.shape = TARGET_SHAPES.includes(p.get('tg')) ? p.get('tg') : base.shape;
+  state.targetM = num('th', ...HZ_LIMITS.targetM) ?? base.targetM;
+  state.targetKm = num('td', ...HZ_LIMITS.targetKm) ?? base.targetKm;
+  state.eyeM = num('eh', ...HZ_LIMITS.eyeM) ?? base.eyeM;
+  state.k = num('k', 0, 1) ?? base.k;
   // The two ends of the line of sight, and the height of the water. Their names come back if they are a well-known view's.
   const ends = (p.get('sg') ?? '').split(',').map(Number);
   if (ends.length === 5 && ends.every(Number.isFinite) && Math.abs(ends[0]) <= 90 && Math.abs(ends[2]) <= 90 && Math.abs(ends[1]) <= 180 && Math.abs(ends[3]) <= 180) {
@@ -3829,23 +3904,39 @@ function readHash() {
       to: { name: known?.to.name ?? 'the second place', ...to },
       waterM: clamp(ends[4], -500, 6000),
     };
-  } else if (p.has('td')) {
+  } else if (p.has('td') || linkFull) {
     state.sight = null;
   }
   state.layers = p.get('ly') === '1';
-  state.sunsetHighM = num('s2', 0.02, HZ_LIMITS.eyeM[1]) ?? state.sunsetHighM;
-  state.sunsetLowM = num('s1', 0, state.sunsetHighM * 0.99) ?? Math.min(state.sunsetLowM, state.sunsetHighM * 0.99);
+  state.sunsetHighM = num('s2', 0.02, HZ_LIMITS.eyeM[1]) ?? base.sunsetHighM;
+  state.sunsetLowM = num('s1', 0, state.sunsetHighM * 0.99) ?? Math.min(base.sunsetLowM, state.sunsetHighM * 0.99);
   state.sunsetSeconds = num('s3', 0.1, 36000);
-  state.airC = num('at', -20, 40) ?? state.airC;
-  state.waterC = num('wt', -2, 35) ?? state.waterC;
-  state.layerM = num('lm', 1, 50) ?? state.layerM;
-  state.lapse100 = num('lg', -1, 2) ?? state.lapse100;
-  if (p.has('u')) state.units = p.get('u') === 'i' ? 'imperial' : 'metric';
+  state.airC = num('at', -20, 40) ?? base.airC;
+  state.waterC = num('wt', -2, 35) ?? base.waterC;
+  state.layerM = num('lm', 1, 50) ?? base.layerM;
+  state.lapse100 = num('lg', -1, 2) ?? base.lapse100;
+  // The weather to work the bending out from goes straight into its three boxes.
+  const weather = (p.get('kw') ?? '').split(',').map(Number);
+  const weatherGiven = weather.length === 3 && weather.every(Number.isFinite);
+  if (weatherGiven || linkFull) {
+    WEATHER_INPUTS.forEach((id, i) => ($(id).value = weatherGiven ? clamp(weather[i], Number($(id).min), Number($(id).max)) : $(id).defaultValue));
+    $(WEATHER_INPUTS[0]).dispatchEvent(new Event('input'));
+  }
+  state.units = p.has('u') ? (p.get('u') === 'i' ? 'imperial' : 'metric') : base.units;
   if (state.demo && DEMOS[state.demo].tool !== state.mode) state.demo = null;
   state.own = state.demo ? decodeOwn(DEMOS[state.demo], p.get('a')) : {};
   // Measurements that came with the link are added to the ones already here.
   measurements = mergeMeasurements(measurements, decodeMeasurements(p.get('m')));
   observations = mergeObservations(observations, decodeObservations(p.get('o')));
+}
+
+/**
+ * Puts the views as the link last read has them: the pair on show, and where the observer's sky looks when
+ * it follows nothing. A link typed by hand that names no pair leaves the pair alone, unless `always`.
+ */
+function applyLinkViews(always) {
+  if (always || linkFull || linkPair) setPair(linkPair ?? startingPair());
+  if (linkLook) setLook(linkLook);
 }
 
 // ---------- start ----------
@@ -3876,6 +3967,8 @@ async function start() {
     state.follow = false;
     $('follow').checked = false;
     setLook(look);
+    // Where the sky looks goes into the link.
+    requestUpdate();
   };
   globeView = new GlobeView($('globe-view'), land, landCanvas, REF_CITIES, { onPick });
   flatView = new FlatView($('flat-view'), land, landCanvas, REF_CITIES, { onPick });
@@ -3899,7 +3992,7 @@ async function start() {
   focusRoute();
   applyBareLink();
   setMode(state.mode);
-  setPair(state.demo ? DEMOS[state.demo].pair : 'outside');
+  applyLinkViews(true);
   window.addEventListener('resize', requestUpdate);
   // A link pasted into a tab that already has the app open changes only the hash.
   window.addEventListener('hashchange', async () => {
@@ -3907,6 +4000,7 @@ async function start() {
     readHash();
     applyBareLink();
     setMode(state.mode);
+    applyLinkViews(false);
     applySpaceLook(state.spaceStay);
     globeView.focus(state.lat, state.lon);
     flatView.focus(state.lat, state.lon);

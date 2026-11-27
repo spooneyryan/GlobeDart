@@ -430,6 +430,25 @@ A link can name a demonstration or a tour and nothing else, and the app sets the
 | `#tn=horizon` | that tour at its first step: `short`, `sky`, `moon`, `horizon` or `travel` |
 | `#tn=own&tl=sunset~ship~bedford` | a tour of those arguments, in that order |
 
+### What a link carries
+
+The address after the `#` is rewritten as things are changed, so copying it gives a link to exactly what is on
+screen. Every setting has a short name there. The full list is above `writeHash` in `js/main.js`.
+
+- A setting that belongs to the tool on show is always written. One that belongs to another tool, or to
+  something switched off, is written only if it has been changed, which keeps a link short. So a link made in
+  the sun-and-stars tool still carries a ship's height that was set in the horizon tool.
+- A link the app wrote always carries the time (`t`). Whatever such a link leaves out is as it is when the app
+  first opens. A link typed by hand, with no time in it, changes only what it names.
+- The views and the clock are in it too: the pair of views on show (`vp`), where the observer's sky looks when
+  it follows nothing (`fw=0` and `lk`), whether the time is running (`pl=1`) and how fast (`cs`, and `scs` for
+  the view from space), and whether the lap is being flown (`fy=1`). While the time runs the link is rewritten
+  once a second.
+- Not in a link, because none of it is a setting: where the outside views and the view from space have been
+  dragged round to, a target on its way out to sea, the steps of a tour while they are being chosen, and what is
+  typed into a form and not yet added. Which parts of the sidebars are folded away is kept on this computer, so
+  that a link does not rearrange someone else's screen.
+
 ## The demonstrations
 
 The bar at the top lists the demonstrations under six headings: the sun, the moon, stars and planets, distances, the
