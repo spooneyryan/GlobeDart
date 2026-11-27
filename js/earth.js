@@ -18,6 +18,16 @@ export function earthUrl(lat, lon, rangeKm = 1000) {
   return `https://earth.google.com/web/@${coord(lat)},${coord(lon)},0a,${range}d,35y,0h,0t,0r`;
 }
 
+/**
+ * A link that opens Windy's map of live webcams round a place. Windy publishes
+ * no specification for these links either; this is the form its own address
+ * bar shows: latitude, longitude, and how far the map is zoomed in. The
+ * cameras are other people's, so the app has no say in what they show.
+ */
+export function camsUrl(lat, lon, zoom = 8) {
+  return `https://www.windy.com/-Webcams/webcams?${lat.toFixed(3)},${lon.toFixed(3)},${zoom}`;
+}
+
 function point(name, description, place) {
   return `    <Placemark>
       <name>${xml(name)}</name>

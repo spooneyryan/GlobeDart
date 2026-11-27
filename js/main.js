@@ -137,7 +137,7 @@ import { FlightView } from './views/flightView.js';
 import { SpaceView, spaceDistance } from './views/spaceView.js';
 import { spaceScene, SPACE_BODIES } from './space.js';
 import { FLIGHT_LIMITS, flightScene, schulerMinutes } from './flight.js';
-import { earthUrl, buildKml, buildSightKml, parseKml, kmlText, KML_LIMITS } from './earth.js';
+import { earthUrl, camsUrl, buildKml, buildSightKml, parseKml, kmlText, KML_LIMITS } from './earth.js';
 import { makeAir, traceView } from './raytrace.js';
 import { VIEWS, viewSizes, viewById } from './presets.js';
 
@@ -2418,6 +2418,7 @@ function update() {
   $('earth-link').href = c.route
     ? earthUrl(routeMiddle.lat, routeMiddle.lon, c.route.globeKm * 1.6)
     : earthUrl(state.lat, state.lon, 1500);
+  $('cams-link').href = camsUrl(state.lat, state.lon);
   $('earth-link').textContent = c.route ? 'Open this route in Google Earth' : 'Open this place in Google Earth';
   renderOwn();
   renderFit();

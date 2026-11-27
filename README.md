@@ -60,7 +60,7 @@ the whole argument about the sky:
 | `js/rotation.js` | A turning globe: speed of the ground, the weight the turn takes off, and how a pendulum's swing turns |
 | `js/flight.js` | Level flight: how fast the nose comes down to follow a globe, and what flying dead straight would do |
 | `js/space.js` | Where the Sun, the Earth, the Moon and five planets are in space, and how the Earth is turned, as the almanac has them |
-| `js/earth.js` | A link that opens Google Earth at a place, KML files of the view and of a line of sight, and a reader for KML and KMZ files |
+| `js/earth.js` | A link that opens Google Earth at a place, a link that opens a map of live webcams round it, KML files of the view and of a line of sight, and a reader for KML and KMZ files |
 | `js/arguments/` | The demonstrations, one file per flat-earth argument, the list of them and of the tours, and the controls an argument can have of its own |
 | `js/explain.js` | What every number means and how it is worked out, written to be shown with the live numbers |
 | `js/info.js` | The small "i" buttons and the box each one opens |
@@ -396,6 +396,18 @@ sets the horizon tool's distance. The file is read in the browser and sent nowhe
 KML, is unzipped in the browser too. Only pins and paths are read.
 
 ## The tours
+
+## Live cameras
+
+In the sun-and-stars tool, "Find live cameras near this place" opens Windy's map of webcams round the observer.
+It is a way to see for yourself whether it is day or night somewhere right now, and where the sun is: press "Now"
+first, so that the app is showing the same moment.
+
+- Windy publishes no specification for these links. The link uses the form Windy shows in its own address bar,
+  which could change.
+- The cameras are other people's. The app does not choose them and cannot vouch for any one of them. Many
+  refresh every few minutes and are not true live video; each says how old its picture is.
+- Nothing is sent anywhere until the link is clicked. The app still loads nothing from the internet.
 
 "Take a tour" starts the short tour and lists the others beneath it. Each walks through a few arguments in order, easiest first, and is meant for one
 person showing another.
